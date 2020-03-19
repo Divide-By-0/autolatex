@@ -7,6 +7,13 @@ var TIMING_DEBUG = false; //doing ctrl + m to get key to see errors is still nee
 var previousTime = 0;
 var previousLine = 0;
 
+//render bug variables
+var invalidEquationHashCodecogsFirst50   = "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD%u0315%uFFFD3%";
+var invalidEquationHashCodecogsFirst50_2 = "";
+var invalidEquationHashTexrendrFirst50   = "GIF89a%uFFFD%008%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%";
+var invalidEquationHashTexrendrFirst50_2 = "GIF89a%01%00%01%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%0";
+var invalidEquationHashSciweaversFirst50 = "%0D%0A%09%3C%21DOCTYPE%20html%20PUBLIC%20%22-//W3C";
+
 // IntegratedApp = {
 // 	getUi: function(){
 // 		let activeUi = DocumentApp.getUi();
@@ -393,7 +400,7 @@ function getBodyFromIndex(index){
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
  
- function placeImage(index, startElement, start, end, quality, size, defaultSize, delim, isInline) {
+function placeImage(index, startElement, start, end, quality, size, defaultSize, delim, isInline) {
  	reportDeltaTime(387);
  	var docBody = getBodyFromIndex(index);
  	reportDeltaTime(389);
@@ -417,10 +424,6 @@ function getBodyFromIndex(index){
 	var failure = 1;
 	var rendererType ="";
 	
-	//codecogs bug variables
-	var invalidEquationHashCodecogsFirst50   = "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD%u0315%uFFFD3%";
-	var invalidEquationHashTexrendrFirst50   = "GIF89a%uFFFD%008%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%";
-	var invalidEquationHashTexrendrFirst50_2 = "GIF89a%01%00%01%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%0";
 
 	var failedCodecogsAndTexrendr = 0;
 	var failedResp;
@@ -454,11 +457,17 @@ function getBodyFromIndex(index){
    //  	}, FETCH_TIMEOUT);
 
 			resp = UrlFetchApp.fetch(renderer[1]);
-      didTimeOut = false;
-
+      		didTimeOut = false;
+      		console.log(resp, resp.getBlob(), escape(resp.getBlob().getDataAsString()))
  			reportDeltaTime(444);
  			console.log("Hash ", escape(resp.getBlob().getDataAsString()).substring(0,50))
-			if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50){
+ 			if(escape(resp.getBlob().getDataAsString()) == invalidEquationHashCodecogsFirst50_2){ // if there is no hash, codecogs failed
+ 				throw new Error('Saw NO Codecogs equation hash! Renderer likely down!');
+ 			}
+ 			else if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashSciweaversFirst50){ // if there is no hash, codecogs failed
+ 				throw new Error('Saw weburl Sciweavers equation hash! Equation likely contains amsmath!');
+ 			}
+			else if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50){
 				console.log("Invalid Codecogs Equation!")
 				failedCodecogsAndTexrendr += 1;
 				failedResp = resp;
@@ -469,9 +478,9 @@ function getBodyFromIndex(index){
 				else{
 					throw new Error('Saw invalid Codecogs equation hash!');
 				}
-			}
+			} // have no idea if I can put an else here or not lol
 			if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashTexrendrFirst50 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashTexrendrFirst50_2){
-				console.log("Invalid Texrendr Equation!")
+				console.log("Invalid Texrendr Equation! Times: " + failedCodecogsAndTexrendr)
 				failedCodecogsAndTexrendr += 1
 				if(failedCodecogsAndTexrendr == 2){ // if in order so failed codecogs first
 					console.log("Displaying codecogs error!")
@@ -505,40 +514,48 @@ function getBodyFromIndex(index){
  	reportDeltaTime(490);
 	textElement.editAsText().deleteText(start, text.length -1)	// from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
 	var logoBlob = resp.getBlob();
-	var rep = 50;
+	var attemptsToInsertImageLeft = 50;
  	reportDeltaTime(494);
-	while(rep > 0){
-		try{
-			paragraph.insertInlineImage(childIndex+1, logoBlob); // TODO ISSUE: sometimes fails because it times out and yeets
-			break;
-		} catch(err){
-			console.log("DOCS UNAVAILABLE");
-			--rep;
-			// if(rep < 10):
-			// 	delay
-		}
-	}
 
-	/// MAKE THIS A NEW METHOD AT THIS POINT TO PUT IN CALLBACK
-	if(rep < 50){
-		console.log("At ", rep, " reps of failing to insert, ", equation) 
+	try{
+		paragraph.insertInlineImage(childIndex+1, logoBlob); // TODO ISSUE: sometimes fails because it times out and yeets
+		returnParams = repairImage(index, startElement, paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
+		return returnParams;
+	} catch(err){
+		console.log("Could not insert image try 1")
+		console.error(err)
 	}
-	var rep = 3;
+	try{
+	 	exterminationVar = setTimeout(function(){
+			paragraph.insertInlineImage(childIndex+1, logoBlob); // TODO ISSUE: sometimes fails because it times out and yeets
+			returnParams = repairImage(index, startElement, paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
+			return returnParams;
+		}, 1000);
+	} catch(err){
+		console.log("Could not insert image try 2 after 1000ms")
+		console.error(err)
+	}
+	throw new Error("Could not insert image at childindex!")
+	// return repairImage(index, startElement, paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
+}
+
+function repairImage(index, startElement, paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal) {
+	var attemptsToSetImageUrl = 3;
  	reportDeltaTime(505); // 3 seconds!!
-	while(rep > 0){
+	while(attemptsToSetImageUrl > 0){
 		try{
 			paragraph.getChild(childIndex+1).setLinkUrl(renderer[2] + equationOriginal + "#" + delim[6]); //added % delim 6 to keep track of which delimiter was used to render
 			break;
 		} catch(err){
 			console.log("Couldn't insert child index!")
 			console.log("Next child not found!");
-			--rep;
+			--attemptsToSetImageUrl;
 		}
 	}
-	if(rep < 3){
-		console.log("At ", rep, " reps of failing to insert, ", equation) 
-		if(rep == 0){
-			throw new Error('Couldn\'t get equation child!');
+	if(attemptsToSetImageUrl < 3){
+		console.log("At ", attemptsToSetImageUrl, " attemptsToSetImageUrls of failing to get child and link , ", equation) 
+		if(attemptsToSetImageUrl == 0){
+			throw new Error('Couldn\'t get equation child!'); // of image immediately after inserting
 		}
 	}
 
@@ -648,12 +665,12 @@ function getBodyFromIndex(index){
 
 // NOTE: one indexed
 function getRenderer(worked) {//  order of execution ID, image URL, editing URL, in-line commandAt the beginning, in-line command at and, Human name, No Machine name substring
-	if (worked == 1) {return [1,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]}
-	else if (worked == 2) {return [2,"http://texrendr.com/cgi-bin/mathtex.cgi?%5Cdpi%7B1800%7DEQUATION","http://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr"]}//http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
+	if (worked == 2) {return [2,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]}
+	else if (worked == 1) {return [1,"http://texrendr.com/cgi-bin/mathtex.cgi?%5Cdpi%7B1800%7DEQUATION","http://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr"]}//http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
 	else if (worked == 6) {return [6,"https://texrendr.com/cgi-bin/mathtex.cgi?%5Cdpi%7B1800%7DEQUATION","https://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr"]}//http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
 	else if (worked == 3) {return [3,"http://rogercortesi.com/eqn/tempimagedir/_FILENAME.png","http://rogercortesi.com/eqn/index.php?filename=_FILENAME.png&outtype=png&bgcolor=white&txcolor=black&res=1800&transparent=1&antialias=0&latextext=","%5Ctextstyle%20%7B", "%7D", "Roger's renderer"]}//Filename has to not have any +, Avoid %,Instead use†‰, avoid And specific ASCII Percent codes
-	else if (worked == 5) {return [5,"http://latex.numberempire.com/render?EQUATION&sig=41279378deef11cbe78026063306e50d","http://latex.numberempire.com/render?","%5Ctextstyle%20%7B", "%7D", "Number empire"]} //has url at end
-	else if (worked == 4) {return [4,"http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=txfonts&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=txfonts&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers"]} //not latex font
+	else if (worked == 4) {return [5,"http://latex.numberempire.com/render?EQUATION&sig=41279378deef11cbe78026063306e50d","http://latex.numberempire.com/render?","%5Ctextstyle%20%7B", "%7D", "Number empire"]} //has url at end
+	else if (worked == 5) {return [4,"http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=txfonts&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=txfonts&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers"]} //not latex font
 	else return [0,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]
 }//http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=txfonts&edit=0&eq=
 /**
