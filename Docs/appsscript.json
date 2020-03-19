@@ -1,0 +1,11 @@
+{
+  "timeZone": "America/Los_Angeles",
+  "dependencies": {
+    "enabledAdvancedServices": [{
+      "userSymbol": "Analytics",
+      "serviceId": "analytics",
+      "version": "v3"
+    }]
+  },
+  "exceptionLogging": "STACKDRIVER"
+}
