@@ -10,6 +10,7 @@ var previousLine = 0;
 //render bug variables
 var invalidEquationHashCodecogsFirst50   = "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD%u0315%uFFFD3%";
 var invalidEquationHashCodecogsFirst50_2 = "";
+var invalidEquationHashCodecogsFirst50_3 = "%uFFFDPNG%0D%0A%1A%0A%00%00%00%0DIHDR%00%00%00%01%"; // this is one space in codecogs. not pushed yet.
 var invalidEquationHashTexrendrFirst50   = "GIF89a%uFFFD%008%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%";
 var invalidEquationHashTexrendrFirst50_2 = "GIF89a%01%00%01%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%0";
 var invalidEquationHashTexrendrFirst50_3 = "GIF89ai%0A%uFFFD%01%uFFFD%00%00%uFFFD%uFFFD%uFFFD%"; // this is the No Expression Supplied error. Ignored for now.
@@ -442,7 +443,7 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
 			renderer[2] = renderer[2].split("FILENAME").join(getFilenameEncode (equation, 0)); // since mutating original object, important each is a new one
 			debugLog("Link with equation", renderer[1]);
 			// console.log("Link with equation", renderer[1]);
-			console.log("Fetching ", renderer[1], " and ", renderer[2] + equation)
+			// console.log("Fetching ", renderer[1], " and ", renderer[2] + equation)
 
  			reportDeltaTime(437);
 			
