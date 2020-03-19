@@ -103,9 +103,10 @@
           if(flag == -1)
             showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", "Status: " + renderCount +  " equations replaced");
           else if(flag == -2 && renderCount > 0)
-            showError("Sorry, the equation is too long or another problem occurred.", "Status: " + renderCount +  " equations replaced");
+            showError("Sorry, an equation is too long or (temporarily) unavailable commands like align were used.", "Status: " + renderCount +  " equations replaced");
           else if(flag == -2 && renderCount == 0)
-            showError("Sorry, the renderers are down, an equation is too long, or an equation is misformed.", "Status: " + renderCount +  " equations replaced");
+            showError("Sorry, likely (temporarily) unavailable commands like align were used or the equation was too long.", 
+                      "Status: " + "no" +  " equations replaced");
           else if(flag == 0 && renderCount == 0)
             $("#loading").html("Status: " + "No"          + " equations rendered");
           else if(flag == 0 && renderCount == 1)

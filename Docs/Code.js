@@ -12,6 +12,7 @@ var invalidEquationHashCodecogsFirst50   = "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD
 var invalidEquationHashCodecogsFirst50_2 = "";
 var invalidEquationHashTexrendrFirst50   = "GIF89a%uFFFD%008%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%";
 var invalidEquationHashTexrendrFirst50_2 = "GIF89a%01%00%01%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%0";
+var invalidEquationHashTexrendrFirst50_3 = "GIF89ai%0A%uFFFD%01%uFFFD%00%00%uFFFD%uFFFD%uFFFD%"; // this is the No Expression Supplied error. Ignored for now.
 var invalidEquationHashSciweaversFirst50 = "%0D%0A%09%3C%21DOCTYPE%20html%20PUBLIC%20%22-//W3C";
 
 // IntegratedApp = {
@@ -445,7 +446,8 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
 
  			reportDeltaTime(437);
 			
-			// var createFile = UrlFetchApp.fetch(renderer[2] + equation); // lol wtf why was this ever here -- goes to main url
+			var createFileInCache = UrlFetchApp.fetch(renderer[2] + equation); 
+			// needed for codecogs to generate equation properly, need to figure out which other renderers need this. to test, use align* equations.
  			
  			reportDeltaTime(441);
 			let didTimeOut = true;
@@ -458,7 +460,7 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
 
 			resp = UrlFetchApp.fetch(renderer[1]);
       		didTimeOut = false;
-      		console.log(resp, resp.getBlob(), escape(resp.getBlob().getDataAsString()))
+      		debugLog(resp, resp.getBlob(), escape(resp.getBlob().getDataAsString()).substring(0,50))
  			reportDeltaTime(444);
  			console.log("Hash ", escape(resp.getBlob().getDataAsString()).substring(0,50))
  			if(escape(resp.getBlob().getDataAsString()) == invalidEquationHashCodecogsFirst50_2){ // if there is no hash, codecogs failed
@@ -498,7 +500,7 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
 		}
 		if (failure == 0) break;
 	}
-	if (worked > 5) return -100000;
+	if (worked > 5) return [-100000, null];
 	// SAVING FORMATTING 
  	reportDeltaTime(479);
 	if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50){
@@ -526,11 +528,10 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
 		console.error(err)
 	}
 	try{
-	 	exterminationVar = setTimeout(function(){
-			paragraph.insertInlineImage(childIndex+1, logoBlob); // TODO ISSUE: sometimes fails because it times out and yeets
-			returnParams = repairImage(index, startElement, paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
-			return returnParams;
-		}, 1000);
+		Utilities.sleep(1000);
+		paragraph.insertInlineImage(childIndex+1, logoBlob); // TODO ISSUE: sometimes fails because it times out and yeets
+		returnParams = repairImage(index, startElement, paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
+		return returnParams;
 	} catch(err){
 		console.log("Could not insert image try 2 after 1000ms")
 		console.error(err)
@@ -665,8 +666,8 @@ function repairImage(index, startElement, paragraph, childIndex, size, defaultSi
 
 // NOTE: one indexed
 function getRenderer(worked) {//  order of execution ID, image URL, editing URL, in-line commandAt the beginning, in-line command at and, Human name, No Machine name substring
-	if (worked == 2) {return [2,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]}
-	else if (worked == 1) {return [1,"http://texrendr.com/cgi-bin/mathtex.cgi?%5Cdpi%7B1800%7DEQUATION","http://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr"]}//http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
+	if (worked == 1) {return [1,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]}
+	else if (worked == 2) {return [2,"http://texrendr.com/cgi-bin/mathtex.cgi?%5Cdpi%7B1800%7DEQUATION","http://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr"]}//http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
 	else if (worked == 6) {return [6,"https://texrendr.com/cgi-bin/mathtex.cgi?%5Cdpi%7B1800%7DEQUATION","https://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr"]}//http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
 	else if (worked == 3) {return [3,"http://rogercortesi.com/eqn/tempimagedir/_FILENAME.png","http://rogercortesi.com/eqn/index.php?filename=_FILENAME.png&outtype=png&bgcolor=white&txcolor=black&res=1800&transparent=1&antialias=0&latextext=","%5Ctextstyle%20%7B", "%7D", "Roger's renderer"]}//Filename has to not have any +, Avoid %,Instead use†‰, avoid And specific ASCII Percent codes
 	else if (worked == 4) {return [5,"http://latex.numberempire.com/render?EQUATION&sig=41279378deef11cbe78026063306e50d","http://latex.numberempire.com/render?","%5Ctextstyle%20%7B", "%7D", "Number empire"]} //has url at end
