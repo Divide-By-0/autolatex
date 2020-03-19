@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <title>Auto-Latex Equations</title>
+    <!-- Google Analytics -->
+    <script>
+//    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+//    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+//    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+//    })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+//    
+//    ga('create', 'UA-XXXXX-Y', 'auto');
+//    ga('send', 'pageview');
+    </script>
+    <!-- End Google Analytics -->
+
+    <meta name="description" content="Auto-Latex Equations - a Google Docs add-on to beautifully render math.">
+    <!-- <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no"> -->
+    <meta name="copyright" content="Aayush Gupta of Auto-Latex Equations. Contact me at autolatex@gmail.com." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">   
+    <!-- <meta name="apple-mobile-web-app-capable" content="yes"> -->
+    <!-- <meta name="apple-mobile-web-app-status-bar-style" content="black"> -->
+    <link rel="stylesheet" href="//ajax.googleapis.com/ajax/libs/jqueryui/1.10.4/themes/smoothness/jquery-ui.css" >
+    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons.css">
+    
+  </head>
+  <body>
+
+    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+    <!--  The CSS package above applies Google styling to buttons and other elements. -->
+    
+    <?!= HtmlService.createHtmlOutputFromFile('ALEStylesheet').getContent(); ?>
+
+    <div class="sidebar branding-below">
+      <form>
+        <div class="text" id="instructions">
+          <p>Replace all valid mathematical equations with high-quality LaTeX rendered images. Remember to wrap all latex in $$ ... $$. </p>
+        </div>
+        <div class="text" id="example">
+          <p>For example, $$3^{4^5} + \frac{1}{2}$$ would be a valid equation. Try using this sample to render your first equation!<br></p>
+        </div>
+        
+        <div class="block form-group">
+          <label id = "select_size">Select Size:</label>
+          <select id = "size" name = "size">
+            <option value = 'smart' selected>Automatic</option>
+            <option value = 'inline'>Inline</option>
+            <option value = 'med'>Font Size 24</option>
+            <option value = 'low'>Font Size 12</option>
+          </select>
+        </div> 
+        
+        <a href = "#" id = "advanced">Show Advanced Settings</a>
+        <div id="divDelimiters" style="display: none;"> <!-- style="display: inline-block;" or just style="display: block;" --> 
+          <label id = "select_size">Select Delimiter Style:<br></label> 
+          <select id = "delimit" name = "delimit">
+            <option value = '$$' selected>$$ ... $$</option> <!-- $("#instructions").val("<p>Replace all valid mathematical equations with high-quality LaTeX rendered images. Remember to wrap all latex in \[ ... \]. </p>"); -->
+            <option value = '\['>\[ ... \]</option>
+            <!--<option value = '$'>$ ... $</option>-->
+          </select>
+        </div>
+        
+        <div style="line-height: 90%;"><br></div>
+        
+        <div class="block" id="button-bar">
+          <div id="button-container" class="button-container">
+            <div id="button-row1" class="button-row1">
+              <button id="insert-text" class="action button-in-row1">Render Equations</button>
+              <button id="edit-text" class = "button-in-row1">De-render Equation</button>  <!-- style ="margin: 0; right: 0;" -->
+            </div>
+            <div id="button-row1" class="button-row1">
+              <button id="undo-all"  class="create button-in-row2">De-render All Equations</button> <!-- style ="width: 100%; margin: 4px 0 0 0; top: 10; right: 0;" -->
+            </div>
+          </div>
+          <!-- <button id="edit-text" class="error" style ="margin: 0; right: 0;"> </button> -->
+          <!--<button id="derender-type" style ="margin: 0; left: 0; min-width: 7px;padding:2px">▼</button>
+                <div class="dropdown">
+                  <button class="dropbtn">d▼</button>
+                  <div id="renderList" class="dropdown-content">
+                    <a href="#">Link 1</a>
+                    <a href="#">Link 2</a>
+                  </div>
+                </div>
+          <button id="undo-all" class = "action">De-render All</button>-->
+        </div>
+        <div>
+           <span id = "loading" style="font-weight:bold">Status: Idle</span>
+        </div>
+        
+        <div>
+           <label id="tips"> <br> <b>Tips:</b>
+           <br> • Place your cursor right before the equation and click "De-render Equation" to convert back to code.
+           <br> • Use shift+enter instead of enter for newlines within multi-line equations.
+           <!-- <br> • Click the sidebar and press ctrl+q to derender all equations. (beta) -->
+           <br> • 'Automatic' size matches the typed font size.
+           <br> • 'Inline' size compresses your equation height.
+           <br> • Check out the latest <a href = "https://sites.google.com/site/autolatexequations/">2020 Update Notes</a>.
+           <br> • Find a full list of commands at <a href="http://www.codecogs.com/eqnedit.php">CodeCogs</a>.
+           <br> • Problems? Check the <a href="autolatex.com/faq">FAQ</a>, email <a href="mailto:autolatex@gmail.com">autolatex@gmail.com</a>, or check updates on <a href="https://www.facebook.com/autolatex/">facebook</a>.
+           <br> • I'd love a <a href="https://chrome.google.com/webstore/detail/auto-latex-equations/iaainhiejkciadlhlodaajgbffkebdog?ref=sidebar_review" target="_blank" >5 star review here</a>!
+           <br> • Please donate any amount below to help keep this updated!
+           </label>
+        </div>
+        </form>
+        <div class="credit_images">
+          <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=HXKZRXVKTRMN2&source=url" target="_blank">
+              <img src="https://i.ibb.co/d2pJpb3/Donate-Button.png" width="100" height="34" alt="Donate"/>
+          </a> <br>
+           <!-- <form action="https://www.paypal.com/cgi-bin/webscr" method="post" target="_top">
+             <input type="hidden" name="cmd" value="_s-xclick">
+             <input type="hidden" name="hosted_button_id" value="G969BYJC36KVN">
+             <input type="image" id="donate_button" src="https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif" border="0" name="submit" alt="PayPal - The safer, easier way to pay online!">
+             <img alt="" border="0" src="https://www.paypalobjects.com/en_US/i/scr/pixel.gif" width="1" height="1">
+           </form> old donate button -->
+           <img alt="CodeCogs logo"  class="logo1" src="https://www.codecogs.com/images/poweredbycc.gif">
+           <img alt="TexRendr logo" class="logo2" src="https://i.imgur.com/2pOfX3H.png">
+        </div>
+        <!--<iframe src="https://www.facebook.com/plugins/like.php?href=https%3A%2F%2Fwww.facebook.com%2Fautolatex%2F&width=185&layout=button_count&action=like&size=small&show_faces=false&share=false&height=46&appId" width="250" height="46" style="border:none;overflow:hidden;float:center" scrolling="no" frameborder="0" allowTransparency="true"></iframe>-->
+        
+    </div>
+    
+    <div class="sidebar bottom" style="text-align:center;bottom:4px;display: table-cell;vertical-align: bottom;position:fixed">
+      <!--<a href="http://autolatex.com/faq" class="small center" target="_blank">Help</a>-->
+    </div>
+    <script type="text/javascript" src="/nhpup_1.1.js"></script>
+    <?!= HtmlService.createHtmlOutputFromFile('SidebarJS').getContent(); ?>
+    
+  </body>
+</html>
