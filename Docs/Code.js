@@ -137,7 +137,8 @@ function encodeFlag(flag, renderCount){
 	} catch (error) {
   	console.error(error);
 		return encodeFlag(-1, 0)
-	}
+	}	
+	
 	let childCount = body.getBody().getParent().getNumChildren();
  	reportDeltaTime(138);
 	for (var index = 0; index < childCount; index++){
