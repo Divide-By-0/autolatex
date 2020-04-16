@@ -103,9 +103,9 @@
           if(flag == -1)
             showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", "Status: " + renderCount +  " equations replaced");
           else if(flag == -2 && renderCount > 0)
-            showError("Sorry, an equation is too long or (temporarily) unavailable commands like align were used.", "Status: " + renderCount +  " equations replaced");
+            showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used.", "Status: " + renderCount +  " equations replaced");
           else if(flag == -2 && renderCount == 0)
-            showError("Sorry, likely (temporarily) unavailable commands like align were used or the equation was too long.", 
+            showError("Sorry, likely (temporarily) unavailable commands (i.e. align, &) were used or the equation was too long.", 
                       "Status: " + "no" +  " equations replaced");
           else if(flag == 0 && renderCount == 0)
             $("#loading").html("Status: " + "No"          + " equations rendered");
@@ -119,7 +119,7 @@
           $("#loading").html('');
           clearInterval(runDots);
           console.error("Error console errored!", msg, element)
-          showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page.", "Status: Error, please reload.");
+          showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts.", "Status: Error, please reload.");
           element.disabled = false;
         })
       .withUserObject(this)
