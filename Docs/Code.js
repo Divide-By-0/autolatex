@@ -16,6 +16,7 @@ var invalidEquationHashCodecogsFirst50   = "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD
 var invalidEquationHashCodecogsFirst50_2 = "";
 var invalidEquationHashCodecogsFirst50_3 = "%uFFFDPNG%0D%0A%1A%0A%00%00%00%0DIHDR%00%00%00%01%"; // this is one space in codecogs. not pushed yet.
 var invalidEquationHashCodecogsFirst50_4 = "GIF89a%01%00%01%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%0";
+var invalidEquationHashCodecogsFirst50_5 = "%uFFFDPNG%0D%0A%1A%0A%00%00%00%0DIHDR%00%00%00z%00";
 var invalidEquationHashTexrendrFirst50   = "GIF89a%uFFFD%008%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%";
 var invalidEquationHashTexrendrFirst50_2 = "GIF89a%01%00%01%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%0";
 var invalidEquationHashTexrendrFirst50_3 = "GIF89ai%0A%uFFFD%01%uFFFD%00%00%uFFFD%uFFFD%uFFFD%"; // this is the No Expression Supplied error. Ignored for now.
@@ -458,10 +459,10 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
 				// console.log("Used texrendr", equation, equation.replace("%5C%5C", "%0D"))
 				equation = equation.split("%A0").join("%0D") //.replace("%5C%5C", "%0D") .replace("%C2%AD", "%0D")
 			} else if(rendererType == "Codecogs"){
-				console.log("Used Codecogs", equation, equation.split("%5C%5C%5C%5C").join("%5C%5C")) 
+				// console.log("Used Codecogs", equation, equation.split("%5C%5C%5C%5C").join("%5C%5C")) 
 				equation = equation.split("%5C%5C%5C%5C").join("%5C%5C") //.replace("%A0", "%0D") .replace("%C2%AD", "%0D")
 			} else if(rendererType == "Sciweavers"){
-				console.log("Used Codecogs", equation, equation.split("%5C%5C%5C%5C").join("%5C%5C")) 
+				// console.log("Used Sciweavers", equation, equation.split("%5C%5C%5C%5C").join("%5C%5C")) 
 				equation = equation.split("%5C%5C%5C%5C").join("%5C%5C") //.replace("%A0", "%0D") .replace("%C2%AD", "%0D")
 			}
 			
@@ -481,7 +482,7 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
 			var _createFileInCache = UrlFetchApp.fetch(renderer[2] + renderer[6] + equation); 
 			// needed for codecogs to generate equation properly, need to figure out which other renderers need this. to test, use align* equations.
  			
- 			reportDeltaTime(458);
+ 			reportDeltaTime(458, " fetching w eqn len " + equation.length + " with renderer " + rendererType);
 			let didTimeOut = true;
 			if(rendererType == "Codecogs" || rendererType == "Sciweavers"){
 				Utilities.sleep(50); // sleep 50ms to let codecogs put the equation in its cache
@@ -490,11 +491,6 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
       		didTimeOut = false;
       		debugLog(resp, resp.getBlob(), escape(resp.getBlob().getDataAsString()).substring(0,50))
  			deltaTime = reportDeltaTime(470, " equation link length " + renderer[1].length + " and renderer  " + rendererType);
- 			if(deltaTime > 5000 && rendererType == 'Codecogs' && renderer[0] == 1){
- 				console.log("Codecogs is slow! Switching renderer priority.")
- 				codecogsSlow = 1;
- 			}
-
  			console.log("Hash ", escape(resp.getBlob().getDataAsString()).substring(0,50))
  			if(escape(resp.getBlob().getDataAsString()) == invalidEquationHashCodecogsFirst50_2){ // if there is no hash, codecogs failed
  				throw new Error('Saw NO Codecogs equation hash! Renderer likely down!');
@@ -502,7 +498,7 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
  			else if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashSciweaversFirst50){ // if there is no hash, codecogs failed
  				throw new Error('Saw weburl Sciweavers equation hash! Equation likely contains amsmath!');
  			}
-			else if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50_3 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50_4){
+			else if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50_3 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50_4 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50_5){
 				console.log("Invalid Codecogs Equation!")
 				failedCodecogsAndTexrendr += 1;
 				failedResp = resp;
@@ -525,11 +521,16 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
 					throw new Error('Saw invalid Texrendr equation hash!');
 				}
 			}
+ 			if(deltaTime > 10000 && rendererType == 'Codecogs' && renderer[0] <= 3){
+ 				console.log("Codecogs accurate but is slow! Switching renderer priority.")
+ 				codecogsSlow = 1;
+ 			}
 			failure = 0;
-			console.log("Worked with renderer ", worked);
+			console.log("Worked with renderer ", worked, " and type ", rendererType);
 			break;
 		} catch(err) {
 			console.log(rendererType + " Error! - " + err);
+ 			deltaTime = reportDeltaTime(533, " failed equation link length " + renderer[1].length + " and renderer  " + rendererType);
  			if(rendererType == 'Texrendr'){ // equation.indexOf("align")==-1 &&  removed since align now supported
 				console.log("Texrendr likely down, deprioritized!")
 				texrendrDown = 1
@@ -717,11 +718,11 @@ function getRenderer(worked) {//  order of execution ID, image URL, editing URL,
 	codeCogsPriority = 1
 	sciWeaverPriority = 4
 	texRenderPriority = 5
-	// if(codecogsSlow){
-		// codeCogsPriority = 3
-		// texRenderPriority = 1
-		// sciWeaverPriority = 2
-	// } //t , c, s
+	if(codecogsSlow){
+		sciWeaverPriority = 1
+		codeCogsPriority = 3
+		texRenderPriority = 2
+	} //t , c, s
 	// if(texrendrDown){
 	// 	temp = sciWeaverPriority
 	// 	sciWeaverPriority = texRenderPriority
@@ -734,8 +735,8 @@ function getRenderer(worked) {//  order of execution ID, image URL, editing URL,
 	capableRenderers = 8
 	capableDerenderers = 12
 	if (worked == codeCogsPriority) {return [codeCogsPriority, "https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"]}
-	else if (worked == codeCogsPriority + 1) {return [codeCogsPriority + 1, "https://latex.codecogs.com/gif.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"]}
-	else if (worked == codeCogsPriority + 2) {return [codeCogsPriority + 2, "https://latex-staging.easygenerator.com/gif.latex?%5Cdpi%7B900%7DEQUATION","https://latex-staging.easygenerator.com/eqneditor/editor.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"]}
+	else if (worked == codeCogsPriority + 1) {return [codeCogsPriority + 1, "https://latex-staging.easygenerator.com/gif.latex?%5Cdpi%7B900%7DEQUATION","https://latex-staging.easygenerator.com/eqneditor/editor.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"]}
+	else if (worked == codeCogsPriority + 2) {return [codeCogsPriority + 2, "https://latex.codecogs.com/gif.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"]}
 	else if (worked == texRenderPriority) {return [texRenderPriority, "http://texrendr.com/cgi-bin/mimetex?%5CHuge%20EQUATION","http://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr", ""]}//http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
 	else if (worked == sciWeaverPriority) {return [sciWeaverPriority, "http://www.sciweavers.org/tex2img.php?bc=Transparent&fc=Black&im=jpg&fs=100&ff=modern&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=Transparent&fc=Black&im=jpg&fs=100&ff=modern&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers", ""]} //not latex font
 	else if (worked == 6) {return [6,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D", ""]}
