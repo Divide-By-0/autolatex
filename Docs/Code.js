@@ -443,7 +443,8 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
 	var rendererType ="";
 	
 
-	var failedCodecogsAndTexrendr = 0;
+	var failedCodecogs = 0;
+	var failedTexrendr = 0;
 	var failedResp;
 	// if only failed codecogs, probably weird evening bug from 10/15/19
 	// if failed codecogs and texrendr, probably shitty equation and the codecogs error is more descriptive so show it
@@ -499,10 +500,10 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
  				throw new Error('Saw weburl Sciweavers equation hash! Equation likely contains amsmath!');
  			}
 			else if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50_3 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50_4 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50_5){
-				console.log("Invalid Codecogs Equation!")
-				failedCodecogsAndTexrendr += 1;
+				console.log("Invalid Codecogs Equation! Times: " + failedCodecogs + failedTexrendr)
+				failedCodecogs += 1;
 				failedResp = resp;
-				if(failedCodecogsAndTexrendr == 2){ // if in order so failed codecogs first
+				if(failedCodecogs && failedTexrendr){ // if in order so failed codecogs first
 					console.log("Displaying codecogs error!")
 					resp = failedResp // let it continue to completion with the failed codecogs equation
 				}
@@ -511,9 +512,9 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
 				}
 			} // have no idea if I can put an else here or not lol
 			if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashTexrendrFirst50 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashTexrendrFirst50_2 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashTexrendrFirst50_3 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashTexrendrFirst50_4){
-				console.log("Invalid Texrendr Equation! Times: " + failedCodecogsAndTexrendr)
-				failedCodecogsAndTexrendr += 1
-				if(failedCodecogsAndTexrendr == 2){ // if in order so failed codecogs first
+				console.log("Invalid Texrendr Equation! Times: " + failedCodecogs + failedTexrendr)
+				failedTexrendr += 1
+				if(failedCodecogs && failedTexrendr){ // if in order so failed codecogs first
 					console.log("Displaying Texrendr error!")
 					resp = failedResp // let it continue to completion with the failed codecogs equation
 				}
@@ -746,7 +747,7 @@ function getRenderer(worked) {//  order of execution ID, image URL, editing URL,
 	else if (worked == 10) {return [10,"https://texrendr.com/cgi-bin/mathtex.cgi?%5Cdpi%7B1800%7DEQUATION","https://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr", ""]} // here to de render legacy equations properly,  //http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
 	else if (worked == 11) {return [11,"http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=arev&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=arev&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers_old", ""]} // here to de render legacy equations properly, don't remove without migrating to correct font!
 	else if (worked == 12) {return [12,"http://latex.numberempire.com/render?EQUATION&sig=41279378deef11cbe78026063306e50d","http://latex.numberempire.com/render?","%5Ctextstyle%20%7B", "%7D", "Number empire", ""]} // to de render possibly very old equations
-	else return [0,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"]
+	else return [13,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"]
 }//http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=txfonts&edit=0&eq=
 /**
  * Given string of size, return integer value.
