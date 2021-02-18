@@ -186,15 +186,15 @@ function assert(value, command="unspecified"){
 }
 
 //encode function that gets Missed. Google Docs characters stuff 
-function getCustomEncode(equation, direction, time){
-  // there are two sublists because they happen at differeent times (on encode or decoded string). In addition, the second set is one way due to typing errors/unsupported characters.
+function getCustomEncode(equation, direction, group){
+  // there are two sublists because they happen at different times (on encode or decoded string). The first set is bi-directional. The second set is one way (only encoded) due to typing errors/unsupported characters.
   var toFind    = [["#", "+", "%0D"], ["\‘", "\’", "”", "“", "−", "≥", "≤", "‐", "—"]];
   var toReplace = [["+%23", "+%2B", "%A0"], ["'", "'", "\"", "\"", "-", "\\geq", "\\leq", "-", "-"]];//&hash;&plus; todo ≥ with \geq
-  assert(toFind[time].length == toReplace[time].length, "toFind[time].length == toReplace[time].length");
-  for(var i = 0; i < toFind[time].length; ++i){
-    if (direction == 0) equation = equation.split(toFind[time][i]).join(toReplace[time][i]);
-    else if (direction == 1 && time == 0) { // the single, double quotes, and hyphens should stay minus signs.
-      equation = equation.split(toReplace[time][i]).join(toFind[time][i]);
+  assert(toFind[group].length == toReplace[group].length, "toFind[group].length == toReplace[group].length");
+  for(var i = 0; i < toFind[group].length; ++i){
+    if (direction == 0) equation = equation.split(toFind[group][i]).join(toReplace[group][i]);
+    else if (direction == 1 && group == 0) { // the single, double quotes, and hyphens should stay minus signs.
+      equation = equation.split(toReplace[group][i]).join(toFind[group][i]);
     }
   }
   return equation;
