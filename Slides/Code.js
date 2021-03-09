@@ -157,16 +157,20 @@ function findTextOffsetInSlide(str, search, offset = 0){
 
 function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline){
   debugLog("Checking document slideNum, shapeNum # " + slideNum + " " + shapeNum)
-  var slide = getShapeFromIndices(slideNum, shapeNum);
-  if(slide == null){
+  var shape = getShapeFromIndices(slideNum, shapeNum);
+  if(shape == null){
     return [0, 0];
   }
-  slideText = slide.getText();
-  var startElement = slide.find(delim[2]);
-  if(startElement==null) return [0, 0];  //didn't find first delimiter
-  var placeHolderStart = findTextOffsetInSlide(slideText, delim[2], 0); //position of image insertion
+  slideText = shape.getText();
+  // debugLog("Text of the shape is:" + slideText.asRenderedString());
+  // debugLog("delim[2] is:" + delim);
 
-  var endElement = slide.findText(delim[3], startElement);
+  var startElement = slideText.find(delim[2]);
+
+  if(startElement==null) return [0, 0];  //didn't find first delimiter
+  var placeHolderStart = findTextOffsetInSlide(slideText.asRenderedString(), delim[2], 0); //position of image insertion
+  // debugLog(placeHolderStart);
+  var endElement = slideText.findText(delim[3], startElement); // delim[3], textrange[]
   if(endElement==null) return [0, 0];//didn't find end delimiter (maybe make error different?)
   var placeHolderEnd = endElement.getEndOffsetInclusive(); //text between placeHolderStart and placeHolderEnd will be permanently deleted
   debugLog(delim[2] + " single escaped delimiters " + (placeHolderEnd - placeHolderStart) + " characters long");
@@ -186,15 +190,15 @@ function assert(value, command="unspecified"){
 }
 
 //encode function that gets Missed. Google Docs characters stuff 
-function getCustomEncode(equation, direction, group){
-  // there are two sublists because they happen at different times (on encode or decoded string). The first set is bi-directional. The second set is one way (only encoded) due to typing errors/unsupported characters.
+function getCustomEncode(equation, direction, time){
+  // there are two sublists because they happen at differeent times (on encode or decoded string). In addition, the second set is one way due to typing errors/unsupported characters.
   var toFind    = [["#", "+", "%0D"], ["\‘", "\’", "”", "“", "−", "≥", "≤", "‐", "—"]];
   var toReplace = [["+%23", "+%2B", "%A0"], ["'", "'", "\"", "\"", "-", "\\geq", "\\leq", "-", "-"]];//&hash;&plus; todo ≥ with \geq
-  assert(toFind[group].length == toReplace[group].length, "toFind[group].length == toReplace[group].length");
-  for(var i = 0; i < toFind[group].length; ++i){
-    if (direction == 0) equation = equation.split(toFind[group][i]).join(toReplace[group][i]);
-    else if (direction == 1 && group == 0) { // the single, double quotes, and hyphens should stay minus signs.
-      equation = equation.split(toReplace[group][i]).join(toFind[group][i]);
+  assert(toFind[time].length == toReplace[time].length, "toFind[time].length == toReplace[time].length");
+  for(var i = 0; i < toFind[time].length; ++i){
+    if (direction == 0) equation = equation.split(toFind[time][i]).join(toReplace[time][i]);
+    else if (direction == 1 && time == 0) { // the single, double quotes, and hyphens should stay minus signs.
+      equation = equation.split(toReplace[time][i]).join(toFind[time][i]);
     }
   }
   return equation;
@@ -335,10 +339,9 @@ function getShapeFromIndices(slideNum, shapeNum){
   assert(slideNum < all, "slideNum < all")
   body = doc[slideNum];
   shapes = body.getShapes();
-  assert(shapeNum < shapes.length, "shapeNum < shapes.length")
-  console.log(shapes[shapeNum].getType(), shapes[shapeNum].asShape().getType())
-  shape = shapes[shapeNum].asShape();
-  type = shape.getType();
+  assert(shapeNum < shapes.length, "shapeNum < shapes.length");
+  shape = shapes[shapeNum];
+  type = shape.getShapeType();
   if(type === SlidesApp.ShapeType.TEXT_BOX) { // handles alternating footers etc.
     return shape;
   }
@@ -625,7 +628,7 @@ function getNumDelimiters(delimiters){// //HARDCODED DELIMTERS!!!!!!!!!!!!!
 
 function debugLog(string){
   if(DEBUG){
-    console.log(string);
+    console.log("DebugLog: " + string);
   }
 }
 
