@@ -189,9 +189,51 @@ function assert(value, command="unspecified"){
   }
 }
 
+/////////////////////////////////////////////////////////
+
+function selectText(slideNum, shapeNum, delim, quality, size, defaultSize, isInline){
+  // find shape
+  debugLog("Checking document slideNum, shapeNum # " + slideNum + " " + shapeNum)
+  var shape = getShapeFromIndices(slideNum, shapeNum);
+  if(shape == null){
+    return [0, 0];
+  }
+  slideText = shape.getText();
+  // debugLog("Text of the shape is:" + slideText.asRenderedString());
+  // debugLog("delim[2] is:" + delim);
+
+  // get index of startElement and endElement using highlight or mouse cursor select 
+  document.getElementById('ip').addEventListener('mouseup',function(e){
+        var txt = this.innerText;
+        var selection = window.getSelection();
+
+        var placeHolderStart = selection.anchorOffset; // get start index
+        var startElement = placeHolderStart; // set startElement equal to placeHolderStart
+        var placeHolderEnd = selection.focusOffset; // get end index
+        if (placeHolderStart >= 0 && placeHolderEnd >= 0){
+    	    console.log("start: " + placeHolderStart);
+    	    console.log("end: " + placeHolderEnd);
+          debugLog((placeHolderEnd - placeHolderStart) + " characters long"); //output string length
+        }
+  });
+
+  // error messages
+  if(placeHolderEnd - placeHolderStart == 2.0) { // empty equation
+    console.log("Empty equation!");
+    return [defaultSize, 1]; // default behavior of placeImage
+  }
+  // place image
+  return placeImage(slideNum, shapeNum, startElement, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline);
+
+
+}
+
+
+///////////////////////////////////////////////
+
 //encode function that gets Missed. Google Docs characters stuff 
 function getCustomEncode(equation, direction, time){
-  // there are two sublists because they happen at differeent times (on encode or decoded string). In addition, the second set is one way due to typing errors/unsupported characters.
+  // there are two sublists because they happen at different times (on encode or decoded string). In addition, the second set is one way due to typing errors/unsupported characters.
   var toFind    = [["#", "+", "%0D"], ["\‘", "\’", "”", "“", "−", "≥", "≤", "‐", "—"]];
   var toReplace = [["+%23", "+%2B", "%A0"], ["'", "'", "\"", "\"", "-", "\\geq", "\\leq", "-", "-"]];//&hash;&plus; todo ≥ with \geq
   assert(toFind[time].length == toReplace[time].length, "toFind[time].length == toReplace[time].length");
