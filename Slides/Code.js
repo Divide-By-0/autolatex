@@ -141,6 +141,51 @@ function findTextOffsetInSlide(str, search, offset = 0){
   return encodeFlag(0, c)
 }
 
+///////////////////////////////////////////////////////
+
+function replaceSingleEquation(sizeRaw, delimiter){
+  // var obj = {flag: -2, renderCount: 0};
+  // return obj;
+  var quality = 900;
+  var size = getSize(sizeRaw);
+  var isInline = false;
+  if(size < 0){
+    isInline = true;
+    size = 0;
+  } 
+  var delim = getDelimiters(delimiter);
+  savePrefs(sizeRaw, delimiter);
+  var c = 0;  //counter
+  var defaultSize = 11;
+  var allEmpty = 0;
+  try{
+    let body = IntegratedApp.getActive();
+  } catch (error) {
+    console.error(error);
+    return encodeFlag(-1, 0)
+  }
+  let slides = IntegratedApp.getBody()
+  // console.log(typeof IntegratedApp.getBody())
+  let childCount = slides.length;
+  console.log("Children: ", childCount)
+        const [gotSize, isEmpty] = selectText(slideNum, shapeNum, delim, quality, size, defaultSize, isInline);   //or: "\\\$\\\$", "\\\$\\\$"
+        allEmpty = isEmpty ? allEmpty + isEmpty : 0
+  
+        if(allEmpty > 50) break; //Assume we quit on 50 consecutive empty equations.
+  
+        if(gotSize == -100000)   // means all renderers fucked.
+          return encodeFlag(-2, c);                                   // instead, return pair of number and bool flag
+  
+        if(gotSize == 0) break; // finished with renders in this section
+  
+        defaultSize = gotSize;
+        c = c + 1 - isEmpty;                    // # of equations += 1 except empty equations
+    }
+  }
+  return encodeFlag(0, c)
+}
+
+//////////////////////////////////////
 /**
  * Get position of insertion then place the image there.
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order. E.g. ["\\[", "\\]", "\\\\\\[", "\\\\\\]", 2, 1, 1]
@@ -216,6 +261,8 @@ function selectText(slideNum, shapeNum, delim, quality, size, defaultSize, isInl
           debugLog((placeHolderEnd - placeHolderStart) + " characters long"); //output string length
         }
   });
+
+
 
   // error messages
   if(placeHolderEnd - placeHolderStart == 2.0) { // empty equation
@@ -711,6 +758,7 @@ function removeAll(delimRaw) {
       }
       var last2 = origURL.slice(-2);
       var delimtype = 0;
+      // last 2 characters appended to url indicate the $$ ]] for rendering
       if(last2.length > 1 && (last2.charAt(0) == '%' || last2.charAt(0) == '#') && last2.charAt(1) >= '0' && last2.charAt(1) <= '9'){ //rendered with updated renderer
         debugLog("Passed: " + last2);
         delimtype = last2.charAt(1) - '0';
