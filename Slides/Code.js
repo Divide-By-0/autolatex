@@ -90,8 +90,10 @@ function encodeFlag(flag, renderCount){
   return ans
 }
 function findTextOffsetInSlide(str, search, offset = 0){
-  return str.substring(offset).indexOf(search)
+  debugLog("str: " + str.substring(offset) + " search: " + search);
+  return str.substring(offset).indexOf(search) + offset;
 }
+
 /**
  * Constantly keep replacing latex till all are finished
  */
@@ -119,7 +121,7 @@ function findTextOffsetInSlide(str, search, offset = 0){
   let slides = IntegratedApp.getBody()
   // console.log(typeof IntegratedApp.getBody())
   let childCount = slides.length;
-  console.log("Children: ", childCount)
+  // console.log("Children: ", childCount)
   for (var slideNum = 0; slideNum < childCount; slideNum++){
     for (var shapeNum = 0; shapeNum < slides[slideNum].getShapes().length; shapeNum++){
       while(true){
@@ -141,51 +143,6 @@ function findTextOffsetInSlide(str, search, offset = 0){
   return encodeFlag(0, c)
 }
 
-///////////////////////////////////////////////////////
-
-function replaceSingleEquation(sizeRaw, delimiter){
-  // var obj = {flag: -2, renderCount: 0};
-  // return obj;
-  var quality = 900;
-  var size = getSize(sizeRaw);
-  var isInline = false;
-  if(size < 0){
-    isInline = true;
-    size = 0;
-  } 
-  var delim = getDelimiters(delimiter);
-  savePrefs(sizeRaw, delimiter);
-  var c = 0;  //counter
-  var defaultSize = 11;
-  var allEmpty = 0;
-  try{
-    let body = IntegratedApp.getActive();
-  } catch (error) {
-    console.error(error);
-    return encodeFlag(-1, 0)
-  }
-  let slides = IntegratedApp.getBody()
-  // console.log(typeof IntegratedApp.getBody())
-  let childCount = slides.length;
-  console.log("Children: ", childCount)
-        const [gotSize, isEmpty] = selectText(slideNum, shapeNum, delim, quality, size, defaultSize, isInline);   //or: "\\\$\\\$", "\\\$\\\$"
-        allEmpty = isEmpty ? allEmpty + isEmpty : 0
-  
-        if(allEmpty > 50) break; //Assume we quit on 50 consecutive empty equations.
-  
-        if(gotSize == -100000)   // means all renderers fucked.
-          return encodeFlag(-2, c);                                   // instead, return pair of number and bool flag
-  
-        if(gotSize == 0) break; // finished with renders in this section
-  
-        defaultSize = gotSize;
-        c = c + 1 - isEmpty;                    // # of equations += 1 except empty equations
-    }
-  }
-  return encodeFlag(0, c)
-}
-
-//////////////////////////////////////
 /**
  * Get position of insertion then place the image there.
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order. E.g. ["\\[", "\\]", "\\\\\\[", "\\\\\\]", 2, 1, 1]
@@ -201,24 +158,30 @@ function replaceSingleEquation(sizeRaw, delimiter){
 
 
 function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline){
-  debugLog("Checking document slideNum, shapeNum # " + slideNum + " " + shapeNum)
+  // debugLog("Checking document slideNum, shapeNum # " + slideNum + " " + shapeNum)
   var shape = getShapeFromIndices(slideNum, shapeNum);
   if(shape == null){
     return [0, 0];
   }
-  slideText = shape.getText();
+  slideText = shape.getText(); // TextRange
   // debugLog("Text of the shape is:" + slideText.asRenderedString());
   // debugLog("delim[2] is:" + delim);
 
   var startElement = slideText.find(delim[2]);
-
+  
   if(startElement==null) return [0, 0];  //didn't find first delimiter
-  var placeHolderStart = findTextOffsetInSlide(slideText.asRenderedString(), delim[2], 0); //position of image insertion
-  // debugLog(placeHolderStart);
-  var endElement = slideText.findText(delim[3], startElement); // delim[3], textrange[]
-  if(endElement==null) return [0, 0];//didn't find end delimiter (maybe make error different?)
-  var placeHolderEnd = endElement.getEndOffsetInclusive(); //text between placeHolderStart and placeHolderEnd will be permanently deleted
-  debugLog(delim[2] + " single escaped delimiters " + (placeHolderEnd - placeHolderStart) + " characters long");
+  // debugLog(startElement[0].asString());
+  var placeHolderStart = findTextOffsetInSlide(slideText.asRenderedString(), delim[1], 0); //position of image insertion
+  var placeHolderEnd = findTextOffsetInSlide(slideText.asRenderedString(), delim[1], 2);
+  // var endElement = slideText.find(delim[3], 2); // string, textrange; return RangeElement
+  // if(endElement==null) return [0, 0];//didn't find end delimiter (maybe make error different?)
+
+  // debugLog("StartElement: " + startElement);
+  // debugLog("EndElement: " + endElement);
+
+  // var placeHolderEnd = endElement.getEndOffsetInclusive(); //text between placeHolderStart and placeHolderEnd will be permanently deleted
+  debugLog(placeHolderStart + " " + placeHolderEnd);
+  debugLog(delim[1] + " single escaped delimiters " + (placeHolderEnd - placeHolderStart) + " characters long");
 
   if(placeHolderEnd - placeHolderStart == 2.0) { // empty equation
     console.log("Empty equation!");
@@ -238,7 +201,7 @@ function assert(value, command="unspecified"){
 
 function selectText(slideNum, shapeNum, delim, quality, size, defaultSize, isInline){
   // find shape
-  debugLog("Checking document slideNum, shapeNum # " + slideNum + " " + shapeNum)
+  // debugLog("Checking document slideNum, shapeNum # " + slideNum + " " + shapeNum)
   var shape = getShapeFromIndices(slideNum, shapeNum);
   if(shape == null){
     return [0, 0];
@@ -261,8 +224,6 @@ function selectText(slideNum, shapeNum, delim, quality, size, defaultSize, isInl
           debugLog((placeHolderEnd - placeHolderStart) + " characters long"); //output string length
         }
   });
-
-
 
   // error messages
   if(placeHolderEnd - placeHolderStart == 2.0) { // empty equation
@@ -429,7 +390,12 @@ function getShapeFromIndices(slideNum, shapeNum){
   body = doc[slideNum];
   shapes = body.getShapes();
   assert(shapeNum < shapes.length, "shapeNum < shapes.length");
-  shape = shapes[shapeNum];
+  var shape;
+  if(shapeNum < shapes.length){
+    shape = shapes[shapeNum];
+  } else {
+    return null;
+  }
   type = shape.getShapeType();
   if(type === SlidesApp.ShapeType.TEXT_BOX) { // handles alternating footers etc.
     return shape;
@@ -758,7 +724,6 @@ function removeAll(delimRaw) {
       }
       var last2 = origURL.slice(-2);
       var delimtype = 0;
-      // last 2 characters appended to url indicate the $$ ]] for rendering
       if(last2.length > 1 && (last2.charAt(0) == '%' || last2.charAt(0) == '#') && last2.charAt(1) >= '0' && last2.charAt(1) <= '9'){ //rendered with updated renderer
         debugLog("Passed: " + last2);
         delimtype = last2.charAt(1) - '0';
