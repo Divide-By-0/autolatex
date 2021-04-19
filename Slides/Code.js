@@ -158,37 +158,38 @@ function findTextOffsetInSlide(str, search, offset = 0){
 
 
 function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline){
-  // debugLog("Checking document slideNum, shapeNum # " + slideNum + " " + shapeNum)
+  // get the shape (shapeNum) on the given slide (slideNum)
   var shape = getShapeFromIndices(slideNum, shapeNum);
   if(shape == null){
     return [0, 0];
   }
-  slideText = shape.getText(); // TextRange
-  // debugLog("Text of the shape is:" + slideText.asRenderedString());
-  // debugLog("delim[2] is:" + delim);
 
-  var startElement = slideText.find(delim[2]);
+  // Get the text of the shape.
+  shapeText = shape.getText(); // TextRange
+  debugLog("Text in the shape: " + shapeText.asString());
+
+  debugLog("Looking for delimiter :" + delim[2] + " in text");
+  var checkForDelimiter = shapeText.find(delim[2]);  // TextRange[]
+
+  if(checkForDelimiter == null) 
+    return [0, 0];  // didn't find first delimiter
+
+
+  // start position of image
+  var placeHolderStart = findTextOffsetInSlide(shapeText.asRenderedString(), delim[1], 0); 
   
-  if(startElement==null) return [0, 0];  //didn't find first delimiter
-  // debugLog(startElement[0].asString());
-  var placeHolderStart = findTextOffsetInSlide(slideText.asRenderedString(), delim[1], 0); //position of image insertion
-  var placeHolderEnd = findTextOffsetInSlide(slideText.asRenderedString(), delim[1], 2);
-  // var endElement = slideText.find(delim[3], 2); // string, textrange; return RangeElement
-  // if(endElement==null) return [0, 0];//didn't find end delimiter (maybe make error different?)
+  // end position till of image 
+  var placeHolderEnd = findTextOffsetInSlide(shapeText.asRenderedString(), delim[1], 2); 
 
-  // debugLog("StartElement: " + startElement);
-  // debugLog("EndElement: " + endElement);
-
-  // var placeHolderEnd = endElement.getEndOffsetInclusive(); //text between placeHolderStart and placeHolderEnd will be permanently deleted
-  debugLog(placeHolderStart + " " + placeHolderEnd);
-  debugLog(delim[1] + " single escaped delimiters " + (placeHolderEnd - placeHolderStart) + " characters long");
+  debugLog("Image will be inserted between " + placeHolderStart + " " + placeHolderEnd);
+  debugLog("Text to be replaced is " + (placeHolderEnd - placeHolderStart) + " characters long");
 
   if(placeHolderEnd - placeHolderStart == 2.0) { // empty equation
     console.log("Empty equation!");
     return [defaultSize, 1]; // default behavior of placeImage
   }
 
-  return placeImage(slideNum, shapeNum, startElement, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline);
+  return placeImage(slideNum, shapeNum, shapeText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline);
 }
 
 function assert(value, command="unspecified"){
@@ -206,17 +207,17 @@ function selectText(slideNum, shapeNum, delim, quality, size, defaultSize, isInl
   if(shape == null){
     return [0, 0];
   }
-  slideText = shape.getText();
-  // debugLog("Text of the shape is:" + slideText.asRenderedString());
+  shapeText = shape.getText();
+  // debugLog("Text of the shape is:" + shapeText.asRenderedString());
   // debugLog("delim[2] is:" + delim);
 
-  // get index of startElement and endElement using highlight or mouse cursor select 
+  // get index of checkForDelimiter and endElement using highlight or mouse cursor select 
   document.getElementById('ip').addEventListener('mouseup',function(e){
         var txt = this.innerText;
         var selection = window.getSelection();
 
         var placeHolderStart = selection.anchorOffset; // get start index
-        var startElement = placeHolderStart; // set startElement equal to placeHolderStart
+        var checkForDelimiter = placeHolderStart; // set checkForDelimiter equal to placeHolderStart
         var placeHolderEnd = selection.focusOffset; // get end index
         if (placeHolderStart >= 0 && placeHolderEnd >= 0){
     	    console.log("start: " + placeHolderStart);
@@ -231,7 +232,7 @@ function selectText(slideNum, shapeNum, delim, quality, size, defaultSize, isInl
     return [defaultSize, 1]; // default behavior of placeImage
   }
   // place image
-  return placeImage(slideNum, shapeNum, startElement, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline);
+  return placeImage(slideNum, shapeNum, checkForDelimiter, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline);
 
 
 }
@@ -292,9 +293,9 @@ function deEncode(equation){
 
 function getEquation(paragraph, childIndex, start, end, delimiters){
   var equationOriginal = [];
-  debugLog("See text" + paragraph.getChild(childIndex).getText() + paragraph.getChild(childIndex).getText().length)
-  var equation = paragraph.getChild(childIndex).getText().substring(start+delimiters[4], end-delimiters[4]+1);
-  debugLog("See equation" + equation)
+  // debugLog("See text" + paragraph.getChild(childIndex).getText() + paragraph.getChild(childIndex).getText().length)
+  var equation = paragraph.asRenderedString().substring(start+delimiters[4], end-delimiters[4]+2);
+  debugLog("getEquation- " + equation)
   var equationStringEncoded = reEncode(equation); //escape deprecated
   equationOriginal.push(equationStringEncoded);
   //console.log("Encoded: " + equationStringEncoded);
@@ -351,9 +352,9 @@ function setSize(size, defaultSize, paragraph, childIndex, start){
   let newSize = size;
   if(size == 0){
     try {
-      newSize = paragraph.getChild(childIndex).editAsText().getFontSize(start+3);//Fix later: Change from 3 to 1
+      newSize = paragraph.getTextStyle().getFontSize();//Fix later: Change from 3 to 1
     } catch(err) {
-      newSize = paragraph.getChild(childIndex).editAsText().getFontSize(start+1);//Fix later: Change from 3 to 1
+      newSize = paragraph.getTextStyle().getFontSize();//Fix later: Change from 3 to 1
     }
     // size = paragraph.getChild(childIndex).editAsText().getFontSize(start+1);//Fix later: Change from 3 to 1
     // console.log("New size is " + size); //Causes: Index (3) must be less than the content length (2).
@@ -362,7 +363,7 @@ function setSize(size, defaultSize, paragraph, childIndex, start){
       newSize = defaultSize;
     }
   }
-  //console.log("Found Size In Doc As " + size);
+  debugLog("SetSize- Size: " + newSize);
   return newSize;
 }
 
@@ -409,24 +410,27 @@ function getShapeFromIndices(slideNum, shapeNum){
 /**
  * Given the locations of the delimiters, run code to get font size, get equation, remove equation, encode/style equation, insert/style image.
  *
- * @param {element} startElement The paragraph which the child is in.
- * @param {integer} start        The offset in the childIndex where the equation delimiters start.
- * @param {integer} end          The offset in the childIndex where the equation delimiters end.
+ * @param {element} checkForDelimiter The paragraph which the child is in.
+ * @param {integer} start        The offset in the childIndex where the equation start-delimiter starts.
+ * @param {integer} end          The offset in the childIndex where the equation end-delimiter starts.
  * @param {integer} quality      The dpi quality to be rendered in (default 900).
  * @param {integer} size         The size of the text, whose neg/pos indicated whether the equation is inline or not.
  * @param {integer} defaultSize  The default/previous size of the text, in case size is null.
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
- 
- function placeImage(index, startElement, start, end, quality, size, defaultSize, delim, isInline) {
-  var docBody = getShapeFromIndices(index);
-  // GET VARIABLES
-  var textElement = startElement.getElement(); 
+ function placeImage(slideNum, shapeNum, shapeText, start, end, quality, size, defaultSize, delim, isInline) {
+
+  // get the textElement (shapeNum) on the given slide (slideNum)
+  var textElement = getShapeFromIndices(slideNum, shapeNum);
+  debugLog("placeImage- EquationOriginal: " + textElement + ", type: " + (typeof textElement));
+
   var text      = textElement.getText();
-  var paragraph = textElement.getParent();
-  var childIndex          = paragraph.getChildIndex(textElement);  //gets index of found text in paragaph
-  size = setSize(size, defaultSize, paragraph, childIndex, start);
-  var equationOriginal = getEquation(paragraph, childIndex, start, end, delim);
+  
+  // var paragraph = textElement.getParent();
+  // var childIndex  = paragraph.getChildIndex(textElement);  //gets index of found text in paragaph
+  size = setSize(size, defaultSize, text, 0, start);
+  var equationOriginal = getEquation(text, 0, start, end, delim);
+  debugLog("placeImage- EquationOriginal: " + equationOriginal);
 
   if(equationOriginal == ""){
     console.log("No equation but undetected start and end as ", start, " ", end);
@@ -512,11 +516,11 @@ function getShapeFromIndices(slideNum, shapeNum){
     renderer = getRenderer(worked);
     rendererType = renderer[5];
   }
-  var textCopy = textElement.asText().copy();
+  // var textCopy = text.editAsText().copy();
   var endLimit = end;
   if(text.length-1 < endLimit) endLimit = text.length-1;
-  textCopy.asText().editAsText().deleteText(0, endLimit);
-  textElement.editAsText().deleteText(start, text.length -1)
+  // textCopy.asText().editAsText().deleteText(0, endLimit);
+  text.clear(start, text.length -1)
   var logoBlob = resp.getBlob();
   var rep = 100;
   while(rep > 0){
@@ -758,7 +762,7 @@ function undoImage(delim){
   if (cursor) {
     // Attempt to insert text at the cursor position. If the insertion returns null, the cursor's
     // containing element doesn't allow insertions, so show the user an error message.
-    var element  = cursor.getElement();  //startElement
+    var element  = cursor.getElement();  //checkForDelimiter
 
     if (element) {
       console.log("Valid cursor.");
