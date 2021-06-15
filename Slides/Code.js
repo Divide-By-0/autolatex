@@ -742,7 +742,7 @@ function removeAll(delimRaw) {
         image.removeFromParent();
         continue;
       }
-      image.getParent().insertText(imageIndex, delim[0] + origEq + delim[1]);       //INSERTS DELIMITERS
+      image.getParent().insertText(imageIndex, delim[0] + origEq + delim[1]);   // create text box and then insert text here    //INSERTS DELIMITERS
       image.removeFromParent();
       counter += 1;
     }
@@ -758,21 +758,23 @@ function removeAll(delimRaw) {
             1 if it was fine
 */
 function undoImage(delim){
-  var cursor = IntegratedApp.getActive().getCursor();
-  if (cursor) {
-    // Attempt to insert text at the cursor position. If the insertion returns null, the cursor's
-    // containing element doesn't allow insertions, so show the user an error message.
-    var element  = cursor.getElement();  //checkForDelimiter
-
-    if (element) {
-      console.log("Valid cursor.");
-
-      var position = cursor.getOffset();   //offset
-      //element.getChild(position).removeFromParent();  //SUCCESSFULLY REMOVES IMAGE FROM PARAGRAPH
-      // console.log(element.getAllContent(), element.type())
+  // var cursor = IntegratedApp.getActive().getCursor(); // * no cursor for slides => replace with highlighted textbox
+  //* 1. check if selected element is image
+  //* 2. get position of element
+  //* 3. render selected element by using element.getChild.asInlineImage(); then 
+  var selection = IntegratedApp.getActivePresentation().getSelection();
+  var pageNum = selection.getCurrentPage();
+  var selectionType = selection.getSelectionType();
+  
+  if(selectionType == IntegratedApp.SelectionType.PAGE_ELEMENT){
+    var element = selection.getElement();
+    if(element){
+      console.log("valid selection");
+      var position = selection.getOffset(); // not sure if Offset command works on images
       var image = element.getChild(position).asInlineImage();
       debugLog("Image height", image.getHeight());
       var origURL = image.getLinkUrl();
+
       if (!origURL){
         return -4;
       }
@@ -798,25 +800,91 @@ function undoImage(delim){
         delim = getDelimiters(getNumDelimiters(delimtype));
       }
       var origEq=deEncode(origURL);
-      //       if(origURL.indexOf("codecogs")>-1)//codecogs                         // bad: url hardcoded location
-      //          origEq = deEncode(origURL).substring(42);
-      //       else if(origURL.indexOf("texrendr")>-1)
-      //          origEq = deEncode(origURL).substring(29);
-      //       else return -3;
       debugLog("Undid: " + origEq);
       if(origEq.length<=0){
         console.log("Empty equation derender.");
         return -3;
       }
-      cursor.insertText(delim[0] + origEq + delim[1]);       //INSERTS DELIMITERS
+      var slide = IntegratedApp.getActivePresentation().getSlides()[pageNum];
+      // insert textbox
+      var shape = slide.insertShape(IntegratedApp.ShapeType.TEXT_BOX, 100, 200, 300, 60);
+      Logger.log('Left: ' + shape.getLeft() + 'pt; Top: '
+                      + shape.getTop() + 'pt; Width: '
+                      + shape.getWidth() + 'pt; Height: '
+                      + shape.getHeight() + 'pt; Rotation: '
+                      + shape.getRotation() + ' degrees.');
+      var cursor = IntegratedApp.getActive().getCursor();
+      // insert original equation into newly created text box
+      shape.insertText(0, delim[0] + origEq + delim[1]);
       element.getChild(position+1).removeFromParent();
       return 1;
-    } else {
+    }
+    else {
       return -2;
     }
   }
-  else {
-    return -1;
-  }
-  return 0;
+
+    
 }
+
+//   if (cursor) {
+//     // Attempt to insert text at the cursor position. If the insertion returns null, the cursor's
+//     // containing element doesn't allow insertions, so show the user an error message.
+//     // var element  = cursor.getElement();  //checkForDelimiter
+
+//     if (element) {
+//       console.log("Valid cursor.");
+
+//       var position = cursor.getOffset();   //offset
+//       //element.getChild(position).removeFromParent();  //SUCCESSFULLY REMOVES IMAGE FROM PARAGRAPH
+//       // console.log(element.getAllContent(), element.type())
+//       var image = element.getChild(position).asInlineImage();
+//       debugLog("Image height", image.getHeight());
+//       var origURL = image.getLinkUrl(); // * URL from codecogs for decoding
+//       if (!origURL){
+//         return -4;
+//       }
+//       debugLog("Original URL from image", origURL);
+//       var worked = 1;
+//       var failure = 1;
+//       for (; worked <6; ++worked){//[3,"https://latex.codecogs.com/png.latex?","http://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]
+//         renderer=getRenderer(worked)[2].split("FILENAME"); //list of possibly more than one string
+//         for (var I = 0; I < renderer.length; ++I){
+//           if(origURL.indexOf(renderer[I])>-1){
+//             debugLog("Changing: " + origURL + " by removing " + renderer[I]);
+//             origURL = (origURL.substring(origURL.indexOf(renderer[I])).split (renderer [I]).join ("")); //removes prefix
+//             debugLog("Next check: " + origURL + " for " + renderer[I+1]);
+//           } else break;
+//         }
+//       }
+//       var last2 = origURL.slice(-2);
+//       var delimtype = 0;
+//       if(last2.length > 1 && (last2.charAt(0) == '%' || last2.charAt(0) == '#') && last2.charAt(1) >= '0' && last2.charAt(1) <= '9'){ //rendered with updated renderer
+//         debugLog("Passed: " + last2);
+//         delimtype = last2.charAt(1) - '0';
+//         origURL = origURL.slice(0, -2);
+//         delim = getDelimiters(getNumDelimiters(delimtype));
+//       }
+//       var origEq=deEncode(origURL);
+//       //       if(origURL.indexOf("codecogs")>-1)//codecogs                         // bad: url hardcoded location
+//       //          origEq = deEncode(origURL).substring(42);
+//       //       else if(origURL.indexOf("texrendr")>-1)
+//       //          origEq = deEncode(origURL).substring(29);
+//       //       else return -3;
+//       debugLog("Undid: " + origEq);
+//       if(origEq.length<=0){
+//         console.log("Empty equation derender.");
+//         return -3;
+//       }
+//       cursor.insertText(delim[0] + origEq + delim[1]);       //INSERTS DELIMITERS
+//       element.getChild(position+1).removeFromParent();
+//       return 1;
+//     } else {
+//       return -2;
+//     }
+//   }
+//   else {
+//     return -1;
+//   }
+//   return 0;
+// }
