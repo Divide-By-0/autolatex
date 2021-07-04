@@ -772,16 +772,17 @@ function undoImage(delim){
     var element = selection.getPageElementRange().getPageElements()[0].asImage();
     if(element){
       console.log("valid selection");
-      var positionX = selection.getX();
-      var positionY = selection.getY(); // not sure if Offset command works on images
-      var image = element.getChild(position).asInlineImage();
-      debugLog("Image height", image.getHeight());
-      var origURL = image.getLinkUrl();
+      //var positionX = selection.getLeft(); // returns horizontal position in points measured from upper-left of the page
+      //var positionY = selection.getTop(); // returns vertical position
+      // var image = element.getChild(position).asInlineImage();
+      var image = element;
+      debugLog("Image height: " + image.getHeight());
+      var origURL = image.getContentUrl();
 
       if (!origURL){
         return -4;
       }
-      debugLog("Original URL from image", origURL);
+      debugLog("Original URL from image: " + origURL);
       var worked = 1;
       var failure = 1;
       for (; worked <6; ++worked){//[3,"https://latex.codecogs.com/png.latex?","http://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]
