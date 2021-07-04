@@ -4,20 +4,20 @@
 var SIDEBAR_TITLE = 'Auto-LaTeX Equations';
 var DEBUG = true; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information 
 
-IntegratedApp = {
-  getUi: function(type){
-    return SlidesApp.getUi();
-  },
-  getBody: function(){
-    return SlidesApp.getActivePresentation().getSlides();
-  },
-  getActive: function(){
-    return SlidesApp.getActivePresentation();
-  },
-  getPageWidth: function() {
-    return SlidesApp.getActivePresentation().getPageWidth();
-  }
-};
+// IntegratedApp = {
+//   getUi: function(type){
+//     return SlidesApp.getUi();
+//   },
+//   getBody: function(){
+//     return SlidesApp.getActivePresentation().getSlides();
+//   },
+//   getActive: function(){
+//     return SlidesApp.getActivePresentation();
+//   },
+//   getPageWidth: function() {
+//     return SlidesApp.getActivePresentation().getPageWidth();
+//   }
+// };
 /** //8.03 - De-Render, Inline, Advanced Delimiters > Fixed Inline Not Appearing
  * Creates a menu entry in the Google Docs UI when the document is opened.
  *
@@ -26,7 +26,7 @@ IntegratedApp = {
  *     running in, inspect e.authMode.
  */
  function onOpen(e) {
-  IntegratedApp.getUi().createAddonMenu()
+  SlidesApp.getUi().createAddonMenu()
   .addItem('Start', 'showSidebar')
   .addToUi();
  }
@@ -699,7 +699,7 @@ function debugLog(string){
 function removeAll(delimRaw) {
   counter = 0;  
   var delim = getDelimiters(delimRaw);
-  for (var index = 0; index < IntegratedApp.getActive().getBody().getParent().getNumChildren(); index++){
+  for (var index = 0; index < IntegratedApp.getActivePresentation().getBody().getParent().getNumChildren(); index++){
     var body = getShapeFromIndices(index);
     var img = body.getImages(); //places all InlineImages from the active document into the array img
     for(i=0; i < img.length; i++) {
@@ -762,15 +762,18 @@ function undoImage(delim){
   //* 1. check if selected element is image
   //* 2. get position of element
   //* 3. render selected element by using element.getChild.asInlineImage(); then 
-  var selection = IntegratedApp.getActivePresentation().getSelection();
+  var selection = SlidesApp.getActivePresentation().getSelection();
+  debugLog("The Slides App is:" + selection)
   var pageNum = selection.getCurrentPage();
   var selectionType = selection.getSelectionType();
+  debugLog("selection Type is: " + selectionType)
   
-  if(selectionType == IntegratedApp.SelectionType.PAGE_ELEMENT){
-    var element = selection.getElement();
+  if(selectionType == SlidesApp.SelectionType.PAGE_ELEMENT){
+    var element = selection.getPageElementRange().getPageElements()[0].asImage();
     if(element){
       console.log("valid selection");
-      var position = selection.getOffset(); // not sure if Offset command works on images
+      var positionX = selection.getX();
+      var positionY = selection.getY(); // not sure if Offset command works on images
       var image = element.getChild(position).asInlineImage();
       debugLog("Image height", image.getHeight());
       var origURL = image.getLinkUrl();
@@ -805,15 +808,15 @@ function undoImage(delim){
         console.log("Empty equation derender.");
         return -3;
       }
-      var slide = IntegratedApp.getActivePresentation().getSlides()[pageNum];
+      var slide = SlidesApp.getActivePresentation().getSlides()[pageNum];
       // insert textbox
-      var shape = slide.insertShape(IntegratedApp.ShapeType.TEXT_BOX, 100, 200, 300, 60);
+      var shape = slide.insertShape(SlidesApp.ShapeType.TEXT_BOX, 100, 200, 300, 60);
       Logger.log('Left: ' + shape.getLeft() + 'pt; Top: '
                       + shape.getTop() + 'pt; Width: '
                       + shape.getWidth() + 'pt; Height: '
                       + shape.getHeight() + 'pt; Rotation: '
                       + shape.getRotation() + ' degrees.');
-      var cursor = IntegratedApp.getActive().getCursor();
+      var cursor = SlidesApp.getActive().getCursor();
       // insert original equation into newly created text box
       shape.insertText(0, delim[0] + origEq + delim[1]);
       element.getChild(position+1).removeFromParent();
