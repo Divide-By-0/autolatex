@@ -4,20 +4,20 @@
 var SIDEBAR_TITLE = 'Auto-LaTeX Equations';
 var DEBUG = true; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information 
 
-// IntegratedApp = {
-//   getUi: function(type){
-//     return SlidesApp.getUi();
-//   },
-//   getBody: function(){
-//     return SlidesApp.getActivePresentation().getSlides();
-//   },
-//   getActive: function(){
-//     return SlidesApp.getActivePresentation();
-//   },
-//   getPageWidth: function() {
-//     return SlidesApp.getActivePresentation().getPageWidth();
-//   }
-// };
+IntegratedApp = {
+  getUi: function(type){
+    return SlidesApp.getUi();
+  },
+  getBody: function(){
+    return SlidesApp.getActivePresentation().getSlides();
+  },
+  getActive: function(){
+    return SlidesApp.getActivePresentation();
+  },
+  getPageWidth: function() {
+    return SlidesApp.getActivePresentation().getPageWidth();
+  }
+};
 /** //8.03 - De-Render, Inline, Advanced Delimiters > Fixed Inline Not Appearing
  * Creates a menu entry in the Google Docs UI when the document is opened.
  *
@@ -765,6 +765,7 @@ function undoImage(delim){
   var selection = SlidesApp.getActivePresentation().getSelection();
   debugLog("The Slides App is:" + selection)
   var pageNum = selection.getCurrentPage();
+  debugLog("current slide number is: " + pageNum.getObjectId())
   var selectionType = selection.getSelectionType();
   debugLog("selection Type is: " + selectionType)
   
@@ -811,15 +812,19 @@ function undoImage(delim){
       }
       var slide = SlidesApp.getActivePresentation().getSlides()[pageNum];
       // insert textbox
-      var shape = slide.insertShape(SlidesApp.ShapeType.TEXT_BOX, 100, 200, 300, 60);
-      Logger.log('Left: ' + shape.getLeft() + 'pt; Top: '
-                      + shape.getTop() + 'pt; Width: '
-                      + shape.getWidth() + 'pt; Height: '
-                      + shape.getHeight() + 'pt; Rotation: '
-                      + shape.getRotation() + ' degrees.');
-      var cursor = SlidesApp.getActive().getCursor();
+      
+      // var shape = slide.insertShape(SlidesApp.ShapeType.TEXT_BOX, 100, 200, 300, 60);
+      SlidesApp.getActivePresentation().getSlides()[1].insertShape(SlidesApp.ShapeType.STARBURST, 100, 50, 150, 100);
+      // shape.insertText(0, delim[0] + origEq + delim[1]);
+      // var textRange = shape.getText();
+      // textRange.setText('Hello World!')
+      // Logger.log('Left: ' + shape.getLeft() + 'pt; Top: '
+      //                 + shape.getTop() + 'pt; Width: '
+      //                 + shape.getWidth() + 'pt; Height: '
+      //                 + shape.getHeight() + 'pt; Rotation: '
+      //                 + shape.getRotation() + ' degrees.');
+      // var cursor = SlidesApp.getActive().getCursor();
       // insert original equation into newly created text box
-      shape.insertText(0, delim[0] + origEq + delim[1]);
       element.getChild(position+1).removeFromParent();
       return 1;
     }
