@@ -764,8 +764,8 @@ function undoImage(delim){
   //* 3. render selected element by using element.getChild.asInlineImage(); then 
   var selection = SlidesApp.getActivePresentation().getSelection();
   debugLog("The Slides App is:" + selection)
-  var pageNum = selection.getCurrentPage();
-  debugLog("current slide number is: " + pageNum.getObjectId())
+  var currentPage = selection.getCurrentPage();
+  // debugLog("current slide number is: " + pageNum + "pageNum is: " + pageNum)
   var selectionType = selection.getSelectionType();
   debugLog("selection Type is: " + selectionType)
   
@@ -810,11 +810,11 @@ function undoImage(delim){
         console.log("Empty equation derender.");
         return -3;
       }
-      var slide = SlidesApp.getActivePresentation().getSlides()[pageNum];
+      // var slide = SlidesApp.getActivePresentation().getSlides()[pageNum];
       // insert textbox
       
       // var shape = slide.insertShape(SlidesApp.ShapeType.TEXT_BOX, 100, 200, 300, 60);
-      SlidesApp.getActivePresentation().getSlides()[1].insertShape(SlidesApp.ShapeType.STARBURST, 100, 50, 150, 100);
+      currentPage.insertShape(SlidesApp.ShapeType.STARBURST, 100, 50, 150, 100);
       // shape.insertText(0, delim[0] + origEq + delim[1]);
       // var textRange = shape.getText();
       // textRange.setText('Hello World!')
