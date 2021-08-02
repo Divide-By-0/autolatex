@@ -539,6 +539,7 @@ function getShapeFromIndices(slideNum, shapeNum){
   while(rep > 0){
     try{
       paragraph.getChild(childIndex+1).setLinkUrl(renderer[2] + equationOriginal + "#" + delim[6]); //added % delim 6 to keep track of which delimiter was used to render
+      // paragraph.getChild(childIndex+1).setDescription(renderer[2] + equationOriginal + "#" + delim[6]); 
       break;
     } catch(err){
       console.log("Couldn't insert child index!")
@@ -778,7 +779,10 @@ function undoImage(delim){
       // var image = element.getChild(position).asInlineImage();
       var image = element;
       debugLog("Image height: " + image.getHeight());
-      var origURL = image.getContentUrl();
+      // var origURL = image.getContentUrl();
+      image.setDescription("https://www.codecogs.com/eqnedit.php?latex=f(t)%3D%5Csum_%7B-%5Cinfty%7D%5E%7B%5Cinfty%7Dc_ne%5E%7Bi%5Cfrac%7B2%5Cpi%20n%7D%7BT%7Dt%7D%3D%5Ccdots%2Bc_%7B-2%7De%5E%7B-i%5Cfrac%7B4%5Cpi%7D%7BT%7Dt%7D%2Bc_%7B-1%7De%5E%7B-i%5Cfrac%7B2%5Cpi%7D%7BT%7Dt%7D%2Bc_0%2Bc_1e%5E%7Bi%5Cfrac%7B2%5Cpi%7D%7BT%7Dt%7D%2Bc_2e%5E%7Bi%5Cfrac%7B4%5Cpi%7D%7BT%7Dt%7D%2B%5Ccdots#0");
+      var origURL = image.getDescription();
+      debugLog("image description is: " + origURL)
 
       if (!origURL){
         return -4;
@@ -813,9 +817,12 @@ function undoImage(delim){
       // var slide = SlidesApp.getActivePresentation().getSlides()[pageNum];
       // insert textbox
       
-      // var shape = slide.insertShape(SlidesApp.ShapeType.TEXT_BOX, 100, 200, 300, 60);
-      currentPage.insertShape(SlidesApp.ShapeType.STARBURST, 100, 50, 150, 100);
-      // shape.insertText(0, delim[0] + origEq + delim[1]);
+      var shape = currentPage.insertShape(SlidesApp.ShapeType.TEXT_BOX, 100, 200, 300, 60);
+      var textRange = shape.getText();
+      textRange.insertText(0, delim[0] + origEq + delim[1]);
+      
+      // currentPage.insertShape(SlidesApp.ShapeType.STARBURST, 100, 50, 150, 100);
+      
       // var textRange = shape.getText();
       // textRange.setText('Hello World!')
       // Logger.log('Left: ' + shape.getLeft() + 'pt; Top: '
