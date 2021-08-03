@@ -2,7 +2,8 @@
 //Auto-Latex Equations - (For api keys, ask aayush)
 
 var SIDEBAR_TITLE = 'Auto-LaTeX Equations';
-var DEBUG = true; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information 
+var DEBUG = true; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
+var EMPTY_EQUATIONS = 0;
 
 IntegratedApp = {
   getUi: function(type){
@@ -110,6 +111,7 @@ function findTextOffsetInSlide(str, search, offset = 0){
   var delim = getDelimiters(delimiter);
   savePrefs(sizeRaw, delimiter);
   var c = 0;  //counter
+  EMPTY_EQUATIONS = 0;
   var defaultSize = 11;
   var allEmpty = 0;
   try{
@@ -122,25 +124,32 @@ function findTextOffsetInSlide(str, search, offset = 0){
   // console.log(typeof IntegratedApp.getBody())
   let childCount = slides.length;
   // console.log("Children: ", childCount)
-  for (var slideNum = 0; slideNum < childCount; slideNum++){
-    for (var shapeNum = 0; shapeNum < slides[slideNum].getShapes().length; shapeNum++){
-      while(true){
-        const [gotSize, isEmpty] = findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline);   //or: "\\\$\\\$", "\\\$\\\$"
-        allEmpty = isEmpty ? allEmpty + isEmpty : 0
-  
-        if(allEmpty > 50) break; //Assume we quit on 50 consecutive empty equations.
-  
-        if(gotSize == -100000)   // means all renderers fucked.
-          return encodeFlag(-2, c);                                   // instead, return pair of number and bool flag
-  
-        if(gotSize == 0) break; // finished with renders in this section
-  
-        defaultSize = gotSize;
-        c = c + 1 - isEmpty;                    // # of equations += 1 except empty equations
+  for (var x = 0; x < 5; x++){ //please remove this, this is a terrible fix
+    for (var slideNum = 0; slideNum < childCount; slideNum++){
+      for (var shapeNum = 0; shapeNum < slides[slideNum].getShapes().length; shapeNum++){
+        // while(true){
+          // const [gotSize, isEmpty] = findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline);   //or: "\\\$\\\$", "\\\$\\\$"
+          
+          // allEmpty = isEmpty ? allEmpty + isEmpty : 0
+    
+          // if(allEmpty > 50) break; //Assume we quit on 50 consecutive empty equations.
+    
+          // if(gotSize == -100000)   // means all renderers fucked.
+          //   return encodeFlag(-2, c);                                   // instead, return pair of number and bool flag
+    
+          // if(gotSize == 0) break; // finished with renders in this section
+    
+          // defaultSize = gotSize;
+          // c = c + 1 - isEmpty;                    // # of equations += 1 except empty equations
+
+        findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline);   //or: "\\\$\\\$", "\\\$\\\$"
+        c = c + 1;
+        // }
       }
     }
   }
-  return encodeFlag(0, c)
+  
+  return encodeFlag(0, c-EMPTY_EQUATIONS)
 }
 
 /**
@@ -186,6 +195,7 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
 
   if(placeHolderEnd - placeHolderStart == 2.0) { // empty equation
     console.log("Empty equation!");
+    EMPTY_EQUATIONS ++;
     return [defaultSize, 1]; // default behavior of placeImage
   }
 
@@ -220,8 +230,8 @@ function selectText(slideNum, shapeNum, delim, quality, size, defaultSize, isInl
         var checkForDelimiter = placeHolderStart; // set checkForDelimiter equal to placeHolderStart
         var placeHolderEnd = selection.focusOffset; // get end index
         if (placeHolderStart >= 0 && placeHolderEnd >= 0){
-    	    console.log("start: " + placeHolderStart);
-    	    console.log("end: " + placeHolderEnd);
+          console.log("start: " + placeHolderStart);
+          console.log("end: " + placeHolderEnd);
           debugLog((placeHolderEnd - placeHolderStart) + " characters long"); //output string length
         }
   });
@@ -390,7 +400,7 @@ function getShapeFromIndices(slideNum, shapeNum){
   assert(slideNum < all, "slideNum < all")
   body = doc[slideNum];
   shapes = body.getShapes();
-  assert(shapeNum < shapes.length, "shapeNum < shapes.length");
+  assert(shapeNum < shapes.length, "shapeNum (" + shapeNum + ") < shapes.length (" + shapes.length + ")");
   var shape;
   if(shapeNum < shapes.length){
     shape = shapes[shapeNum];
@@ -510,77 +520,82 @@ function getShapeFromIndices(slideNum, shapeNum){
     if (failure == 0) break;
   }
   if (worked > 5) return -100000;
+  var doc = IntegratedApp.getBody();
+  body = doc[slideNum];
+  body.insertImage(renderer[1], textElement.getLeft(), textElement.getTop(), textElement.getWidth(), textElement.getHeight());
+  textElement.remove()
+
   // SAVING FORMATTING 
-  if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50){
-    worked = 1 //assumes codecogs is 1
-    renderer = getRenderer(worked);
-    rendererType = renderer[5];
-  }
-  // var textCopy = text.editAsText().copy();
-  var endLimit = end;
-  if(text.length-1 < endLimit) endLimit = text.length-1;
-  // textCopy.asText().editAsText().deleteText(0, endLimit);
-  text.clear(start, text.length -1)
-  var logoBlob = resp.getBlob();
-  var rep = 100;
-  while(rep > 0){
-    try{
-      paragraph.insertInlineImage(childIndex+1, logoBlob);
-      break;
-    } catch(err){
-      console.log("DOCS UNAVAILABLE");
-      --rep;
-    }
-  }
-  if(rep < 100){
-    console.log("At ", rep, " reps of failing to insert, ", equation) 
-  }
-  var rep = 3;
-  while(rep > 0){
-    try{
-      paragraph.getChild(childIndex+1).setLinkUrl(renderer[2] + equationOriginal + "#" + delim[6]); //added % delim 6 to keep track of which delimiter was used to render
-      // paragraph.getChild(childIndex+1).setDescription(renderer[2] + equationOriginal + "#" + delim[6]); 
-      break;
-    } catch(err){
-      console.log("Couldn't insert child index!")
-      console.log("Next child not found!");
-      --rep;
-    }
-  }
-  if(rep < 3){
-    console.log("At ", rep, " reps of failing to insert, ", equation) 
-    if(rep == 0){
-      throw new Error('Couldn\'t get equation child!');
-    }
-  }
+  // if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50){
+  //   worked = 1 //assumes codecogs is 1
+  //   renderer = getRenderer(worked);
+  //   rendererType = renderer[5];
+  // }
+  // // var textCopy = text.editAsText().copy();
+  // var endLimit = end;
+  // if(text.length-1 < endLimit) endLimit = text.length-1;
+  // // textCopy.asText().editAsText().deleteText(0, endLimit);
+  // text.clear(start, text.length -1)
+  // var logoBlob = resp.getBlob();
+  // var rep = 100;
+  // while(rep > 0){
+  //   try{
+  //     paragraph.insertInlineImage(childIndex+1, logoBlob);
+  //     break;
+  //   } catch(err){
+  //     console.log("DOCS UNAVAILABLE");
+  //     --rep;
+  //   }
+  // }
+  // if(rep < 100){
+  //   console.log("At ", rep, " reps of failing to insert, ", equation) 
+  // }
+  // var rep = 3;
+  // while(rep > 0){
+  //   try{
+  //     paragraph.getChild(childIndex+1).setLinkUrl(renderer[2] + equationOriginal + "#" + delim[6]); //added % delim 6 to keep track of which delimiter was used to render
+  //     // paragraph.getChild(childIndex+1).setDescription(renderer[2] + equationOriginal + "#" + delim[6]); 
+  //     break;
+  //   } catch(err){
+  //     console.log("Couldn't insert child index!")
+  //     console.log("Next child not found!");
+  //     --rep;
+  //   }
+  // }
+  // // if(rep < 3){
+  // //   console.log("At ", rep, " reps of failing to insert, ", equation) 
+  // //   if(rep == 0){
+  // //     throw new Error('Couldn\'t get equation child!');
+  // //   }
+  // // }
 
-  if(textCopy.getText() != "")
-    paragraph.insertText(childIndex+2, textCopy);
-  var height = paragraph.getChild(childIndex+1).getHeight();
-  var width  = paragraph.getChild(childIndex+1).getWidth();
-  console.log("Orig size, width, height: " + size + ", " + width + ", " + height);                 //only a '1' is rendered as a 100 height (as of 10/20/19, now it is fetched as 90 height)
+  // if(textCopy.getText() != "")
+  //   paragraph.insertText(childIndex+2, textCopy);
+  // var height = paragraph.getChild(childIndex+1).getHeight();
+  // var width  = paragraph.getChild(childIndex+1).getWidth();
+  // console.log("Orig size, width, height: " + size + ", " + width + ", " + height);                 //only a '1' is rendered as a 100 height (as of 10/20/19, now it is fetched as 90 height)
   
-  //SET PROPERTIES OF IMAGE (Height, Width)
-  var oldSize = size; // why use oldsize instead of new size
+  // //SET PROPERTIES OF IMAGE (Height, Width)
+  // var oldSize = size; // why use oldsize instead of new size
   
-  if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50 || (size > 10 && width == 126 && height == 24)){
-   size *= 5 // make codecogs errors readable, size constraint just in case some small equation is 126x24 as well
-  }
-  // console.log(rendererType, rendererType.valueOf(), "Texrendr".valueOf(), rendererType.valueOf() === "Codecogs".valueOf(), rendererType.valueOf() == "Codecogs".valueOf(), rendererType === "Codecogs", rendererType.valueOf() === "Texrendr".valueOf(), rendererType.valueOf() == "Texrendr".valueOf(), rendererType === "Texrendr")
-  // note that valueOf here is not needed, and neither is === => removing both keeps trues true and falses false in V8.
-  if(rendererType.valueOf() === "Texrendr".valueOf())  //TexRendr
-    size = Math.round(size * height / 174);
-  else if(rendererType.valueOf() === "Roger's renderer".valueOf())      //Rogers renderer
-    size = Math.round(size * height / 200);
-  else if(rendererType.valueOf() === "Codecogs".valueOf())      //CodeCogs, other
-    size = Math.round(size * height / 100);
-  else       //CodeCogs, other
-    size = Math.round(size * height / 100);
+  // if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50 || (size > 10 && width == 126 && height == 24)){
+  //  size *= 5 // make codecogs errors readable, size constraint just in case some small equation is 126x24 as well
+  // }
+  // // console.log(rendererType, rendererType.valueOf(), "Texrendr".valueOf(), rendererType.valueOf() === "Codecogs".valueOf(), rendererType.valueOf() == "Codecogs".valueOf(), rendererType === "Codecogs", rendererType.valueOf() === "Texrendr".valueOf(), rendererType.valueOf() == "Texrendr".valueOf(), rendererType === "Texrendr")
+  // // note that valueOf here is not needed, and neither is === => removing both keeps trues true and falses false in V8.
+  // if(rendererType.valueOf() === "Texrendr".valueOf())  //TexRendr
+  //   size = Math.round(size * height / 174);
+  // else if(rendererType.valueOf() === "Roger's renderer".valueOf())      //Rogers renderer
+  //   size = Math.round(size * height / 200);
+  // else if(rendererType.valueOf() === "Codecogs".valueOf())      //CodeCogs, other
+  //   size = Math.round(size * height / 100);
+  // else       //CodeCogs, other
+  //   size = Math.round(size * height / 100);
 
   
-  sizeImage(paragraph, childIndex+1, size, Math.round(size*width/height));
-  defaultSize = oldSize;
-  return [defaultSize, 0];
+  // sizeImage(paragraph, childIndex+1, size, Math.round(size*width/height));
+  // defaultSize = oldSize;
+  // return [size, 0];
 }
 
 /**
@@ -774,8 +789,15 @@ function undoImage(delim){
     var element = selection.getPageElementRange().getPageElements()[0].asImage();
     if(element){
       console.log("valid selection");
-      //var positionX = selection.getLeft(); // returns horizontal position in points measured from upper-left of the page
-      //var positionY = selection.getTop(); // returns vertical position
+      debugLog(element)
+      var positionX = element.getLeft(); // returns horizontal position in points measured from upper-left of the page
+      debugLog("Left: " + positionX)
+      var positionY = element.getTop(); // returns vertical position
+      debugLog("Top: " + positionY)
+      var width = element.getWidth();
+      debugLog("Width: " + width)
+      var height = element.getHeight();
+      debugLog("Height: " + height)
       // var image = element.getChild(position).asInlineImage();
       var image = element;
       debugLog("Image height: " + image.getHeight());
@@ -814,23 +836,13 @@ function undoImage(delim){
         console.log("Empty equation derender.");
         return -3;
       }
-      // var slide = SlidesApp.getActivePresentation().getSlides()[pageNum];
+
       // insert textbox
       
-      var shape = currentPage.insertShape(SlidesApp.ShapeType.TEXT_BOX, 100, 200, 300, 60);
+      var shape = currentPage.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
       var textRange = shape.getText();
       textRange.insertText(0, delim[0] + origEq + delim[1]);
-      
-      // currentPage.insertShape(SlidesApp.ShapeType.STARBURST, 100, 50, 150, 100);
-      
-      // var textRange = shape.getText();
-      // textRange.setText('Hello World!')
-      // Logger.log('Left: ' + shape.getLeft() + 'pt; Top: '
-      //                 + shape.getTop() + 'pt; Width: '
-      //                 + shape.getWidth() + 'pt; Height: '
-      //                 + shape.getHeight() + 'pt; Rotation: '
-      //                 + shape.getRotation() + ' degrees.');
-      // var cursor = SlidesApp.getActive().getCursor();
+
       // insert original equation into newly created text box
       element.getChild(position+1).removeFromParent();
       return 1;
