@@ -824,7 +824,7 @@ function undoImage(delim){
 
       // insert textbox
       
-      var shape = currentPage.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, 300, 60);
+      var shape = currentPage.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
       var textRange = shape.getText();
       textRange.insertText(0, delim[0] + origEq + delim[1]);
 
