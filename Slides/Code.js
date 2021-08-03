@@ -779,6 +779,10 @@ function undoImage(delim){
       debugLog("Left: " + positionX)
       var positionY = element.getTop(); // returns vertical position
       debugLog("Top: " + positionY)
+      var width = element.getWidth();
+      debugLog("Width: " + width)
+      var height = element.getHeight();
+      debugLog("Height: " + height)
       // var image = element.getChild(position).asInlineImage();
       var image = element;
       debugLog("Image height: " + image.getHeight());
@@ -824,14 +828,6 @@ function undoImage(delim){
       var textRange = shape.getText();
       textRange.insertText(0, delim[0] + origEq + delim[1]);
 
-      // var textRange = shape.getText();
-      // textRange.setText('Hello World!')
-      // Logger.log('Left: ' + shape.getLeft() + 'pt; Top: '
-      //                 + shape.getTop() + 'pt; Width: '
-      //                 + shape.getWidth() + 'pt; Height: '
-      //                 + shape.getHeight() + 'pt; Rotation: '
-      //                 + shape.getRotation() + ' degrees.');
-      // var cursor = SlidesApp.getActive().getCursor();
       // insert original equation into newly created text box
       element.getChild(position+1).removeFromParent();
       return 1;
