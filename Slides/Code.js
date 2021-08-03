@@ -774,8 +774,11 @@ function undoImage(delim){
     var element = selection.getPageElementRange().getPageElements()[0].asImage();
     if(element){
       console.log("valid selection");
-      //var positionX = selection.getLeft(); // returns horizontal position in points measured from upper-left of the page
-      //var positionY = selection.getTop(); // returns vertical position
+      debugLog(element)
+      var positionX = element.getLeft(); // returns horizontal position in points measured from upper-left of the page
+      debugLog("Left: " + positionX)
+      var positionY = element.getTop(); // returns vertical position
+      debugLog("Top: " + positionY)
       // var image = element.getChild(position).asInlineImage();
       var image = element;
       debugLog("Image height: " + image.getHeight());
@@ -814,15 +817,13 @@ function undoImage(delim){
         console.log("Empty equation derender.");
         return -3;
       }
-      // var slide = SlidesApp.getActivePresentation().getSlides()[pageNum];
+
       // insert textbox
       
-      var shape = currentPage.insertShape(SlidesApp.ShapeType.TEXT_BOX, 100, 200, 300, 60);
+      var shape = currentPage.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, 300, 60);
       var textRange = shape.getText();
       textRange.insertText(0, delim[0] + origEq + delim[1]);
-      
-      // currentPage.insertShape(SlidesApp.ShapeType.STARBURST, 100, 50, 150, 100);
-      
+
       // var textRange = shape.getText();
       // textRange.setText('Hello World!')
       // Logger.log('Left: ' + shape.getLeft() + 'pt; Top: '
