@@ -428,6 +428,9 @@ function getShapeFromIndices(slideNum, shapeNum){
  * @param {integer} defaultSize  The default/previous size of the text, in case size is null.
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
+
+var linkEquation = [];
+
  function placeImage(slideNum, shapeNum, shapeText, start, end, quality, size, defaultSize, delim, isInline) {
 
   // get the textElement (shapeNum) on the given slide (slideNum)
@@ -471,7 +474,10 @@ function getShapeFromIndices(slideNum, shapeNum){
       renderer[1] =renderer[1].split("FILENAME").join(getFilenameEncode (equation, 0));
       renderer[1] =renderer[1].split("EQUATION").join(equation);
       renderer[2] =renderer[2].split("FILENAME").join(getFilenameEncode (equation, 0));
-      debugLog("Link with equation" + renderer[1]);
+      debugLog("Link with equation " + renderer[1]);
+      // add original equation link to the linkEquation array to be called later in de-render step
+      linkEquation.push(renderer[2] + equationOriginal + "#" + delim[6]);
+      debugLog("new equation added to LinkEquation array " + renderer[2] + equationOriginal + "#" + delim[6])
 
       var startDate = new Date();
       var startTime = Number(startDate.getTime()).toFixed(0);
@@ -802,7 +808,14 @@ function undoImage(delim){
       var image = element;
       debugLog("Image height: " + image.getHeight());
       // var origURL = image.getContentUrl();
-      image.setDescription("https://www.codecogs.com/eqnedit.php?latex=f(t)%3D%5Csum_%7B-%5Cinfty%7D%5E%7B%5Cinfty%7Dc_ne%5E%7Bi%5Cfrac%7B2%5Cpi%20n%7D%7BT%7Dt%7D%3D%5Ccdots%2Bc_%7B-2%7De%5E%7B-i%5Cfrac%7B4%5Cpi%7D%7BT%7Dt%7D%2Bc_%7B-1%7De%5E%7B-i%5Cfrac%7B2%5Cpi%7D%7BT%7Dt%7D%2Bc_0%2Bc_1e%5E%7Bi%5Cfrac%7B2%5Cpi%7D%7BT%7Dt%7D%2Bc_2e%5E%7Bi%5Cfrac%7B4%5Cpi%7D%7BT%7Dt%7D%2B%5Ccdots#0");
+      // image.setDescription("https://www.codecogs.com/eqnedit.php?latex=f(t)%3D%5Csum_%7B-%5Cinfty%7D%5E%7B%5Cinfty%7Dc_ne%5E%7Bi%5Cfrac%7B2%5Cpi%20n%7D%7BT%7Dt%7D%3D%5Ccdots%2Bc_%7B-2%7De%5E%7B-i%5Cfrac%7B4%5Cpi%7D%7BT%7Dt%7D%2Bc_%7B-1%7De%5E%7B-i%5Cfrac%7B2%5Cpi%7D%7BT%7Dt%7D%2Bc_0%2Bc_1e%5E%7Bi%5Cfrac%7B2%5Cpi%7D%7BT%7Dt%7D%2Bc_2e%5E%7Bi%5Cfrac%7B4%5Cpi%7D%7BT%7Dt%7D%2B%5Ccdots#0");
+      // for(let i = 0; i < linkEquation.length; i++){
+      //   debugLog("linkEquation has " + linkEquation.length + "number of elements")
+      //   debugLog("elements in link Equation are: " + linkEquation[i])
+      // }
+      
+      image.setDescription('' + linkEquation[0])
+      debugLog("element in Link Equation is: " + linkEquation[0])
       var origURL = image.getDescription();
       debugLog("image description is: " + origURL)
 
