@@ -528,8 +528,16 @@ var linkEquation = [];
   if (worked > 5) return -100000;
   var doc = IntegratedApp.getBody();
   body = doc[slideNum];
-  body.insertImage(renderer[1], textElement.getLeft(), textElement.getTop(), textElement.getWidth(), textElement.getHeight());
-  textElement.remove()
+  image = body.insertImage(renderer[1], textElement.getLeft(), textElement.getTop(), textElement.getWidth(), textElement.getHeight());
+  console.log("eqn type: " + typeof image);
+  console.log("title alt text: " + renderer[2] + equationOriginal + "#" + delim[6])
+  console.log("recieving alt text: " + image.setTitle(renderer[2] + equationOriginal + "#" + delim[6]).getTitle());
+  // debugLog("eqn description: " + .getTitle());
+
+  // debugLog("equation description: " + image.getDescription());
+  // textColor = textElement.getText().getTextStyle().getForegroundColor().asRgbColor() ;
+  // console.log("equation color: " + textColor.asHexString());
+  textElement.remove();
 
   // SAVING FORMATTING 
   // if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50){
@@ -816,7 +824,8 @@ function undoImage(delim){
       
       image.setDescription('' + linkEquation[0])
       debugLog("element in Link Equation is: " + linkEquation[0])
-      var origURL = image.getDescription();
+      var origURL = image.getTitle();
+      image.remove();
       debugLog("image description is: " + origURL)
 
       if (!origURL){
@@ -857,7 +866,7 @@ function undoImage(delim){
       textRange.insertText(0, delim[0] + origEq + delim[1]);
 
       // insert original equation into newly created text box
-      element.getChild(position+1).removeFromParent();
+      // element.getChild(position+1).removeFromParent();
       return 1;
     }
     else {
