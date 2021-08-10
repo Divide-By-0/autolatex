@@ -169,6 +169,7 @@ function findTextOffsetInSlide(str, search, offset = 0){
 function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline){
   // get the shape (shapeNum) on the given slide (slideNum)
   var shape = getShapeFromIndices(slideNum, shapeNum);
+  debugLog("shape is: " + shape)
   if(shape == null){
     return [0, 0];
   }
@@ -183,6 +184,15 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
   if(checkForDelimiter == null) 
     return [0, 0];  // didn't find first delimiter
 
+  // textColor = shape.getText().getTextStyle().getForegroundColor().asRgbColor() ;
+  // console.log("equation color: " + textColor.asHexString());
+
+  // if(textColor.asHexString() == '#00FF00'){
+  //   debugLog("color matches: green")
+  //   debugLog(shapeText.asRenderedString())
+  //   coloredText = "{\\color{Green}" + shapeText.asRenderedString().replaceAll('$', '') + "}";
+  //   debugLog("new equation with color: " + coloredText)
+  // }
 
   // start position of image
   var placeHolderStart = findTextOffsetInSlide(shapeText.asRenderedString(), delim[1], 0); 
@@ -437,7 +447,7 @@ var linkEquation = [];
   var textElement = getShapeFromIndices(slideNum, shapeNum);
   debugLog("placeImage- EquationOriginal: " + textElement + ", type: " + (typeof textElement));
 
-  var text      = textElement.getText();
+  var text = textElement.getText();
   
   // var paragraph = textElement.getParent();
   // var childIndex  = paragraph.getChildIndex(textElement);  //gets index of found text in paragaph
@@ -534,9 +544,16 @@ var linkEquation = [];
   console.log("recieving alt text: " + image.setTitle(renderer[2] + equationOriginal + "#" + delim[6]).getTitle());
   // debugLog("eqn description: " + .getTitle());
 
-  // debugLog("equation description: " + image.getDescription());
-  // textColor = textElement.getText().getTextStyle().getForegroundColor().asRgbColor() ;
-  // console.log("equation color: " + textColor.asHexString());
+  debugLog("equation description: " + image.getDescription());
+  textColor = textElement.getText().getTextStyle().getForegroundColor().asRgbColor() ;
+  console.log("equation color: " + textColor.asHexString());
+
+  if(textColor.asHexString() == '#00FF00'){
+    debugLog("color matches: green")
+    debugLog(shapeText.asRenderedString())
+    coloredText = "{\\color{Green}" + shapeText.asRenderedString().replaceAll('$', '') + "}";
+    debugLog("new equation with color: " + coloredText)
+  }
   textElement.remove();
 
   // SAVING FORMATTING 
