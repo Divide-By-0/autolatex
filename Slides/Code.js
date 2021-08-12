@@ -394,22 +394,13 @@ function getKey(){
 //retrieve size from text
 function setSize(size, defaultSize, paragraph, childIndex, start){
   //GET SIZE
-  let newSize = size;
-  if(size == 0){
-    try {
-      newSize = paragraph.getTextStyle().getFontSize();//Fix later: Change from 3 to 1
-    } catch(err) {
-      newSize = paragraph.getTextStyle().getFontSize();//Fix later: Change from 3 to 1
-    }
-    // size = paragraph.getChild(childIndex).editAsText().getFontSize(start+1);//Fix later: Change from 3 to 1
-    // console.log("New size is " + size); //Causes: Index (3) must be less than the content length (2).
-    if(newSize == null || newSize <= 0){
-      console.log("Null size! Assigned " +  defaultSize);
-      newSize = defaultSize;
-    }
+  var newSize = paragraph.getTextStyle().getFontSize();
+  debugLog("Size is: " + newSize.toString());
+  if(newSize == null){
+    return defaultSize;
+  } else {
+    return newSize;
   }
-  debugLog("SetSize- Size: " + newSize);
-  return newSize;
 }
 
 // deprecated, use the indexing method to get all odd/even footers etc. as well
@@ -565,7 +556,8 @@ var linkEquation = [];
   if (worked > 5) return -100000;
   var doc = IntegratedApp.getBody();
   body = doc[slideNum];
-  image = body.insertImage(renderer[1], textElement.getLeft(), textElement.getTop(), textElement.getWidth(), textElement.getHeight());
+  var scale = 3.0;
+  image = body.insertImage(renderer[1], textElement.getLeft(), textElement.getTop(), Math.round(size*textElement.getWidth()/textElement.getHeight() * scale), size * scale);
   console.log("eqn type: " + typeof image);
   console.log("title alt text: " + renderer[2] + equationOriginal + "#" + delim[6])
   console.log("recieving alt text: " + image.setTitle(renderer[2] + equationOriginal + "#" + delim[6]).getTitle());
