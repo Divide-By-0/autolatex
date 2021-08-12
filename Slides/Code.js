@@ -152,6 +152,25 @@ function findTextOffsetInSlide(str, search, offset = 0){
   return encodeFlag(0, c-EMPTY_EQUATIONS)
 }
 
+// slideNum and slideObjectNum are integers
+function getRgbColor(shape, slideNum){
+  var doc = IntegratedApp.getBody();
+  var slide = doc[slideNum];
+  debugLog("type of slide object: " + typeof slide)
+  var foregroundColor = shape.getText().getTextStyle().getForegroundColor()
+  var foregroundColorType = foregroundColor.getColorType();
+  if(foregroundColorType == "RGB"){
+    debugLog("textColor :" + typeof foregroundColor)
+    return(foregroundColor.asRgbColor().asHexString());
+  }
+  else{
+    var textColor = slide.getColorScheme().getConcreteColor(foregroundColor.asThemeColor().getThemeColorType());
+    console.log("equation color: " + textColor.asRgbColor().asHexString());
+    return(textColor.asRgbColor().asHexString());
+  }
+
+}
+
 /**
  * Get position of insertion then place the image there.
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order. E.g. ["\\[", "\\]", "\\\\\\[", "\\\\\\]", 2, 1, 1]
@@ -165,8 +184,8 @@ function findTextOffsetInSlide(str, search, offset = 0){
             1 if eqn is "" and 0 if not. Assume we close on 4 consecutive empty ones.
 */
 
-
 function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline){
+  
   // get the shape (shapeNum) on the given slide (slideNum)
   var shape = getShapeFromIndices(slideNum, shapeNum);
   debugLog("shape is: " + shape)
@@ -176,7 +195,13 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
 
   // Get the text of the shape.
   shapeText = shape.getText(); // TextRange
-  debugLog("Text in the shape: " + shapeText.asString());
+
+  var text = shape.getText(); // text range
+
+  var textColor = getRgbColor(shape, slideNum);
+
+  //set new equation with color
+  textColor 
 
   debugLog("Looking for delimiter :" + delim[2] + " in text");
   var checkForDelimiter = shapeText.find(delim[2]);  // TextRange[]
@@ -442,12 +467,14 @@ function getShapeFromIndices(slideNum, shapeNum){
 var linkEquation = [];
 
  function placeImage(slideNum, shapeNum, shapeText, start, end, quality, size, defaultSize, delim, isInline) {
-
   // get the textElement (shapeNum) on the given slide (slideNum)
   var textElement = getShapeFromIndices(slideNum, shapeNum);
   debugLog("placeImage- EquationOriginal: " + textElement + ", type: " + (typeof textElement));
 
-  var text = textElement.getText();
+  var text = textElement.getText(); // text range
+
+  var textColor = getRgbColor(textElement, slideNum);
+  console.log("equation color: " + textColor);
   
   // var paragraph = textElement.getParent();
   // var childIndex  = paragraph.getChildIndex(textElement);  //gets index of found text in paragaph
@@ -543,6 +570,8 @@ var linkEquation = [];
   console.log("title alt text: " + renderer[2] + equationOriginal + "#" + delim[6])
   console.log("recieving alt text: " + image.setTitle(renderer[2] + equationOriginal + "#" + delim[6]).getTitle());
   // debugLog("eqn description: " + .getTitle());
+
+  // debugLog("equation description: " + image.getDescription());
 
   debugLog("equation description: " + image.getDescription());
   textColor = textElement.getText().getTextStyle().getForegroundColor().asRgbColor() ;
