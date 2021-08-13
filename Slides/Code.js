@@ -156,7 +156,7 @@ function findTextOffsetInSlide(str, search, offset = 0){
 function getRgbColor(shape, slideNum){
   var doc = IntegratedApp.getBody();
   var slide = doc[slideNum];
-  debugLog("type of slide object: " + typeof slide)
+  // debugLog("type of slide object: " + typeof slide)
   var foregroundColor = shape.getText().getTextStyle().getForegroundColor()
   var foregroundColorType = foregroundColor.getColorType();
   if(foregroundColorType == "RGB"){
@@ -188,7 +188,7 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
   
   // get the shape (shapeNum) on the given slide (slideNum)
   var shape = getShapeFromIndices(slideNum, shapeNum);
-  debugLog("shape is: " + shape)
+  // debugLog("shape is: " + shape)
   if(shape == null){
     return [0, 0];
   }
@@ -203,7 +203,7 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
   //set new equation with color
   textColor 
 
-  debugLog("Looking for delimiter :" + delim[2] + " in text");
+  // debugLog("Looking for delimiter :" + delim[2] + " in text");
   var checkForDelimiter = shapeText.find(delim[2]);  // TextRange[]
 
   if(checkForDelimiter == null) 
@@ -225,8 +225,8 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
   // end position till of image 
   var placeHolderEnd = findTextOffsetInSlide(shapeText.asRenderedString(), delim[1], 2); 
 
-  debugLog("Image will be inserted between " + placeHolderStart + " " + placeHolderEnd);
-  debugLog("Text to be replaced is " + (placeHolderEnd - placeHolderStart) + " characters long");
+  // debugLog("Image will be inserted between " + placeHolderStart + " " + placeHolderEnd);
+  // debugLog("Text to be replaced is " + (placeHolderEnd - placeHolderStart) + " characters long");
 
   if(placeHolderEnd - placeHolderStart == 2.0) { // empty equation
     console.log("Empty equation!");
@@ -325,14 +325,14 @@ function getFilenameEncode(equation, direction){
 } 
 
 function deEncode(equation){
-  debugLog(equation);
-  debugLog(getCustomEncode (getFilenameEncode (equation, 1), 1, 0));
-  debugLog(decodeURIComponent(getCustomEncode (getFilenameEncode (equation, 1), 1, 0)));
+  // debugLog(equation);
+  // debugLog(getCustomEncode (getFilenameEncode (equation, 1), 1, 0));
+  // debugLog(decodeURIComponent(getCustomEncode (getFilenameEncode (equation, 1), 1, 0)));
 
   var equationStringDecoded = decodeURIComponent(getCustomEncode (getFilenameEncode (equation, 1), 1, 0)); //escape deprecated
   //  console.log("Decoded without replacing: " + equationStringDecoded);
   var equationStringDecoded = getCustomEncode(equationStringDecoded, 1, 1);
-  debugLog("Decoded with replacing: " + equationStringDecoded);
+  // debugLog("Decoded with replacing: " + equationStringDecoded);
   return equationStringDecoded;
 } 
 
@@ -401,6 +401,15 @@ function setSize(size, defaultSize, paragraph, childIndex, start){
   } else {
     return newSize;
   }
+}
+
+function resize(eqnImage, textElement, size, scale){
+  eqnImage.setLeft(textElement.getLeft());
+  eqnImage.setTop(textElement.getTop());
+  eqnImage.setWidth(Math.round(size*eqnImage.getWidth()/eqnImage.getHeight() * scale));
+  eqnImage.setHeight(size * scale);
+
+  // image = body.insertImage(renderer[1], textElement.getLeft(), textElement.getTop(), Math.round(size*textElement.getWidth()/textElement.getHeight() * scale), size * scale);
 }
 
 // deprecated, use the indexing method to get all odd/even footers etc. as well
@@ -557,7 +566,9 @@ var linkEquation = [];
   var doc = IntegratedApp.getBody();
   body = doc[slideNum];
   var scale = 3.0;
-  image = body.insertImage(renderer[1], textElement.getLeft(), textElement.getTop(), Math.round(size*textElement.getWidth()/textElement.getHeight() * scale), size * scale);
+  // image = body.insertImage(renderer[1], textElement.getLeft(), textElement.getTop(), Math.round(size*textElement.getWidth()/textElement.getHeight() * scale), size * scale);
+  image = body.insertImage(renderer[1]);
+  resize(image, textElement, size, 3)
   console.log("eqn type: " + typeof image);
   console.log("title alt text: " + renderer[2] + equationOriginal + "#" + delim[6])
   console.log("recieving alt text: " + image.setTitle(renderer[2] + equationOriginal + "#" + delim[6]).getTitle());
@@ -843,16 +854,16 @@ function undoImage(delim){
       console.log("valid selection");
       debugLog(element)
       var positionX = element.getLeft(); // returns horizontal position in points measured from upper-left of the page
-      debugLog("Left: " + positionX)
+      // debugLog("Left: " + positionX)
       var positionY = element.getTop(); // returns vertical position
-      debugLog("Top: " + positionY)
+      // debugLog("Top: " + positionY)
       var width = element.getWidth();
-      debugLog("Width: " + width)
+      // debugLog("Width: " + width)
       var height = element.getHeight();
-      debugLog("Height: " + height)
+      // debugLog("Height: " + height)
       // var image = element.getChild(position).asInlineImage();
       var image = element;
-      debugLog("Image height: " + image.getHeight());
+      // debugLog("Image height: " + image.getHeight());
       // var origURL = image.getContentUrl();
       // image.setDescription("https://www.codecogs.com/eqnedit.php?latex=f(t)%3D%5Csum_%7B-%5Cinfty%7D%5E%7B%5Cinfty%7Dc_ne%5E%7Bi%5Cfrac%7B2%5Cpi%20n%7D%7BT%7Dt%7D%3D%5Ccdots%2Bc_%7B-2%7De%5E%7B-i%5Cfrac%7B4%5Cpi%7D%7BT%7Dt%7D%2Bc_%7B-1%7De%5E%7B-i%5Cfrac%7B2%5Cpi%7D%7BT%7Dt%7D%2Bc_0%2Bc_1e%5E%7Bi%5Cfrac%7B2%5Cpi%7D%7BT%7Dt%7D%2Bc_2e%5E%7Bi%5Cfrac%7B4%5Cpi%7D%7BT%7Dt%7D%2B%5Ccdots#0");
       // for(let i = 0; i < linkEquation.length; i++){
@@ -861,15 +872,15 @@ function undoImage(delim){
       // }
       
       image.setDescription('' + linkEquation[0])
-      debugLog("element in Link Equation is: " + linkEquation[0])
+      // debugLog("element in Link Equation is: " + linkEquation[0])
       var origURL = image.getTitle();
       image.remove();
-      debugLog("image description is: " + origURL)
+      // debugLog("image description is: " + origURL)
 
       if (!origURL){
         return -4;
       }
-      debugLog("Original URL from image: " + origURL);
+      // debugLog("Original URL from image: " + origURL);
       var worked = 1;
       var failure = 1;
       for (; worked <6; ++worked){//[3,"https://latex.codecogs.com/png.latex?","http://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]
