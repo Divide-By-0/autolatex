@@ -356,7 +356,9 @@ function getEquation(paragraph, childIndex, start, end, delimiters){
 function getStyle(equationStringEncoded, quality, renderer, isInline, type, red, green, blue){//ERROR?
   var equation = [];
   equationStringEncoded = equationStringEncoded;
-  if(isInline) equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D%7D" + renderer [3] + equationStringEncoded + renderer [4];
+  // if(isInline) equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D%7D" + renderer [3] + equationStringEncoded + renderer [4];
+  // equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D%7D" + renderer [3] + equationStringEncoded + renderer [4];
+  equationStringEncoded = "%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "0%7D" + renderer [3] + equationStringEncoded + renderer [4];
   debugLog("textColor: " + red + ", " + green + ", " + blue)
   debugLog("equationStringEncoded: " + equationStringEncoded);
   if(type == 2){
