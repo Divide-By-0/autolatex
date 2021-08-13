@@ -161,23 +161,17 @@ function getRgbColor(shape, slideNum){
   var foregroundColorType = foregroundColor.getColorType();
   if(foregroundColorType == "RGB"){
     debugLog("textColor :" + typeof foregroundColor)
-    var red = foregroundColor.asRgbColor().getRed();
-    var green = foregroundColor.asRgbColor().getGreen();
-    var blue = foregroundColor.asRgbColor().getBlue();
-    debugLog("RGB: " + red + ", " + green + ", " + blue)
-    // return(foregroundColor.asRgbColor().asHexString());
-    return(red + ", " + green + ", " + blue);
   }
   else{
-    var textColor = slide.getColorScheme().getConcreteColor(foregroundColor.asThemeColor().getThemeColorType());
-    console.log("equation color: " + textColor.asRgbColor().asHexString());
-    var red = textColor.asRgbColor().getRed();
-    var green = textColor.asRgbColor().getGreen();
-    var blue = textColor.asRgbColor().getBlue();
-    debugLog("RGB: " + red + ", " + green + ", " + blue)
-    return(red + ", " + green + ", " + blue);
-    // return(textColor.asRgbColor().asHexString());
+    var foregroundColor = slide.getColorScheme().getConcreteColor(foregroundColor.asThemeColor().getThemeColorType());
+    console.log("equation color: " + foregroundColor.asRgbColor().asHexString());
   }
+
+  var red = foregroundColor.asRgbColor().getRed();
+  var green = foregroundColor.asRgbColor().getGreen();
+  var blue = foregroundColor.asRgbColor().getBlue();
+  debugLog("RGB: " + red + ", " + green + ", " + blue)
+  return[red, green, blue];
 
 }
 
@@ -209,24 +203,18 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
   var text = shape.getText(); // text range
 
   var textColor = getRgbColor(shape, slideNum);
-
-  //set new equation with color
+  var red = textColor[0];
+  debugLog("red: " + red)
+  var green = textColor[1];
+  debugLog("green: " + green)
+  var blue = textColor[2];
+  debugLog("blue: " + blue)
 
   // debugLog("Looking for delimiter :" + delim[2] + " in text");
   var checkForDelimiter = shapeText.find(delim[2]);  // TextRange[]
 
   if(checkForDelimiter == null) 
     return [0, 0];  // didn't find first delimiter
-
-  // textColor = shape.getText().getTextStyle().getForegroundColor().asRgbColor() ;
-  // console.log("equation color: " + textColor.asHexString());
-
-  // if(textColor.asHexString() == '#00FF00'){
-  //   debugLog("color matches: green")
-  //   debugLog(shapeText.asRenderedString())
-  //   coloredText = "{\\color{Green}" + shapeText.asRenderedString().replaceAll('$', '') + "}";
-  //   debugLog("new equation with color: " + coloredText)
-  // }
 
   // start position of image
   var placeHolderStart = findTextOffsetInSlide(shapeText.asRenderedString(), delim[1], 0); 
@@ -243,7 +231,7 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
     return [defaultSize, 1]; // default behavior of placeImage
   }
 
-  return placeImage(slideNum, shapeNum, shapeText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline);
+  return placeImage(slideNum, shapeNum, shapeText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, red, green, blue);
 }
 
 function assert(value, command="unspecified"){
@@ -365,10 +353,12 @@ function getEquation(paragraph, childIndex, start, end, delimiters){
  * @param {integer} size                   The size of the text, whose neg/pos indicated whether the equation is inline or not.
  */
  
-function getStyle(equationStringEncoded, quality, renderer, isInline, type){//ERROR?
+function getStyle(equationStringEncoded, quality, renderer, isInline, type, red, green, blue){//ERROR?
   var equation = [];
   equationStringEncoded = equationStringEncoded;
-  if(isInline) equationStringEncoded = renderer [3] + equationStringEncoded + renderer [4];
+  if(isInline) equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D%7D" + renderer [3] + equationStringEncoded + renderer [4];
+  debugLog("textColor: " + red + ", " + green + ", " + blue)
+  debugLog("equationStringEncoded: " + equationStringEncoded);
   if(type == 2){
     equationStringEncoded = equationStringEncoded.split("&plus;").join("%2B"); //HACKHACKHACKHACK REPLACE
     equationStringEncoded = equationStringEncoded.split("&hash;").join("%23"); //HACKHACKHACKHACK REPLACE
@@ -475,15 +465,15 @@ function getShapeFromIndices(slideNum, shapeNum){
 
 var linkEquation = [];
 
- function placeImage(slideNum, shapeNum, shapeText, start, end, quality, size, defaultSize, delim, isInline) {
+ function placeImage(slideNum, shapeNum, shapeText, start, end, quality, size, defaultSize, delim, isInline, red, green, blue) {
   // get the textElement (shapeNum) on the given slide (slideNum)
   var textElement = getShapeFromIndices(slideNum, shapeNum);
   debugLog("placeImage- EquationOriginal: " + textElement + ", type: " + (typeof textElement));
 
   var text = textElement.getText(); // text range
 
-  var textColor = getRgbColor(textElement, slideNum);
-  console.log("equation color: " + textColor);
+  // var textColor = getRgbColor(textElement, slideNum);
+  // console.log("equation color: " + textColor);
   
   // var paragraph = textElement.getParent();
   // var childIndex  = paragraph.getChildIndex(textElement);  //gets index of found text in paragaph
@@ -514,7 +504,7 @@ var linkEquation = [];
   for (; worked <6; ++worked){//[3,"https://latex.codecogs.com/png.latex?","http://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]
     try {
       renderer = getRenderer(worked);
-      equation = getStyle(equationOriginal, quality, renderer, isInline, worked);
+      equation = getStyle(equationOriginal, quality, renderer, isInline, worked, red, green, blue);
       debugLog("Raw equation" + equation);
       rendererType = renderer[5];
       renderer[1] =renderer[1].split("FILENAME").join(getFilenameEncode (equation, 0));
