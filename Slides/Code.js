@@ -161,12 +161,22 @@ function getRgbColor(shape, slideNum){
   var foregroundColorType = foregroundColor.getColorType();
   if(foregroundColorType == "RGB"){
     debugLog("textColor :" + typeof foregroundColor)
-    return(foregroundColor.asRgbColor().asHexString());
+    var red = foregroundColor.asRgbColor().getRed();
+    var green = foregroundColor.asRgbColor().getGreen();
+    var blue = foregroundColor.asRgbColor().getBlue();
+    debugLog("RGB: " + red + ", " + green + ", " + blue)
+    // return(foregroundColor.asRgbColor().asHexString());
+    return(red + ", " + green + ", " + blue);
   }
   else{
     var textColor = slide.getColorScheme().getConcreteColor(foregroundColor.asThemeColor().getThemeColorType());
     console.log("equation color: " + textColor.asRgbColor().asHexString());
-    return(textColor.asRgbColor().asHexString());
+    var red = textColor.asRgbColor().getRed();
+    var green = textColor.asRgbColor().getGreen();
+    var blue = textColor.asRgbColor().getBlue();
+    debugLog("RGB: " + red + ", " + green + ", " + blue)
+    return(red + ", " + green + ", " + blue);
+    // return(textColor.asRgbColor().asHexString());
   }
 
 }
@@ -201,7 +211,6 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
   var textColor = getRgbColor(shape, slideNum);
 
   //set new equation with color
-  textColor 
 
   // debugLog("Looking for delimiter :" + delim[2] + " in text");
   var checkForDelimiter = shapeText.find(delim[2]);  // TextRange[]
@@ -580,12 +589,6 @@ var linkEquation = [];
   textColor = textElement.getText().getTextStyle().getForegroundColor().asRgbColor() ;
   console.log("equation color: " + textColor.asHexString());
 
-  if(textColor.asHexString() == '#00FF00'){
-    debugLog("color matches: green")
-    debugLog(shapeText.asRenderedString())
-    coloredText = "{\\color{Green}" + shapeText.asRenderedString().replaceAll('$', '') + "}";
-    debugLog("new equation with color: " + coloredText)
-  }
   textElement.remove();
 
   // SAVING FORMATTING 
