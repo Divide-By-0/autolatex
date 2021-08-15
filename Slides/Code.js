@@ -358,6 +358,7 @@ function getStyle(equationStringEncoded, quality, renderer, isInline, type, red,
   equationStringEncoded = equationStringEncoded;
   // if(isInline) equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D%7D" + renderer [3] + equationStringEncoded + renderer [4];
   // equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D%7D" + renderer [3] + equationStringEncoded + renderer [4];
+
   equationStringEncoded = "%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "0%7D" + renderer [3] + equationStringEncoded + renderer [4];
   debugLog("textColor: " + red + ", " + green + ", " + blue)
   debugLog("equationStringEncoded: " + equationStringEncoded);
@@ -572,14 +573,17 @@ var linkEquation = [];
   resize(image, textElement, size, 3)
   console.log("eqn type: " + typeof image);
   console.log("title alt text: " + renderer[2] + equationOriginal + "#" + delim[6])
-  console.log("recieving alt text: " + image.setTitle(renderer[2] + equationOriginal + "#" + delim[6]).getTitle());
+  
+  var obj = [red, green, blue, renderer[2] + equationOriginal + "#" + delim[6]];
+  var json = JSON.stringify(obj);  
+
+  // console.log("recieving alt text: " + image.setTitle("%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "0%7D" + renderer[2] + equationOriginal + "#" + delim[6]).getTitle());
+  image.setTitle(json);
   // debugLog("eqn description: " + .getTitle());
 
   // debugLog("equation description: " + image.getDescription());
 
   debugLog("equation description: " + image.getDescription());
-  textColor = textElement.getText().getTextStyle().getForegroundColor().asRgbColor() ;
-  console.log("equation color: " + textColor.asHexString());
 
   textElement.remove();
 
@@ -731,8 +735,8 @@ var linkEquation = [];
 
 // NOTE: one indexed
 function getRenderer(worked) {//  order of execution ID, image URL, editing URL, in-line commandAt the beginning, in-line command at and, Human name, No Machine name substring
-  if (worked == 1) {return [1,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]}
-  else if (worked == 2) {return [2,"http://texrendr.com/cgi-bin/mathtex.cgi?%5Cdpi%7B1800%7DEQUATION","http://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr"]}//http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
+  if (worked == 2) {return [2,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]}
+  else if (worked == 1) {return [1,"http://texrendr.com/cgi-bin/mathtex.cgi?%5Cdpi%7B1800%7DEQUATION","http://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr"]}//http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
   else if (worked == 6) {return [6,"https://texrendr.com/cgi-bin/mathtex.cgi?%5Cdpi%7B1800%7DEQUATION","https://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr"]}//http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
   else if (worked == 3) {return [3,"http://rogercortesi.com/eqn/tempimagedir/_FILENAME.png","http://rogercortesi.com/eqn/index.php?filename=_FILENAME.png&outtype=png&bgcolor=white&txcolor=black&res=1800&transparent=1&antialias=0&latextext=","%5Ctextstyle%20%7B", "%7D", "Roger's renderer"]}//Filename has to not have any +, Avoid %,Instead use†‰, avoid And specific ASCII Percent codes
   else if (worked == 5) {return [5,"http://latex.numberempire.com/render?EQUATION&sig=41279378deef11cbe78026063306e50d","http://latex.numberempire.com/render?","%5Ctextstyle%20%7B", "%7D", "Number empire"]} //has url at end
@@ -868,9 +872,15 @@ function undoImage(delim){
       
       image.setDescription('' + linkEquation[0])
       // debugLog("element in Link Equation is: " + linkEquation[0])
-      var origURL = image.getTitle();
+      var red = Number(JSON.parse(image.getTitle())[0]);
+      var green = Number(JSON.parse(image.getTitle())[1]);
+      var blue = Number(JSON.parse(image.getTitle())[2]);
+      var origURL = JSON.parse(image.getTitle())[3];
+
+      // var origURL = image.getTitle();
       image.remove();
-      // debugLog("image description is: " + origURL)
+
+      debugLog("image description is: " + origURL)
 
       if (!origURL){
         return -4;
@@ -907,8 +917,9 @@ function undoImage(delim){
       
       var shape = currentPage.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
       var textRange = shape.getText();
-      textRange.insertText(0, delim[0] + origEq + delim[1]);
-
+      textRange.insertText(0, delim[0] + origEq + delim[1]).getTextStyle().setForegroundColor(red, green, blue);
+      debugLog("textRange: " + textRange + "type: " + typeof textRange)
+      debugLog(typeof textRange.insertText);
       // insert original equation into newly created text box
       // element.getChild(position+1).removeFromParent();
       return 1;
