@@ -359,7 +359,7 @@ function getStyle(equationStringEncoded, quality, renderer, isInline, type, red,
   // if(isInline) equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D%7D" + renderer [3] + equationStringEncoded + renderer [4];
   // equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D%7D" + renderer [3] + equationStringEncoded + renderer [4];
 
-  equationStringEncoded = "%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "0%7D" + renderer [3] + equationStringEncoded + renderer [4];
+  equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "0%7D" + renderer [3] + equationStringEncoded + renderer [4] + "%7D";
   debugLog("textColor: " + red + ", " + green + ", " + blue)
   debugLog("equationStringEncoded: " + equationStringEncoded);
   if(type == 2){
@@ -517,6 +517,13 @@ var linkEquation = [];
       // add original equation link to the linkEquation array to be called later in de-render step
       linkEquation.push(renderer[2] + equationOriginal + "#" + delim[6]);
       debugLog("new equation added to LinkEquation array " + renderer[2] + equationOriginal + "#" + delim[6])
+
+      var _createFileInCache = UrlFetchApp.fetch(renderer[2] + renderer[6] + equation); 
+			// needed for codecogs to generate equation properly, need to figure out which other renderers need this. to test, use align* equations.
+ 			
+			if(rendererType == "Codecogs" || rendererType == "Sciweavers"){
+				Utilities.sleep(50); // sleep 50ms to let codecogs put the equation in its cache
+			}
 
       var startDate = new Date();
       var startTime = Number(startDate.getTime()).toFixed(0);
@@ -734,16 +741,30 @@ var linkEquation = [];
  }
 
 // NOTE: one indexed
-function getRenderer(worked) {//  order of execution ID, image URL, editing URL, in-line commandAt the beginning, in-line command at and, Human name, No Machine name substring
-  if (worked == 2) {return [2,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]}
-  else if (worked == 1) {return [1,"http://texrendr.com/cgi-bin/mathtex.cgi?%5Cdpi%7B1800%7DEQUATION","http://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr"]}//http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
-  else if (worked == 6) {return [6,"https://texrendr.com/cgi-bin/mathtex.cgi?%5Cdpi%7B1800%7DEQUATION","https://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr"]}//http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
-  else if (worked == 3) {return [3,"http://rogercortesi.com/eqn/tempimagedir/_FILENAME.png","http://rogercortesi.com/eqn/index.php?filename=_FILENAME.png&outtype=png&bgcolor=white&txcolor=black&res=1800&transparent=1&antialias=0&latextext=","%5Ctextstyle%20%7B", "%7D", "Roger's renderer"]}//Filename has to not have any +, Avoid %,Instead use†‰, avoid And specific ASCII Percent codes
-  else if (worked == 5) {return [5,"http://latex.numberempire.com/render?EQUATION&sig=41279378deef11cbe78026063306e50d","http://latex.numberempire.com/render?","%5Ctextstyle%20%7B", "%7D", "Number empire"]} //has url at end
-  else if (worked == 4) {return [4,"http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=txfonts&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=txfonts&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers"]} //not latex font
-  else return [0,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]
+function getRenderer(worked) {//  order of execution ID, image URL, editing URL, in-line commandAt the beginning, in-line command at and, Human name, the part that gets rendered in browser in the fake call but not in the link(No Machine name substring)
+	codeCogsPriority = 1
+	sciWeaverPriority = 4
+	texRenderPriority = 5
+	capableRenderers = 8
+	capableDerenderers = 12
+	if (worked == codeCogsPriority) {return [codeCogsPriority, "https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"]}
+	else if (worked == codeCogsPriority + 1) {return [codeCogsPriority + 1, "https://latex-staging.easygenerator.com/gif.latex?%5Cdpi%7B900%7DEQUATION","https://latex-staging.easygenerator.com/eqneditor/editor.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"]}
+	else if (worked == codeCogsPriority + 2) {return [codeCogsPriority + 2, "https://latex.codecogs.com/gif.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"]}
+	else if (worked == texRenderPriority) {return [texRenderPriority, "http://texrendr.com/cgi-bin/mimetex?%5CHuge%20EQUATION","http://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr", ""]}//http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
+	else if (worked == sciWeaverPriority) {return [sciWeaverPriority, "http://www.sciweavers.org/tex2img.php?bc=Transparent&fc=Black&im=jpg&fs=100&ff=modern&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=Transparent&fc=Black&im=jpg&fs=100&ff=modern&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers", ""]} //not latex font
+	else if (worked == 6) {return [6,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D", ""]}
+	else if (worked == 7) {return [7,"http://www.sciweavers.org/tex2img.php?bc=Transparent&fc=Black&im=png&fs=100&ff=iwona&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=Transparent&fc=Black&im=png&fs=100&ff=iwona&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers", ""]} // here to de render legacy equations properly, don't remove without migrating to correct font!
+	else if (worked == 8) {return [8,"http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=png&fs=100&ff=anttor&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=png&fs=100&ff=anttor&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers", ""]} // here to de render legacy equations properly, don't remove without migrating to correct font!
+	else if (worked == 9) {return [9,"http://rogercortesi.com/eqn/tempimagedir/_FILENAME.png","http://rogercortesi.com/eqn/index.php?filename=_FILENAME.png&outtype=png&bgcolor=white&txcolor=black&res=1800&transparent=1&antialias=0&latextext=","%5Ctextstyle%20%7B", "%7D", "Roger's renderer", ""]}//Filename has to not have any +, Avoid %,Instead use†‰, avoid And specific ASCII Percent codes
+	else if (worked == 10) {return [10,"https://texrendr.com/cgi-bin/mathtex.cgi?%5Cdpi%7B1800%7DEQUATION","https://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr", ""]} // here to de render legacy equations properly,  //http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
+	else if (worked == 11) {return [11,"http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=arev&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=arev&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers_old", ""]} // here to de render legacy equations properly, don't remove without migrating to correct font!
+	else if (worked == 12) {return [12,"http://latex.numberempire.com/render?EQUATION&sig=41279378deef11cbe78026063306e50d","http://latex.numberempire.com/render?","%5Ctextstyle%20%7B", "%7D", "Number empire", ""]} // to de render possibly very old equations
+	else return [13,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"]
 }//http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=txfonts&edit=0&eq=
 /**
+ * 
+ * http://www.sciweavers.org/tex2img.php?eq=%5Ccolor%5BRGB%5D%7B0%2C151%2C1670%7D%5Ctextstyle%20%7B3%5E%7B4%5E5%7D%20%2B%20%5Cfrac%7B1%7D%7B2%7D%7D&bc=Transparent&fc=Black&im=jpg&fs=12&ff=arev&edit=0
+ * http://www.sciweavers.org/tex2img.php?eq=%5Ccolor%5BRGB%5D%7B0%2C151%2C1670%7D%5Ctextstyle%20%7B3%5E%7B4%5E5%7D%20%2B%20%5Cfrac%7B1%7D%7B2%7D%7D&bc=Transparent&fc=Black&im=jpg&fs=100&ff=modern&edit=0
  * Given string of size, return integer value.
  *  
  * @param {string} delimiters     The text value of the delimiters from HTML selection. 
