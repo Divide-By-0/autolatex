@@ -333,11 +333,24 @@ function deEncode(equation){
   return equationStringDecoded;
 } 
 
-function getEquation(paragraph, childIndex, start, end, delimiters){
+function getEquation(origShape, paragraph, childIndex, start, end, delimiters){
   var equationOriginal = [];
   // debugLog("See text" + paragraph.getChild(childIndex).getText() + paragraph.getChild(childIndex).getText().length)
   var equation = paragraph.asRenderedString().substring(start+delimiters[4], end-delimiters[4]+2);
-  debugLog("getEquation- " + equation)
+  var checkForEquation = paragraph.asRenderedString();
+  debugLog("getEquation- " + (equation).length);
+  debugLog("checkForEquation- " + checkForEquation.length);
+  // debugLog("Equation has no extra text: " + (("$$" + equation + "$$") == checkForEquation).toString());
+
+
+  // if((checkForEquation).length-(equation).length > 5){
+  //   var copy = origShape;
+  //   copy.setText(copy.asRenderedString().replace(equation, ''));
+  //   origShape.getParentPage().asSlide().insertShape(copy);
+  // }
+  // if(("$$" + equation + "$$") != checkForEquation){
+  //   return "";
+  // }
   var equationStringEncoded = reEncode(equation); //escape deprecated
   equationOriginal.push(equationStringEncoded);
   //console.log("Encoded: " + equationStringEncoded);
@@ -481,7 +494,7 @@ var linkEquation = [];
   // var paragraph = textElement.getParent();
   // var childIndex  = paragraph.getChildIndex(textElement);  //gets index of found text in paragaph
   size = setSize(size, defaultSize, text, 0, start);
-  var equationOriginal = getEquation(text, 0, start, end, delim);
+  var equationOriginal = getEquation(textElement, text, 0, start, end, delim);
   debugLog("placeImage- EquationOriginal: " + equationOriginal);
 
   if(equationOriginal == ""){
@@ -576,8 +589,11 @@ var linkEquation = [];
   body = doc[slideNum];
   var scale = 3.0;
   // image = body.insertImage(renderer[1], textElement.getLeft(), textElement.getTop(), Math.round(size*textElement.getWidth()/textElement.getHeight() * scale), size * scale);
-  image = body.insertImage(renderer[1]);
-  resize(image, textElement, size, 3)
+  // try{
+    image = body.insertImage(renderer[1]);
+  // }
+  
+  resize(image, textElement, size, 1.5);
   console.log("eqn type: " + typeof image);
   console.log("title alt text: " + renderer[2] + equationOriginal + "#" + delim[6])
   
@@ -594,7 +610,8 @@ var linkEquation = [];
   // var textColor = textElement.getText().getTextStyle().getForegroundColor().asRgbColor() ;
   // console.log("equation color: " + textColor.asHexString());
 
-  textElement.remove();
+  // textElement.remove();
+  textElement.getText().clear(start, end);
 
   // SAVING FORMATTING 
   // if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50){
@@ -756,13 +773,13 @@ function getRenderer(worked) {//  order of execution ID, image URL, editing URL,
 	else if (worked == sciWeaverPriority) {return [sciWeaverPriority, "http://www.sciweavers.org/tex2img.php?bc=Transparent&fc=Black&im=jpg&fs=100&ff=modern&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=Transparent&fc=Black&im=jpg&fs=100&ff=modern&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers", ""]} //not latex font
 	else if (worked == 6) {return [6,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D", ""]}
 	else if (worked == 7) {return [7,"http://www.sciweavers.org/tex2img.php?bc=Transparent&fc=Black&im=png&fs=100&ff=iwona&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=Transparent&fc=Black&im=png&fs=100&ff=iwona&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers", ""]} // here to de render legacy equations properly, don't remove without migrating to correct font!
-	else if (worked == 8) {return [8,"http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=png&fs=100&ff=anttor&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=png&fs=100&ff=anttor&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers", ""]} // here to de render legacy equations properly, don't remove without migrating to correct font!
+	else if (worked == 8) {return [8,"http://www.sciweavers.org/tex2img.php?bc=Transparent&fc=Black&im=png&fs=100&ff=anttor&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=png&fs=100&ff=anttor&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers", ""]} // here to de render legacy equations properly, don't remove without migrating to correct font!
 	else if (worked == 9) {return [9,"http://rogercortesi.com/eqn/tempimagedir/_FILENAME.png","http://rogercortesi.com/eqn/index.php?filename=_FILENAME.png&outtype=png&bgcolor=white&txcolor=black&res=1800&transparent=1&antialias=0&latextext=","%5Ctextstyle%20%7B", "%7D", "Roger's renderer", ""]}//Filename has to not have any +, Avoid %,Instead use†‰, avoid And specific ASCII Percent codes
 	else if (worked == 10) {return [10,"https://texrendr.com/cgi-bin/mathtex.cgi?%5Cdpi%7B1800%7DEQUATION","https://www.texrendr.com/?eqn=","%5Ctextstyle%20", "", "Texrendr", ""]} // here to de render legacy equations properly,  //http://rogercortesi.com/eqn/index.php?filename=tempimagedir%2Feqn3609.png&outtype=png&bgcolor=white&txcolor=black&res=900&transparent=1&antialias=1&latextext=  //removed %5Cdpi%7B900%7D
-	else if (worked == 11) {return [11,"http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=arev&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=arev&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers_old", ""]} // here to de render legacy equations properly, don't remove without migrating to correct font!
+	else if (worked == 11) {return [11,"http://www.sciweavers.org/tex2img.php?bc=Transparent&fc=Black&im=jpg&fs=78&ff=arev&edit=0&eq=EQUATION","http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=arev&edit=0&eq=","%5Ctextstyle%20%7B", "%7D", "Sciweavers_old", ""]} // here to de render legacy equations properly, don't remove without migrating to correct font!
 	else if (worked == 12) {return [12,"http://latex.numberempire.com/render?EQUATION&sig=41279378deef11cbe78026063306e50d","http://latex.numberempire.com/render?","%5Ctextstyle%20%7B", "%7D", "Number empire", ""]} // to de render possibly very old equations
 	else return [13,"https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"]
-}//http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=txfonts&edit=0&eq=
+}//http://www.sciweavers.org/tex2img.php?bc=Transparent&fc=Black&im=jpg&fs=78&ff=txfonts&edit=0&eq=
 /**
  * 
  * http://www.sciweavers.org/tex2img.php?eq=%5Ccolor%5BRGB%5D%7B0%2C151%2C1670%7D%5Ctextstyle%20%7B3%5E%7B4%5E5%7D%20%2B%20%5Cfrac%7B1%7D%7B2%7D%7D&bc=Transparent&fc=Black&im=jpg&fs=12&ff=arev&edit=0
