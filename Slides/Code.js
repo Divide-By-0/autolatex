@@ -578,8 +578,8 @@ var linkEquation = [];
   // debugLog("equation description: " + image.getDescription());
 
   debugLog("equation description: " + image.getDescription());
-  textColor = textElement.getText().getTextStyle().getForegroundColor().asRgbColor() ;
-  console.log("equation color: " + textColor.asHexString());
+  // var textColor = textElement.getText().getTextStyle().getForegroundColor().asRgbColor() ;
+  // console.log("equation color: " + textColor.asHexString());
 
   textElement.remove();
 
