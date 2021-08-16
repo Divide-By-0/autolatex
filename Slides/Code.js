@@ -19,6 +19,31 @@ IntegratedApp = {
     return SlidesApp.getActivePresentation().getPageWidth();
   }
 };
+
+var TIMING_DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information 
+var previousTime = 0;
+var previousLine = 0;
+var equationRenderingTime = 0;
+var codecogsSlow = 0;
+var texrendrDown = 0;
+var capableRenderers = 8;
+var capableDerenderers = 12;
+//render bug variables
+var invalidEquationHashCodecogsFirst50   = "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD%u0315%uFFFD3%"; // invalid codecogs equation
+var invalidEquationHashCodecogsFirst50_2 = "";
+var invalidEquationHashCodecogsFirst50_3 = "%uFFFDPNG%0D%0A%1A%0A%00%00%00%0DIHDR%00%00%00%01%"; // this is one space in codecogs. not pushed yet.
+var invalidEquationHashCodecogsFirst50_4 = "GIF89a%01%00%01%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%0";
+var invalidEquationHashCodecogsFirst50_5 = "%uFFFDPNG%0D%0A%1A%0A%00%00%00%0DIHDR%00%00%00z%00";
+var invalidEquationHashTexrendrFirst50   = "GIF89a%uFFFD%008%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%";
+var invalidEquationHashTexrendrFirst50_2 = "GIF89a%01%00%01%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%0";
+var invalidEquationHashTexrendrFirst50_3 = "GIF89ai%0A%uFFFD%01%uFFFD%00%00%uFFFD%uFFFD%uFFFD%"; // this is the No Expression Supplied error. Ignored for now.
+var invalidEquationHashTexrendrFirst50_4 = "%7FELF%01%01%01%00%00%00%00%00%00%00%00%00%02%00%0";
+var invalidEquationHashSciweaversFirst50 = "%0D%0A%09%3C%21DOCTYPE%20html%20PUBLIC%20%22-//W3C";
+
+var failedCodecogs = 0;
+var failedTexrendr = 0;
+var failedResp;
+
 /** //8.03 - De-Render, Inline, Advanced Delimiters > Fixed Inline Not Appearing
  * Creates a menu entry in the Google Docs UI when the document is opened.
  *
@@ -198,9 +223,7 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
   }
 
   // Get the text of the shape.
-  shapeText = shape.getText(); // TextRange
-
-  var text = shape.getText(); // text range
+  var shapeText = shape.getText(); // TextRange
 
   var textColor = getRgbColor(shape, slideNum);
   var red = textColor[0];
@@ -242,42 +265,40 @@ function assert(value, command="unspecified"){
 
 /////////////////////////////////////////////////////////
 
-function selectText(slideNum, shapeNum, delim, quality, size, defaultSize, isInline){
-  // find shape
-  // debugLog("Checking document slideNum, shapeNum # " + slideNum + " " + shapeNum)
-  var shape = getShapeFromIndices(slideNum, shapeNum);
-  if(shape == null){
-    return [0, 0];
-  }
-  shapeText = shape.getText();
-  // debugLog("Text of the shape is:" + shapeText.asRenderedString());
-  // debugLog("delim[2] is:" + delim);
+// function selectText(slideNum, shapeNum, delim, quality, size, defaultSize, isInline){
+//   // find shape
+//   // debugLog("Checking document slideNum, shapeNum # " + slideNum + " " + shapeNum)
+//   var shape = getShapeFromIndices(slideNum, shapeNum);
+//   if(shape == null){
+//     return [0, 0];
+//   }
+//   var shapeText = shape.getText();
+//   // debugLog("Text of the shape is:" + shapeText.asRenderedString());
+//   // debugLog("delim[2] is:" + delim);
 
-  // get index of checkForDelimiter and endElement using highlight or mouse cursor select 
-  document.getElementById('ip').addEventListener('mouseup',function(e){
-        var txt = this.innerText;
-        var selection = window.getSelection();
+//   // get index of checkForDelimiter and endElement using highlight or mouse cursor select 
+//   document.getElementById('ip').addEventListener('mouseup',function(e){
+//         var selection = window.getSelection();
 
-        var placeHolderStart = selection.anchorOffset; // get start index
-        var checkForDelimiter = placeHolderStart; // set checkForDelimiter equal to placeHolderStart
-        var placeHolderEnd = selection.focusOffset; // get end index
-        if (placeHolderStart >= 0 && placeHolderEnd >= 0){
-          console.log("start: " + placeHolderStart);
-          console.log("end: " + placeHolderEnd);
-          debugLog((placeHolderEnd - placeHolderStart) + " characters long"); //output string length
-        }
-  });
+//         var placeHolderStart = selection.anchorOffset; // get start index
+//         var placeHolderEnd = selection.focusOffset; // get end index
+//         if (placeHolderStart >= 0 && placeHolderEnd >= 0){
+//           console.log("start: " + placeHolderStart);
+//           console.log("end: " + placeHolderEnd);
+//           debugLog((placeHolderEnd - placeHolderStart) + " characters long"); //output string length
+//         }
+//   });
 
-  // error messages
-  if(placeHolderEnd - placeHolderStart == 2.0) { // empty equation
-    console.log("Empty equation!");
-    return [defaultSize, 1]; // default behavior of placeImage
-  }
-  // place image
-  return placeImage(slideNum, shapeNum, checkForDelimiter, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline);
+//   // error messages
+//   if(placeHolderEnd - placeHolderStart == 2.0) { // empty equation
+//     console.log("Empty equation!");
+//     return [defaultSize, 1]; // default behavior of placeImage
+//   }
+//   // place image
+//   return placeImage(slideNum, shapeNum, checkForDelimiter, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline);
 
 
-}
+// }
 
 
 ///////////////////////////////////////////////
@@ -328,7 +349,7 @@ function deEncode(equation){
 
   var equationStringDecoded = decodeURIComponent(getCustomEncode (getFilenameEncode (equation, 1), 1, 0)); //escape deprecated
   //  console.log("Decoded without replacing: " + equationStringDecoded);
-  var equationStringDecoded = getCustomEncode(equationStringDecoded, 1, 1);
+  equationStringDecoded = getCustomEncode(equationStringDecoded, 1, 1);
   // debugLog("Decoded with replacing: " + equationStringDecoded);
   return equationStringDecoded;
 } 
@@ -410,7 +431,7 @@ function getKey(){
 function setSize(size, defaultSize, paragraph, childIndex, start){
   //GET SIZE
   var newSize = paragraph.getTextStyle().getFontSize();
-  debugLog("Size is: " + newSize.toString());
+  // debugLog("Size is: " + newSize.toString());
   if(newSize == null){
     return defaultSize;
   } else {
@@ -553,37 +574,47 @@ var linkEquation = [];
       var endTime = Number(endDate.getTime()).toFixed(0);
       debugLog("Timing for retrieval: " + (medTime - startTime).toString() + (endTime - medTime).toString())
 
-      if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50){
-        console.log("Invalid Codecogs Equation!")
-        failedCodecogsAndTexrendr += 1;
-        failedResp = resp;
-        if(failedCodecogsAndTexrendr == 2){ // if in order so failed codecogs first
-          console.log("Displaying codecogs error!")
-          resp = failedResp
-        }
-        else{
-          throw new Error('Saw invalid Codecogs equation hash!');
-        }
+      if(escape(resp.getBlob().getDataAsString()) == invalidEquationHashCodecogsFirst50_2){ // if there is no hash, codecogs failed
+        throw new Error('Saw NO Codecogs equation hash! Renderer likely down!');
       }
-      if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashTexrendrFirst50){
-        console.log("Invalid Texrendr Equation!")
-        failedCodecogsAndTexrendr += 1
-        if(failedCodecogsAndTexrendr == 2){ // if in order so failed codecogs first
-          console.log("Displaying codecogs error!")
-          resp = failedResp
-        }
-        else{ // should only execute if texrendr is 1
-          throw new Error('Saw invalid Texrendr equation hash!');
-        }
+      else if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashSciweaversFirst50){ // if there is no hash, codecogs failed
+        throw new Error('Saw weburl Sciweavers equation hash! Equation likely contains amsmath!');
       }
-      failure = 0;
-      console.log("Worked with renderer ", worked);
-      break;
-    } catch(err) {
-      console.log(renderer[5] + " Error! - " + err);
-    }
-    if (failure == 0) break;
-  }
+     else if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50_3 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50_4 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50_5){
+       console.log("Invalid Codecogs Equation! Times: " + failedCodecogs + failedTexrendr)
+       failedCodecogs += 1;
+       failedResp = resp;
+       if(failedCodecogs && failedTexrendr){ // if in order so failed codecogs first
+         console.log("Displaying codecogs error!")
+         resp = failedResp // let it continue to completion with the failed codecogs equation
+       }
+       else{
+         throw new Error('Saw invalid Codecogs equation hash!');
+       }
+     } // have no idea if I can put an else here or not lol
+     if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashTexrendrFirst50 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashTexrendrFirst50_2 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashTexrendrFirst50_3 || escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashTexrendrFirst50_4){
+       console.log("Invalid Texrendr Equation! Times: " + failedCodecogs + failedTexrendr)
+       failedTexrendr += 1
+       if(failedCodecogs && failedTexrendr){ // if in order so failed codecogs first
+         console.log("Displaying Texrendr error!")
+         resp = failedResp // let it continue to completion with the failed codecogs equation
+       }
+       else{ // should only execute if texrendr is 1
+         throw new Error('Saw invalid Texrendr equation hash!');
+       }
+     }
+     failure = 0;
+     console.log("Worked with renderer ", worked, " and type ", rendererType);
+     break;
+   } catch(err) {
+     console.log(rendererType + " Error! - " + err);
+      if(rendererType == 'Texrendr'){ // equation.indexOf("align")==-1 &&  removed since align now supported
+       console.log("Texrendr likely down, deprioritized!")
+       texrendrDown = 1
+      }
+   }
+   if (failure == 0) break;
+ }
   if (worked > 5) return -100000;
   var doc = IntegratedApp.getBody();
   body = doc[slideNum];
