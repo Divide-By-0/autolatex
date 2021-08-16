@@ -1,0 +1,8 @@
+{
+"name": "Autolatex Equations",
+"version": "1.0",
+"icons": {"16": "favicon-16x16.png", 
+"32": "favicon-32x32.png", 
+"128": "favicon-128x128.png"},
+"description": "This add-on lets you instantly convert every math equation in your slide presentation into beautiful latex images!"
+}
