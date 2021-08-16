@@ -182,7 +182,10 @@ function getRgbColor(shape, slideNum){
   var doc = IntegratedApp.getBody();
   var slide = doc[slideNum];
   // debugLog("type of slide object: " + typeof slide)
-  var foregroundColor = shape.getText().getTextStyle().getForegroundColor()
+  var foregroundColor = shape.getText().getTextStyle().getForegroundColor();
+  if(foregroundColor == null){
+    return [0,0,0];
+  }
   var foregroundColorType = foregroundColor.getColorType();
   if(foregroundColorType == "RGB"){
     debugLog("textColor :" + typeof foregroundColor)
@@ -242,8 +245,14 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
   // start position of image
   var placeHolderStart = findTextOffsetInSlide(shapeText.asRenderedString(), delim[1], 0); 
   
+  var temp = 2;
+  if(placeHolderStart != -1){
+    temp += placeHolderStart;
+  }
   // end position till of image 
-  var placeHolderEnd = findTextOffsetInSlide(shapeText.asRenderedString(), delim[1], 2); 
+  var placeHolderEnd = findTextOffsetInSlide(shapeText.asRenderedString(), delim[1], temp); 
+
+  debugLog("Start and End of equation: " + placeHolderStart + " " + placeHolderEnd);
 
   // debugLog("Image will be inserted between " + placeHolderStart + " " + placeHolderEnd);
   // debugLog("Text to be replaced is " + (placeHolderEnd - placeHolderStart) + " characters long");
@@ -515,6 +524,7 @@ var linkEquation = [];
   // var paragraph = textElement.getParent();
   // var childIndex  = paragraph.getChildIndex(textElement);  //gets index of found text in paragaph
   size = setSize(size, defaultSize, text, 0, start);
+  
   var equationOriginal = getEquation(textElement, text, 0, start, end, delim);
   debugLog("placeImage- EquationOriginal: " + equationOriginal);
 
@@ -642,7 +652,11 @@ var linkEquation = [];
   // console.log("equation color: " + textColor.asHexString());
 
   // textElement.remove();
-  textElement.getText().clear(start, end);
+  textElement.getText().clear(start, end+2);
+  textElement.setLeft(textElement.getLeft() + image.getWidth() * 1.1);
+  if(textElement.getText().asRenderedString().length == 1){
+    textElement.remove();
+  }
 
   // SAVING FORMATTING 
   // if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50){
