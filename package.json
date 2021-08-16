@@ -1,0 +1,23 @@
+{
+  "name": "autolatex",
+  "version": "1.0.0",
+  "description": "Auto-LaTeX Equations add-on for Google Docs",
+  "main": "IntegratedApp.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Divide-By-0/autolatex.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Divide-By-0/autolatex/issues"
+  },
+  "homepage": "https://github.com/Divide-By-0/autolatex#readme",
+  "devDependencies": {
+    "eslint": "^7.32.0",
+    "eslint-config-google": "^0.14.0"
+  }
+}
