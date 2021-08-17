@@ -178,11 +178,11 @@ function findTextOffsetInSlide(str, search, offset = 0){
 }
 
 // slideNum and slideObjectNum are integers
-function getRgbColor(shape, slideNum){
+function getRgbColor(textRange, slideNum){
   var doc = IntegratedApp.getBody();
   var slide = doc[slideNum];
   // debugLog("type of slide object: " + typeof slide)
-  var foregroundColor = shape.getText().getTextStyle().getForegroundColor();
+  var foregroundColor = textRange.getTextStyle().getForegroundColor();
   if(foregroundColor == null){
     return [0,0,0];
   }
@@ -228,13 +228,7 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
   // Get the text of the shape.
   var shapeText = shape.getText(); // TextRange
 
-  var textColor = getRgbColor(shape, slideNum);
-  var red = textColor[0];
-  debugLog("red: " + red)
-  var green = textColor[1];
-  debugLog("green: " + green)
-  var blue = textColor[2];
-  debugLog("blue: " + blue)
+  
 
   // debugLog("Looking for delimiter :" + delim[2] + " in text");
   var checkForDelimiter = shapeText.find(delim[2]);  // TextRange[]
@@ -253,6 +247,15 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
   var placeHolderEnd = findTextOffsetInSlide(shapeText.asRenderedString(), delim[1], temp); 
 
   debugLog("Start and End of equation: " + placeHolderStart + " " + placeHolderEnd);
+  // debugLog("Isolating Equation Textrange: " + shape.getText().getRange(placeHolderStart, placeHolderEnd).asRenderedString());
+
+  var textColor = getRgbColor(shape.getText().getRange(placeHolderStart+1, placeHolderEnd), slideNum);
+  var red = textColor[0];
+  debugLog("red: " + red)
+  var green = textColor[1];
+  debugLog("green: " + green)
+  var blue = textColor[2];
+  debugLog("blue: " + blue)
 
   // debugLog("Image will be inserted between " + placeHolderStart + " " + placeHolderEnd);
   // debugLog("Text to be replaced is " + (placeHolderEnd - placeHolderStart) + " characters long");
@@ -562,7 +565,8 @@ var linkEquation = [];
       linkEquation.push(renderer[2] + equationOriginal + "#" + delim[6]);
       debugLog("new equation added to LinkEquation array " + renderer[2] + equationOriginal + "#" + delim[6])
 
-      var _createFileInCache = UrlFetchApp.fetch(renderer[2] + renderer[6] + equation); 
+      var _createFileInCache = UrlFetchApp.fetch(renderer[2] + renderer[6] + equation);
+      debugLog("Cached equation: " + renderer[2] + renderer[6] + equation);
 			// needed for codecogs to generate equation properly, need to figure out which other renderers need this. to test, use align* equations.
  			
 			if(rendererType == "Codecogs" || rendererType == "Sciweavers"){
@@ -807,8 +811,8 @@ var linkEquation = [];
 // NOTE: one indexed
 function getRenderer(worked) {//  order of execution ID, image URL, editing URL, in-line commandAt the beginning, in-line command at and, Human name, the part that gets rendered in browser in the fake call but not in the link(No Machine name substring)
 	codeCogsPriority = 1
-	sciWeaverPriority = 4
-	texRenderPriority = 5
+	sciWeaverPriority = 5
+	texRenderPriority = 4
 	capableRenderers = 8
 	capableDerenderers = 12
 	if (worked == codeCogsPriority) {return [codeCogsPriority, "https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION","https://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"]}
