@@ -631,36 +631,37 @@ var linkEquation = [];
  }
   if (worked > 5) return -100000;
   var doc = IntegratedApp.getBody();
-  body = doc[slideNum];
-  var scale = 3.0;
-  // image = body.insertImage(renderer[1], textElement.getLeft(), textElement.getTop(), Math.round(size*textElement.getWidth()/textElement.getHeight() * scale), size * scale);
-  // try{
-    image = body.insertImage(renderer[1]);
-  // }
-  
-  resize(image, textElement, size, 1.5);
+  var body = doc[slideNum];
+
   console.log("eqn type: " + typeof image);
   console.log("title alt text: " + renderer[2] + equationOriginal + "#" + delim[6])
   
   var obj = [red, green, blue, renderer[2] + equationOriginal + "#" + delim[6]];
   var json = JSON.stringify(obj);  
 
-  // console.log("recieving alt text: " + image.setTitle("%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "0%7D" + renderer[2] + equationOriginal + "#" + delim[6]).getTitle());
-  image.setTitle(json);
-  // debugLog("eqn description: " + .getTitle());
-
-  // debugLog("equation description: " + image.getDescription());
-
-  debugLog("equation description: " + image.getDescription());
-  // var textColor = textElement.getText().getTextStyle().getForegroundColor().asRgbColor() ;
-  // console.log("equation color: " + textColor.asHexString());
-
-  // textElement.remove();
   textElement.getText().clear(start, end+2);
-  textElement.setLeft(textElement.getLeft() + image.getWidth() * 1.1);
+  // textElement.setLeft(textElement.getLeft() + image.getWidth() * 1.1);
   if(textElement.getText().asRenderedString().length == 1){
     textElement.remove();
   }
+
+  var scale = 1.5;
+
+  if(rendererType.valueOf() === "Texrendr".valueOf())  //TexRendr
+    scale = (150 / 174);
+  else if(rendererType.valueOf() === "Roger's renderer".valueOf())      //Rogers renderer
+    scale = (150 / 200);
+  else if(rendererType.valueOf() === "Codecogs".valueOf())      //CodeCogs, other
+    scale = (150 / 100);
+  else       //CodeCogs, other
+    scale = (150 / 100);
+  
+  var image = body.insertImage(renderer[1]);
+  resize(image, textElement, size, scale);
+  image.setTitle(json);
+
+
+  debugLog("equation description: " + image.getDescription());
 
   // SAVING FORMATTING 
   // if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50){
