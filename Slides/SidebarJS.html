@@ -153,15 +153,15 @@
             $("#loading").html("Status: " + "No"          + " equations replaced.");
             
           if(returnSuccess == -4)
-            showError("Cannot retrieve equation. Is your cursor before an Auto-LaTeX rendered equation?", "Status: Error, please ensure link is still on equation.");
+            showError("Cannot retrieve equation. Is your equation selected?", "Status: Error, please ensure link is still on equation.");
           else if(returnSuccess == -3)
-            showError("Cannot retrieve equation. Is your cursor before an Auto-LaTeX rendered equation?", "Status: Error, please move cursor before inline equation.");
+            showError("Cannot retrieve equation. Is your equation selected?", "Status: Error, please select image.");
           else if(returnSuccess == -2)
-            showError("Cannot insert text here. Is your cursor before an equation?", "Status: Error, please move cursor before equation.");
+            showError("Cannot insert text here. Is your equation selected?", "Status: Error, please select equation.");
           else if(returnSuccess == -1)
-            showError("Cannot find a cursor/equation. Please click before an equation.", "Status: Error, please move cursor before equation.");
+            showError("Cannot find a equation. Please click on equation image.", "Status: Error, please select equation.");
           else if(returnSuccess == 0)
-            $("#loading").html("Status: " + "Error: Please insert cursor right before image.");
+            $("#loading").html("Status: " + "Error: Please select equation image.");
           else if(returnSuccess == 1)
             $("#loading").html("Status: " + returnSuccess + " equation de-rendered.");
           else
@@ -171,7 +171,7 @@
         function(msg, element) {
           $("#loading").html('');
           clearInterval(runDots);
-          showError("Please ensure cursor is immediately before the equation to be derendered.", "Status: Error, please move cursor before equation.");
+          showError("Please select equation image to be derendered.", "Status: Error, please select equation to be derendered.");
           element.disabled = false;
        })
       .withUserObject(this)
@@ -203,7 +203,7 @@
         $("#loading").html("Status: " + 0 + " equations de-rendered.");
         if(returnSuccess < 0){
           $("#loading").html("Status: " + "No"          + " equations de-rendered.");
-          showError("Cannot find any equations.", "Status: Error, please move cursor before equation.");
+          showError("Cannot find any equations.", "Status: Error, please click equation image.");
         }
         else if(returnSuccess == 0)
           $("#loading").html("Status: " + "No"          + " equations found to de-render.");
@@ -216,7 +216,7 @@
       function(msg, element) {
         $("#loading").html('');
         clearInterval(runDots);
-        showError("Please ensure cursor is inside document.", "Status: Error, please move cursor into document.");
+        showError("Please select image.", "Status: Error, please select image.");
         element.disabled = false;
      })
     .withUserObject(this)
@@ -267,7 +267,7 @@
           $("#loading").html("Status: " + 0 + " equations de-rendered.");
           if(returnSuccess < 0){
             $("#loading").html("Status: " + "No"          + " equations de-rendered.");
-            showError("Cannot find any equations.", "Status: Error, please move cursor before equation.");
+            showError("Cannot find any equations.", "Status: Error, please select image.");
           }
           else if(returnSuccess == 0)
             $("#loading").html("Status: " + "No"          + " equations found to de-render.");
@@ -280,7 +280,7 @@
         function(msg) {
           $("#loading").html('');
           clearInterval(runDots);
-          showError("Please ensure cursor is inside document.", "Status: Error, please move cursor into document.");
+          showError("Please select image.", "Status: Error, please select image.");
        })
       .removeAll(delimiter);
     }
