@@ -237,7 +237,7 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
     return [0, 0];  // didn't find first delimiter
 
   // start position of image
-  var placeHolderStart = findTextOffsetInSlide(shapeText.asRenderedString(), delim[1], 0); 
+  var placeHolderStart = findTextOffsetInSlide(shapeText.asRenderedString(), delim[0], 0); 
   
   var temp = 2;
   if(placeHolderStart != -1){
@@ -648,16 +648,19 @@ var linkEquation = [];
   textElement.getText().clear(start, end+2);
   // textElement.setLeft(textElement.getLeft() + image.getWidth() * 1.1);
 
-  var scale = (2/100);
-
-  if(rendererType.valueOf() === "Texrendr".valueOf())  //TexRendr
-    scale = (2 / 174);
-  else if(rendererType.valueOf() === "Roger's renderer".valueOf())      //Rogers renderer
-    scale = (2 / 200);
-  else if(rendererType.valueOf() === "Codecogs".valueOf())      //CodeCogs, other
-    scale = (2 / 100);
-  else       //CodeCogs, other
-    scale = (2 / 100);
+  let scale = 2 / 100.0;
+	if(rendererType.valueOf() === "Texrendr".valueOf())  //TexRendr
+		scale = 2 / 42.0;
+	else if(rendererType.valueOf() === "Roger's renderer".valueOf())      //Rogers renderer
+		scale = 2 / 200.0;
+	else if(rendererType.valueOf() === "Codecogs".valueOf())      //CodeCogs, other
+		scale = 2 / 100.0;
+	else if(rendererType.valueOf() === "Sciweavers".valueOf())  //Scieweavers
+		scale = 2 / 98.0;
+	else if(rendererType.valueOf() === "Sciweavers_old".valueOf())  //C [75.4, 79.6] on width and height ratio
+		scale = 2 / 76.0;
+	else       //CodeCogs, other
+		scale = 2 / 100.0;
   
   var image = body.insertImage(renderer[1]);
   resize(image, textElement, size, scale);
