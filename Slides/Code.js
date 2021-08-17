@@ -402,10 +402,11 @@ function getEquation(origShape, paragraph, childIndex, start, end, delimiters){
 function getStyle(equationStringEncoded, quality, renderer, isInline, type, red, green, blue){//ERROR?
   var equation = [];
   equationStringEncoded = equationStringEncoded;
-  // if(isInline) equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D%7D" + renderer [3] + equationStringEncoded + renderer [4];
-  // equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D%7D" + renderer [3] + equationStringEncoded + renderer [4];
-
-  equationStringEncoded = renderer [3] + "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D" + equationStringEncoded + renderer [4] + "%7D";
+  if(isInline) {
+    equationStringEncoded = renderer [3] + "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D" + equationStringEncoded + renderer [4] + "%7D";
+  } else{
+    equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D" + equationStringEncoded + "%7D";
+  }
   debugLog("textColor: " + red + ", " + green + ", " + blue)
   debugLog("equationStringEncoded: " + equationStringEncoded);
   if(type == 2){
@@ -440,7 +441,7 @@ function getKey(){
 }
 
 //retrieve size from text
-function setSize(size, defaultSize, paragraph, childIndex, start){
+function getSize(size, defaultSize, paragraph, childIndex, start){
   //GET SIZE
   var newSize = paragraph.getTextStyle().getFontSize();
   // debugLog("Size is: " + newSize.toString());
@@ -452,10 +453,16 @@ function setSize(size, defaultSize, paragraph, childIndex, start){
 }
 
 function resize(eqnImage, textElement, size, scale){
+  debugLog("eqnImage " + eqnImage + "textElement " + textElement + "size " + size + "scale " + scale);
   eqnImage.setLeft(textElement.getLeft());
   eqnImage.setTop(textElement.getTop());
-  eqnImage.setWidth(Math.round(size*eqnImage.getWidth()/eqnImage.getHeight() * scale));
-  eqnImage.setHeight(size * scale);
+  if(size == 0){
+    size = 12;
+  }
+  debugLog("size " + size + "width " + eqnImage.getWidth() + "scale " + scale)
+  eqnImage.setWidth(Math.round(size*eqnImage.getWidth() * scale));
+  
+  eqnImage.setHeight(Math.round(size * scale * eqnImage.getHeight()));
 
   // image = body.insertImage(renderer[1], textElement.getLeft(), textElement.getTop(), Math.round(size*textElement.getWidth()/textElement.getHeight() * scale), size * scale);
 }
@@ -526,7 +533,7 @@ var linkEquation = [];
   
   // var paragraph = textElement.getParent();
   // var childIndex  = paragraph.getChildIndex(textElement);  //gets index of found text in paragaph
-  size = setSize(size, defaultSize, text, 0, start);
+  size = getSize(size, defaultSize, text, 0, start);
   
   var equationOriginal = getEquation(textElement, text, 0, start, end, delim);
   debugLog("placeImage- EquationOriginal: " + equationOriginal);
@@ -633,7 +640,6 @@ var linkEquation = [];
   var doc = IntegratedApp.getBody();
   var body = doc[slideNum];
 
-  console.log("eqn type: " + typeof image);
   console.log("title alt text: " + renderer[2] + equationOriginal + "#" + delim[6])
   
   var obj = [red, green, blue, renderer[2] + equationOriginal + "#" + delim[6]];
@@ -641,23 +647,23 @@ var linkEquation = [];
 
   textElement.getText().clear(start, end+2);
   // textElement.setLeft(textElement.getLeft() + image.getWidth() * 1.1);
-  if(textElement.getText().asRenderedString().length == 1){
-    textElement.remove();
-  }
 
-  var scale = 1.5;
+  var scale = (2/100);
 
   if(rendererType.valueOf() === "Texrendr".valueOf())  //TexRendr
-    scale = (150 / 174);
+    scale = (2 / 174);
   else if(rendererType.valueOf() === "Roger's renderer".valueOf())      //Rogers renderer
-    scale = (150 / 200);
+    scale = (2 / 200);
   else if(rendererType.valueOf() === "Codecogs".valueOf())      //CodeCogs, other
-    scale = (150 / 100);
+    scale = (2 / 100);
   else       //CodeCogs, other
-    scale = (150 / 100);
+    scale = (2 / 100);
   
   var image = body.insertImage(renderer[1]);
   resize(image, textElement, size, scale);
+  if(textElement.getText().asRenderedString().length == 1){
+    textElement.remove();
+  }
   image.setTitle(json);
 
 
