@@ -405,7 +405,7 @@ function getStyle(equationStringEncoded, quality, renderer, isInline, type, red,
   // if(isInline) equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D%7D" + renderer [3] + equationStringEncoded + renderer [4];
   // equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D%7D" + renderer [3] + equationStringEncoded + renderer [4];
 
-  equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "0%7D" + renderer [3] + equationStringEncoded + renderer [4] + "%7D";
+  equationStringEncoded = renderer [3] + "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D" + equationStringEncoded + renderer [4] + "%7D";
   debugLog("textColor: " + red + ", " + green + ", " + blue)
   debugLog("equationStringEncoded: " + equationStringEncoded);
   if(type == 2){
