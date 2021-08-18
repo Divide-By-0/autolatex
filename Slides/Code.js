@@ -516,7 +516,7 @@ function getShapeFromIndices(slideNum, shapeNum){
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
 
-var linkEquation = [];
+// var linkEquation = [];
 
  function placeImage(slideNum, shapeNum, shapeText, start, end, quality, size, defaultSize, delim, isInline, red, green, blue) {
   // get the textElement (shapeNum) on the given slide (slideNum)
@@ -563,18 +563,18 @@ var linkEquation = [];
     try {
       renderer = getRenderer(worked);
       equation = getStyle(equationOriginal, quality, renderer, isInline, worked, red, green, blue);
-      debugLog("Raw equation" + equation);
+      // debugLog("Raw equation" + equation);
       rendererType = renderer[5];
       renderer[1] =renderer[1].split("FILENAME").join(getFilenameEncode (equation, 0));
       renderer[1] =renderer[1].split("EQUATION").join(equation);
       renderer[2] =renderer[2].split("FILENAME").join(getFilenameEncode (equation, 0));
-      debugLog("Link with equation " + renderer[1]);
+      debugLog("Image url: " + renderer[1]);
       // add original equation link to the linkEquation array to be called later in de-render step
-      linkEquation.push(renderer[2] + equationOriginal + "#" + delim[6]);
-      debugLog("new equation added to LinkEquation array " + renderer[2] + equationOriginal + "#" + delim[6])
-
-      var _createFileInCache = UrlFetchApp.fetch(renderer[2] + renderer[6] + equation);
+      // linkEquation.push(renderer[2] + equationOriginal + "#" + delim[6]);
+      debugLog("Title Alt Text " + renderer[2] + equationOriginal + "#" + delim[6])
       debugLog("Cached equation: " + renderer[2] + renderer[6] + equation);
+      var _createFileInCache = UrlFetchApp.fetch(renderer[2] + renderer[6] + equation);
+      
 			// needed for codecogs to generate equation properly, need to figure out which other renderers need this. to test, use align* equations.
  			
 			if(rendererType == "Codecogs" || rendererType == "Sciweavers"){
@@ -641,7 +641,7 @@ var linkEquation = [];
   var doc = IntegratedApp.getBody();
   var body = doc[slideNum];
 
-  console.log("title alt text: " + renderer[2] + equationOriginal + "#" + delim[6])
+  // console.log("title alt text: " + renderer[2] + equationOriginal + "#" + delim[6])
   
   var obj = [red, green, blue, renderer[2] + equationOriginal + "#" + delim[6]];
   var json = JSON.stringify(obj);  
@@ -672,7 +672,7 @@ var linkEquation = [];
   image.setTitle(json);
 
 
-  debugLog("equation description: " + image.getDescription());
+  // debugLog("equation description: " + image.getDescription());
 
   // SAVING FORMATTING 
   // if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50){
@@ -971,7 +971,7 @@ function undoImage(delim){
       //   debugLog("elements in link Equation are: " + linkEquation[i])
       // }
       
-      image.setDescription('' + linkEquation[0])
+      // image.setDescription('' + linkEquation[0])
       // debugLog("element in Link Equation is: " + linkEquation[0])
       var red = Number(JSON.parse(image.getTitle())[0]);
       var green = Number(JSON.parse(image.getTitle())[1]);
