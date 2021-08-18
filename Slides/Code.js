@@ -441,24 +441,21 @@ function getKey(){
 }
 
 //retrieve size from text
-function getSize(size, defaultSize, paragraph, childIndex, start){
+function getSize(defaultSize, paragraph){
   //GET SIZE
   var newSize = paragraph.getTextStyle().getFontSize();
   // debugLog("Size is: " + newSize.toString());
-  if(newSize == null){
-    return defaultSize;
-  } else {
+  // if(newSize == null){
+  //   return defaultSize;
+  // } else {
     return newSize;
-  }
+  // }
 }
 
 function resize(eqnImage, textElement, size, scale){
   debugLog("eqnImage " + eqnImage + "textElement " + textElement + "size " + size + "scale " + scale);
   eqnImage.setLeft(textElement.getLeft());
   eqnImage.setTop(textElement.getTop());
-  if(size == 0){
-    size = 12;
-  }
   debugLog("size " + size + "width " + eqnImage.getWidth() + "scale " + scale)
   eqnImage.setWidth(Math.round(size*eqnImage.getWidth() * scale));
   
@@ -533,7 +530,11 @@ var linkEquation = [];
   
   // var paragraph = textElement.getParent();
   // var childIndex  = paragraph.getChildIndex(textElement);  //gets index of found text in paragaph
-  size = getSize(size, defaultSize, text, 0, start);
+  var textSize = text.getTextStyle().getFontSize();
+  debugLog("My Text Size is: " + textSize.toString());
+  if(textSize == null){
+    textSize = defaultSize;
+  }
   
   var equationOriginal = getEquation(textElement, text, 0, start, end, delim);
   debugLog("placeImage- EquationOriginal: " + equationOriginal);
@@ -663,7 +664,8 @@ var linkEquation = [];
 		scale = 2 / 100.0;
   
   var image = body.insertImage(renderer[1]);
-  resize(image, textElement, size, scale);
+  
+  resize(image, textElement, textSize, scale);
   if(textElement.getText().asRenderedString().length == 1){
     textElement.remove();
   }
