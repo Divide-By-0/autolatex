@@ -453,13 +453,19 @@ function getSize(defaultSize, paragraph){
 }
 
 function resize(eqnImage, textElement, size, scale){
-  debugLog("eqnImage " + eqnImage + "textElement " + textElement + "size " + size + "scale " + scale);
+
   eqnImage.setLeft(textElement.getLeft());
   eqnImage.setTop(textElement.getTop());
-  debugLog("size " + size + "width " + eqnImage.getWidth() + "scale " + scale)
-  eqnImage.setWidth(Math.round(size*eqnImage.getWidth() * scale));
+  eqnImage.setWidth(Math.round(size*eqnImage.getWidth()/eqnImage.getHeight() * scale));
+  eqnImage.setHeight(size * scale);
+
+  // debugLog("eqnImage " + eqnImage + "textElement " + textElement + "size " + size + "scale " + scale);
+  // eqnImage.setLeft(textElement.getLeft());
+  // eqnImage.setTop(textElement.getTop());
+  // debugLog("size " + size + "width " + eqnImage.getWidth() + "scale " + scale)
+  // eqnImage.setWidth(Math.round(size*eqnImage.getWidth() * scale));
   
-  eqnImage.setHeight(Math.round(size * scale * eqnImage.getHeight()));
+  // eqnImage.setHeight(Math.round(size * scale * eqnImage.getHeight()));
 
   // image = body.insertImage(renderer[1], textElement.getLeft(), textElement.getTop(), Math.round(size*textElement.getWidth()/textElement.getHeight() * scale), size * scale);
 }
@@ -665,6 +671,8 @@ function getShapeFromIndices(slideNum, shapeNum){
   
   var image = body.insertImage(renderer[1]);
   
+  scale = 2.5;
+
   resize(image, textElement, textSize, scale);
   if(textElement.getText().asRenderedString().length == 1){
     textElement.remove();
