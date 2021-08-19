@@ -536,7 +536,8 @@ function getShapeFromIndices(slideNum, shapeNum){
   
   // var paragraph = textElement.getParent();
   // var childIndex  = paragraph.getChildIndex(textElement);  //gets index of found text in paragaph
-  var textSize = text.getTextStyle().getFontSize();
+  var textSize = text.getRange(start+1, end).getTextStyle().getFontSize();
+  // var textSize = text.getTextStyle().getFontSize();
   debugLog("My Text Size is: " + textSize.toString());
   if(textSize == null){
     textSize = defaultSize;
