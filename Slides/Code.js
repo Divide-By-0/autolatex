@@ -101,8 +101,6 @@ function getPreferences() {
 }
 
 function encodeFlag(flag, renderCount){
-  // return {flag: flag, renderCount: renderCount}
-  // let {flag, renderCount} = input
   ans = 0
   if(flag == -2){
       ans = -2 - renderCount
@@ -115,6 +113,11 @@ function encodeFlag(flag, renderCount){
   }
   return ans
 }
+
+/**
+ * Find the position of a delimeter from a starting point.
+ */
+
 function findTextOffsetInSlide(str, search, offset = 0){
   debugLog("str: " + str.substring(offset) + " search: " + search);
   return str.substring(offset).indexOf(search) + offset;
@@ -124,8 +127,6 @@ function findTextOffsetInSlide(str, search, offset = 0){
  * Constantly keep replacing latex till all are finished
  */
  function replaceEquations(sizeRaw, delimiter){
-  // var obj = {flag: -2, renderCount: 0};
-  // return obj;
   var quality = 900;
   var size = getSize(sizeRaw);
   var isInline = false;
@@ -146,30 +147,13 @@ function findTextOffsetInSlide(str, search, offset = 0){
     return encodeFlag(-1, 0)
   }
   let slides = IntegratedApp.getBody()
-  // console.log(typeof IntegratedApp.getBody())
   let childCount = slides.length;
-  // console.log("Children: ", childCount)
   for (var x = 0; x < 5; x++){ //please remove this, this is a terrible fix
     for (var slideNum = 0; slideNum < childCount; slideNum++){
       for (var shapeNum = 0; shapeNum < slides[slideNum].getShapes().length; shapeNum++){
-        // while(true){
-          // const [gotSize, isEmpty] = findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline);   //or: "\\\$\\\$", "\\\$\\\$"
-          
-          // allEmpty = isEmpty ? allEmpty + isEmpty : 0
-    
-          // if(allEmpty > 50) break; //Assume we quit on 50 consecutive empty equations.
-    
-          // if(gotSize == -100000)   // means all renderers fucked.
-          //   return encodeFlag(-2, c);                                   // instead, return pair of number and bool flag
-    
-          // if(gotSize == 0) break; // finished with renders in this section
-    
-          // defaultSize = gotSize;
-          // c = c + 1 - isEmpty;                    // # of equations += 1 except empty equations
 
         findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline);   //or: "\\\$\\\$", "\\\$\\\$"
         c = c + 1;
-        // }
       }
     }
   }
@@ -178,10 +162,12 @@ function findTextOffsetInSlide(str, search, offset = 0){
 }
 
 // slideNum and slideObjectNum are integers
+/**
+ * get the R, G, B values of a textrange text
+ */
 function getRgbColor(textRange, slideNum){
   var doc = IntegratedApp.getBody();
   var slide = doc[slideNum];
-  // debugLog("type of slide object: " + typeof slide)
   var foregroundColor = textRange.getTextStyle().getForegroundColor();
   if(foregroundColor == null){
     return [0,0,0];
@@ -255,10 +241,7 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
   var green = textColor[1];
   debugLog("green: " + green)
   var blue = textColor[2];
-  debugLog("blue: " + blue)
-
-  // debugLog("Image will be inserted between " + placeHolderStart + " " + placeHolderEnd);
-  // debugLog("Text to be replaced is " + (placeHolderEnd - placeHolderStart) + " characters long");
+  debugLog("blue: " + blue);
 
   if(placeHolderEnd - placeHolderStart == 2.0) { // empty equation
     console.log("Empty equation!");
@@ -354,39 +337,24 @@ function getFilenameEncode(equation, direction){
   return equationStringEncoded;
 } 
 
+/**
+ * returns the deencoded equation as a string.
+ */
 function deEncode(equation){
-  // debugLog(equation);
-  // debugLog(getCustomEncode (getFilenameEncode (equation, 1), 1, 0));
-  // debugLog(decodeURIComponent(getCustomEncode (getFilenameEncode (equation, 1), 1, 0)));
-
   var equationStringDecoded = decodeURIComponent(getCustomEncode (getFilenameEncode (equation, 1), 1, 0)); //escape deprecated
-  //  console.log("Decoded without replacing: " + equationStringDecoded);
   equationStringDecoded = getCustomEncode(equationStringDecoded, 1, 1);
-  // debugLog("Decoded with replacing: " + equationStringDecoded);
   return equationStringDecoded;
 } 
 
 function getEquation(origShape, paragraph, childIndex, start, end, delimiters){
   var equationOriginal = [];
-  // debugLog("See text" + paragraph.getChild(childIndex).getText() + paragraph.getChild(childIndex).getText().length)
   var equation = paragraph.asRenderedString().substring(start+delimiters[4], end-delimiters[4]+2);
   var checkForEquation = paragraph.asRenderedString();
   debugLog("getEquation- " + (equation).length);
   debugLog("checkForEquation- " + checkForEquation.length);
-  // debugLog("Equation has no extra text: " + (("$$" + equation + "$$") == checkForEquation).toString());
 
-
-  // if((checkForEquation).length-(equation).length > 5){
-  //   var copy = origShape;
-  //   copy.setText(copy.asRenderedString().replace(equation, ''));
-  //   origShape.getParentPage().asSlide().insertShape(copy);
-  // }
-  // if(("$$" + equation + "$$") != checkForEquation){
-  //   return "";
-  // }
   var equationStringEncoded = reEncode(equation); //escape deprecated
   equationOriginal.push(equationStringEncoded);
-  //console.log("Encoded: " + equationStringEncoded);
   return equationStringEncoded;
 }
 
@@ -413,7 +381,6 @@ function getStyle(equationStringEncoded, quality, renderer, isInline, type, red,
     equationStringEncoded = equationStringEncoded.split("&plus;").join("%2B"); //HACKHACKHACKHACK REPLACE
     equationStringEncoded = equationStringEncoded.split("&hash;").join("%23"); //HACKHACKHACKHACK REPLACE
   }
-  //console.log('Equation Final: ' + equationStringEncoded);
   equation.push(equationStringEncoded);
   return equationStringEncoded;
 }
@@ -440,34 +407,12 @@ function getKey(){
   return Session.getTemporaryActiveUserKey();
 }
 
-//retrieve size from text
-function getSize(defaultSize, paragraph){
-  //GET SIZE
-  var newSize = paragraph.getTextStyle().getFontSize();
-  // debugLog("Size is: " + newSize.toString());
-  // if(newSize == null){
-  //   return defaultSize;
-  // } else {
-    return newSize;
-  // }
-}
-
 function resize(eqnImage, textElement, size, scale){
 
   eqnImage.setLeft(textElement.getLeft());
   eqnImage.setTop(textElement.getTop());
   eqnImage.setWidth(Math.round(size*eqnImage.getWidth()/eqnImage.getHeight() * scale));
   eqnImage.setHeight(size * scale);
-
-  // debugLog("eqnImage " + eqnImage + "textElement " + textElement + "size " + size + "scale " + scale);
-  // eqnImage.setLeft(textElement.getLeft());
-  // eqnImage.setTop(textElement.getTop());
-  // debugLog("size " + size + "width " + eqnImage.getWidth() + "scale " + scale)
-  // eqnImage.setWidth(Math.round(size*eqnImage.getWidth() * scale));
-  
-  // eqnImage.setHeight(Math.round(size * scale * eqnImage.getHeight()));
-
-  // image = body.insertImage(renderer[1], textElement.getLeft(), textElement.getTop(), Math.round(size*textElement.getWidth()/textElement.getHeight() * scale), size * scale);
 }
 
 // deprecated, use the indexing method to get all odd/even footers etc. as well
@@ -481,12 +426,13 @@ function getBodyFromLocation(location){
   }
   if(location == "footer"){
     docBody = IntegratedApp.getActive().getFooter();
-    // debugLog("Got footer ", docBody.getText(), docBody.getType() === DocumentApp.ElementType.FOOTER_SECTION, docBody.getType() === DocumentApp.ElementType.HEADER_SECTION)
-    // debugLog(docBody.getParent().getChild(0).getType() === DocumentApp.ElementType.BODY_SECTION, docBody.getParent().getChild(0).getType() === DocumentApp.ElementType.HEADER_SECTION )
   }
   return docBody;
 }
 
+/**
+ * Returns the shape iterating
+ */
 function getShapeFromIndices(slideNum, shapeNum){
   var doc = IntegratedApp.getBody();
   var all = doc.length;
