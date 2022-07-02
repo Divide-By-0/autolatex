@@ -150,8 +150,8 @@ function findTextOffsetInSlide(str, search, offset = 0){
   let childCount = slides.length;
   for (var x = 0; x < 5; x++){ //please remove this, this is a terrible fix
     for (var slideNum = 0; slideNum < childCount; slideNum++){
-      for (var shapeNum = 0; shapeNum < slides[slideNum].getShapes().length; shapeNum++){
-
+      for (var shapeNum = 0; shapeNum < slides[slideNum].getPageElements().length; shapeNum++){
+        debugLog("Slide Num: " + slideNum + " Num of shapes: " + slides[slideNum].getPageElements().length);
         findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline);   //or: "\\\$\\\$", "\\\$\\\$"
         c = c + 1;
       }
@@ -202,6 +202,35 @@ function getRgbColor(textRange, slideNum){
             1 if eqn is "" and 0 if not. Assume we close on 4 consecutive empty ones.
 */
 
+function unwrapEQ(shape){
+  debugLog("Shape Type: " + shape.getShapeType());
+  var textValue = "";
+  // test if it's a text box
+  try{
+    textValue = shape.getText(); // TextRange
+    debugLog("TextBox Text: " + shape.getText().asString());
+  }
+  catch{
+    debugLog("not a text box");
+  }
+
+  // test if it's a table
+  try{
+    for (var i = 0; i < shape.getNumRows(); i++){
+      for (var j = 0; j < shape.getNumColumns(); j++){
+        textValue = shape.getCell(i, j).getText();
+        debugLog("Table Text: " + shape.getCell(i, j).getText() + " Row: " + i + " Col: " + j);
+      }
+    }
+  }
+  catch{
+    debugLog("not a table");
+  }
+
+  return textValue;
+}
+
+
 function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline){
   
   // get the shape (shapeNum) on the given slide (slideNum)
@@ -212,9 +241,9 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
   }
 
   // Get the text of the shape.
-  var shapeText = shape.getText(); // TextRange
+  // var shapeText = shape.getText(); // TextRange
 
-  
+  var shapeText = unwrapEQ(shape);
 
   // debugLog("Looking for delimiter :" + delim[2] + " in text");
   var checkForDelimiter = shapeText.find(delim[2]);  // TextRange[]
