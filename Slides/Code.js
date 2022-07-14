@@ -150,9 +150,9 @@ function findTextOffsetInSlide(str, search, offset = 0){
   let childCount = slides.length;
   for (var x = 0; x < 5; x++){ //please remove this, this is a terrible fix
     for (var slideNum = 0; slideNum < childCount; slideNum++){
-      for (var shapeNum = 0; shapeNum < slides[slideNum].getPageElements().length; shapeNum++){
+      for (var elementNum = 0; elementNum < slides[slideNum].getPageElements().length; elementNum++){
         debugLog("Slide Num: " + slideNum + " Num of shapes: " + slides[slideNum].getPageElements().length);
-        findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline);   //or: "\\\$\\\$", "\\\$\\\$"
+        findPos(slideNum, elementNum, delim, quality, size, defaultSize, isInline);   //or: "\\\$\\\$", "\\\$\\\$"
         c = c + 1;
       }
     }
@@ -202,13 +202,13 @@ function getRgbColor(textRange, slideNum){
             1 if eqn is "" and 0 if not. Assume we close on 4 consecutive empty ones.
 */
 
-function unwrapEQ(shape){
-  debugLog("Shape Type: " + shape.getShapeType());
+function unwrapEQ(element){
+  debugLog("Shape Type: " + element.getPageElementType());
   var textValue = "";
   // test if it's a text box
   try{
-    textValue = shape.getText(); // TextRange
-    debugLog("TextBox Text: " + shape.getText().asString());
+    textValue = element.getText(); // TextRange
+    debugLog("TextBox Text: " + element.asShape().getText().asString());
   }
   catch{
     debugLog("not a text box");
@@ -216,10 +216,10 @@ function unwrapEQ(shape){
 
   // test if it's a table
   try{
-    for (var i = 0; i < shape.getNumRows(); i++){
-      for (var j = 0; j < shape.getNumColumns(); j++){
-        textValue = shape.getCell(i, j).getText();
-        debugLog("Table Text: " + shape.getCell(i, j).getText() + " Row: " + i + " Col: " + j);
+    for (var i = 0; i < element.asTable().getNumRows(); i++){
+      for (var j = 0; j < element.asTable().getNumColumns(); j++){
+        textValue = element.asTable().getCell(i, j).getText();
+        debugLog("Table Text: " + element.asTable().getCell(i, j).getText() + " Row: " + i + " Col: " + j);
       }
     }
   }
@@ -231,40 +231,40 @@ function unwrapEQ(shape){
 }
 
 
-function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline){
+function findPos(slideNum, elementNum, delim, quality, size, defaultSize, isInline){
   
-  // get the shape (shapeNum) on the given slide (slideNum)
-  var shape = getShapeFromIndices(slideNum, shapeNum);
+  // get the shape (elementNum) on the given slide (slideNum)
+  var element = getElementFromIndices(slideNum, elementNum);
   // debugLog("shape is: " + shape.getPageElementType())
-  if(shape == null){
+  if(element == null){
     return [0, 0];
   }
 
   // Get the text of the shape.
-  // var shapeText = shape.getText(); // TextRange
+  // var elementText = shape.getText(); // TextRange
 
-  var shapeText = unwrapEQ(shape);
+  var elementText = unwrapEQ(element);
 
   // debugLog("Looking for delimiter :" + delim[2] + " in text");
-  var checkForDelimiter = shapeText.find(delim[2]);  // TextRange[]
+  var checkForDelimiter = elementText.find(delim[2]);  // TextRange[]
 
   if(checkForDelimiter == null) 
     return [0, 0];  // didn't find first delimiter
 
   // start position of image
-  var placeHolderStart = findTextOffsetInSlide(shapeText.asRenderedString(), delim[0], 0); 
+  var placeHolderStart = findTextOffsetInSlide(elementText.asRenderedString(), delim[0], 0); 
   
   var temp = 2;
   if(placeHolderStart != -1){
     temp += placeHolderStart;
   }
   // end position till of image 
-  var placeHolderEnd = findTextOffsetInSlide(shapeText.asRenderedString(), delim[1], temp); 
+  var placeHolderEnd = findTextOffsetInSlide(elementText.asRenderedString(), delim[1], temp); 
 
   debugLog("Start and End of equation: " + placeHolderStart + " " + placeHolderEnd);
-  // debugLog("Isolating Equation Textrange: " + shape.getText().getRange(placeHolderStart, placeHolderEnd).asRenderedString());
-
-  var textColor = getRgbColor(shape.getText().getRange(placeHolderStart+1, placeHolderEnd), slideNum);
+  // debugLog("Isolating Equation Textrange: " + element.getText().getRange(placeHolderStart, placeHolderEnd).asRenderedString());
+  
+  var textColor = getRgbColor(element.getText().getRange(placeHolderStart+1, placeHolderEnd), slideNum);
   var red = textColor[0];
   debugLog("red: " + red)
   var green = textColor[1];
@@ -278,7 +278,7 @@ function findPos(slideNum, shapeNum, delim, quality, size, defaultSize, isInline
     return [defaultSize, 1]; // default behavior of placeImage
   }
 
-  return placeImage(slideNum, shapeNum, shapeText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, red, green, blue);
+  return placeImage(slideNum, elementNum, elementText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, red, green, blue);
 }
 
 function assert(value, command="unspecified"){
@@ -289,15 +289,15 @@ function assert(value, command="unspecified"){
 
 /////////////////////////////////////////////////////////
 
-// function selectText(slideNum, shapeNum, delim, quality, size, defaultSize, isInline){
-//   // find shape
-//   // debugLog("Checking document slideNum, shapeNum # " + slideNum + " " + shapeNum)
-//   var shape = getShapeFromIndices(slideNum, shapeNum);
-//   if(shape == null){
+// function selectText(slideNum, elementNum, delim, quality, size, defaultSize, isInline){
+//   // find element
+//   // debugLog("Checking document slideNum, elementNum # " + slideNum + " " + elementNum)
+//   var element = getElementFromIndices(slideNum, elementNum);
+//   if(element == null){
 //     return [0, 0];
 //   }
-//   var shapeText = shape.getText();
-//   // debugLog("Text of the shape is:" + shapeText.asRenderedString());
+//   var elementText = element.getText();
+//   // debugLog("Text of the element is:" + elementText.asRenderedString());
 //   // debugLog("delim[2] is:" + delim);
 
 //   // get index of checkForDelimiter and endElement using highlight or mouse cursor select 
@@ -319,7 +319,7 @@ function assert(value, command="unspecified"){
 //     return [defaultSize, 1]; // default behavior of placeImage
 //   }
 //   // place image
-//   return placeImage(slideNum, shapeNum, checkForDelimiter, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline);
+//   return placeImage(slideNum, elementNum, checkForDelimiter, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline);
 
 
 // }
@@ -375,7 +375,7 @@ function deEncode(equation){
   return equationStringDecoded;
 } 
 
-function getEquation(origShape, paragraph, childIndex, start, end, delimiters){
+function getEquation(origelement, paragraph, childIndex, start, end, delimiters){
   var equationOriginal = [];
   var equation = paragraph.asRenderedString().substring(start+delimiters[4], end-delimiters[4]+2);
   var checkForEquation = paragraph.asRenderedString();
@@ -460,32 +460,38 @@ function getBodyFromLocation(location){
 }
 
 /**
- * Returns the shape iterating
+ * Returns the element iterating
  */
-function getShapeFromIndices(slideNum, shapeNum){
+function getElementFromIndices(slideNum, elementNum){
   var doc = IntegratedApp.getBody();
   var all = doc.length;
   assert(slideNum < all, "slideNum < all")
   body = doc[slideNum];
-  shapes = body.getShapes();
-  assert(shapeNum < shapes.length, "shapeNum (" + shapeNum + ") < shapes.length (" + shapes.length + ")");
-  var shape;
-  if(shapeNum < shapes.length){
-    shape = shapes[shapeNum];
+  elements = body.getPageElements();
+  // elements = body.getPageElements();
+  assert(elementNum < elements.length, "elementNum (" + elementNum + ") < elements.length (" + elements.length + ")");
+  var element;
+  if(elementNum < elements.length){
+    element = elements[elementNum];
   } else {
     return null;
   }
 
-  var type;
+  var element_type;
   try{
-    type = shape.getShapeType();
+    // type = element.getPageElementType();
+    element_type = element.getPageElementType();
+    debugLog("Element Type is:" + element_type + " elementNum is:" + elementNum)
   } catch{
     debugLog("Not of type shape")
     return null;
   }
   
-  if(type === SlidesApp.ShapeType.TEXT_BOX) { // handles alternating footers etc.
-    return shape;
+  if(element_type == SlidesApp.PageElementType.SHAPE) { // handles alternating footers etc.
+    return element.asShape();
+  }
+  else if(element_type == SlidesApp.PageElementType.TABLE){
+    return element;
   }
   return null
   
@@ -508,9 +514,9 @@ function getShapeFromIndices(slideNum, shapeNum){
 
 // var linkEquation = [];
 
- function placeImage(slideNum, shapeNum, shapeText, start, end, quality, size, defaultSize, delim, isInline, red, green, blue) {
-  // get the textElement (shapeNum) on the given slide (slideNum)
-  var textElement = getShapeFromIndices(slideNum, shapeNum);
+ function placeImage(slideNum, elementNum, elementText, start, end, quality, size, defaultSize, delim, isInline, red, green, blue) {
+  // get the textElement (elementNum) on the given slide (slideNum)
+  var textElement = getElementFromIndices(slideNum, elementNum);
   debugLog("placeImage- EquationOriginal: " + textElement + ", type: " + (typeof textElement));
 
   var text = textElement.getText(); // text range
@@ -565,7 +571,7 @@ function getShapeFromIndices(slideNum, shapeNum){
       debugLog("Title Alt Text " + renderer[2] + equationOriginal + "#" + delim[6])
       debugLog("Cached equation: " + renderer[2] + renderer[6] + equation);
       var _createFileInCache = UrlFetchApp.fetch(renderer[2] + renderer[6] + equation);
-      
+      // simulates putting text into text renderer => creates link for cached image which is accessed later
 			// needed for codecogs to generate equation properly, need to figure out which other renderers need this. to test, use align* equations.
  			
 			if(rendererType == "Codecogs" || rendererType == "Sciweavers"){
@@ -872,7 +878,7 @@ function removeAll(delimRaw) {
   counter = 0;  
   var delim = getDelimiters(delimRaw);
   for (var index = 0; index < IntegratedApp.getActivePresentation().getBody().getParent().getNumChildren(); index++){
-    var body = getShapeFromIndices(index);
+    var body = getElementFromIndices(index);
     var img = body.getImages(); //places all InlineImages from the active document into the array img
     for(i=0; i < img.length; i++) {
       var image = img[i];
