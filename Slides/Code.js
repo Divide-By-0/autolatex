@@ -218,7 +218,7 @@ function unwrapEQ(element){
   try{
     for (var i = 0; i < element.getNumRows(); i++){
       for (var j = 0; j < element.getNumColumns(); j++){
-        textValue = element.getCell(i, j).getText();
+        textValue = element.getCell(i, j).getText(); // returns a string
         debugLog("Total Rows: " + element.getNumRows())
         debugLog("Total Cols :" + element.getNumColumns())
         debugLog("Table Text: " + element.getCell(i, j).getText() + " Row: " + i + " Col: " + j);
@@ -229,7 +229,7 @@ function unwrapEQ(element){
     debugLog("not a table");
   }
 
-  return textValue;
+  return textValue; // returns TextRange
 }
 
 
@@ -245,7 +245,7 @@ function findPos(slideNum, elementNum, delim, quality, size, defaultSize, isInli
   // Get the text of the shape.
   // var elementText = shape.getText(); // TextRange
 
-  var elementText = unwrapEQ(element);
+  var elementText = unwrapEQ(element); // TextRange
 
   // debugLog("Looking for delimiter :" + delim[2] + " in text");
   var checkForDelimiter = elementText.find(delim[2]);  // TextRange[]
@@ -528,7 +528,7 @@ function getElementFromIndices(slideNum, elementNum){
   debugLog("placeImage- EquationOriginal: " + textElement + ", type: " + (typeof textElement));
 
   // var text = textElement.getText(); // text range
-  var text = elementText
+  var text = elementText // text range
   // var textColor = getRgbColor(textElement, slideNum);
   // console.log("equation color: " + textColor);
   
@@ -542,7 +542,7 @@ function getElementFromIndices(slideNum, elementNum){
   }
   
   // var equationOriginal = getEquation(textElement, text, 0, start, end, delim);
-  var equationOriginal = getEquation(elementText, text, 0, start, end, delim);
+  var equationOriginal = getEquation(textElement, text, 0, start, end, delim);
   debugLog("placeImage- EquationOriginal: " + equationOriginal);
 
   if(equationOriginal == ""){
@@ -652,7 +652,14 @@ function getElementFromIndices(slideNum, elementNum){
   var obj = [red, green, blue, renderer[2] + equationOriginal + "#" + delim[6]];
   var json = JSON.stringify(obj);  
 
-  textElement.getText().clear(start, end+2);
+  if(textElement.getPageElementType() == "TABLE"){ // if table
+    textElement.getCell(0, 0).getText().clear(start, end+2);
+  }
+  else{ // else if text box
+    textElement.getText().clear(start, end+2);
+  }
+  
+  
   // textElement.setLeft(textElement.getLeft() + image.getWidth() * 1.1);
 
   let scale = 2 / 100.0;
