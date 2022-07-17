@@ -527,8 +527,8 @@ function getElementFromIndices(slideNum, elementNum){
   var textElement = getElementFromIndices(slideNum, elementNum);
   debugLog("placeImage- EquationOriginal: " + textElement + ", type: " + (typeof textElement));
 
-  var text = textElement.getText(); // text range
-
+  // var text = textElement.getText(); // text range
+  var text = elementText
   // var textColor = getRgbColor(textElement, slideNum);
   // console.log("equation color: " + textColor);
   
@@ -541,7 +541,8 @@ function getElementFromIndices(slideNum, elementNum){
     textSize = defaultSize;
   }
   
-  var equationOriginal = getEquation(textElement, text, 0, start, end, delim);
+  // var equationOriginal = getEquation(textElement, text, 0, start, end, delim);
+  var equationOriginal = getEquation(elementText, text, 0, start, end, delim);
   debugLog("placeImage- EquationOriginal: " + equationOriginal);
 
   if(equationOriginal == ""){
