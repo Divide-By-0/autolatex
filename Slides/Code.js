@@ -203,7 +203,7 @@ function getRgbColor(textRange, slideNum){
 */
 
 function unwrapEQ(element){
-  debugLog("Shape Type: " + element.getPageElementType());
+  debugLog("Element Type: " + element.getPageElementType());
   var textValue = "";
   // test if it's a text box
   try{
@@ -216,10 +216,12 @@ function unwrapEQ(element){
 
   // test if it's a table
   try{
-    for (var i = 0; i < element.asTable().getNumRows(); i++){
-      for (var j = 0; j < element.asTable().getNumColumns(); j++){
-        textValue = element.asTable().getCell(i, j).getText();
-        debugLog("Table Text: " + element.asTable().getCell(i, j).getText() + " Row: " + i + " Col: " + j);
+    for (var i = 0; i < element.getNumRows(); i++){
+      for (var j = 0; j < element.getNumColumns(); j++){
+        textValue = element.getCell(i, j).getText();
+        debugLog("Total Rows: " + element.getNumRows())
+        debugLog("Total Cols :" + element.getNumColumns())
+        debugLog("Table Text: " + element.getCell(i, j).getText() + " Row: " + i + " Col: " + j);
       }
     }
   }
@@ -264,7 +266,13 @@ function findPos(slideNum, elementNum, delim, quality, size, defaultSize, isInli
   debugLog("Start and End of equation: " + placeHolderStart + " " + placeHolderEnd);
   // debugLog("Isolating Equation Textrange: " + element.getText().getRange(placeHolderStart, placeHolderEnd).asRenderedString());
   
-  var textColor = getRgbColor(element.getText().getRange(placeHolderStart+1, placeHolderEnd), slideNum);
+  if(element.getPageElementType() == "TABLE"){
+    var textColor = [0,0,0]
+  }
+  else{
+    var textColor = getRgbColor(element.getText().getRange(placeHolderStart+1, placeHolderEnd), slideNum);
+  }
+
   var red = textColor[0];
   debugLog("red: " + red)
   var green = textColor[1];
@@ -491,7 +499,7 @@ function getElementFromIndices(slideNum, elementNum){
     return element.asShape();
   }
   else if(element_type == SlidesApp.PageElementType.TABLE){
-    return element;
+    return element.asTable();
   }
   return null
   
