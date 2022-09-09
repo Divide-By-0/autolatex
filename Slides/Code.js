@@ -204,10 +204,10 @@ function getRgbColor(textRange, slideNum){
 
 function unwrapEQ(element){
   debugLog("Element Type: " + element.getPageElementType());
-  var textValue = "";
+  var textValue = [10][10]; // supposed to be a 2D array of strings
   // test if it's a text box
   try{
-    textValue = element.getText(); // TextRange
+    textValue = textValue.push(element.getText()); // TextRange
     debugLog("TextBox Text: " + element.asShape().getText().asString());
   }
   catch{
@@ -218,7 +218,7 @@ function unwrapEQ(element){
   try{
     for (var i = 0; i < element.getNumRows(); i++){
       for (var j = 0; j < element.getNumColumns(); j++){
-        textValue = element.getCell(i, j).getText(); // returns a string
+        textValue[i][j] = element.getCell(i, j).getText(); // returns a string
         debugLog("Total Rows: " + element.getNumRows())
         debugLog("Total Cols :" + element.getNumColumns())
         debugLog("Table Text: " + element.getCell(i, j).getText() + " Row: " + i + " Col: " + j);
@@ -248,45 +248,49 @@ function findPos(slideNum, elementNum, delim, quality, size, defaultSize, isInli
   var elementText = unwrapEQ(element); // TextRange
 
   // debugLog("Looking for delimiter :" + delim[2] + " in text");
-  var checkForDelimiter = elementText.find(delim[2]);  // TextRange[]
+  for(var i = 0; i < elementText.length; i++){
+    for (var j = 0; j < elementText[0].length; j++){
+      var checkForDelimiter = elementText[i][j].find(delim[2]);  // TextRange[]
 
-  if(checkForDelimiter == null) 
-    return [0, 0];  // didn't find first delimiter
+      if(checkForDelimiter == null) 
+        return [0, 0];  // didn't find first delimiter
 
-  // start position of image
-  var placeHolderStart = findTextOffsetInSlide(elementText.asRenderedString(), delim[0], 0); 
-  
-  var temp = 2;
-  if(placeHolderStart != -1){
-    temp += placeHolderStart;
+      // start position of image
+      var placeHolderStart = findTextOffsetInSlide(elementText[i][j].asRenderedString(), delim[0], 0); 
+      
+      var temp = 2;
+      if(placeHolderStart != -1){
+        temp += placeHolderStart;
+      }
+      // end position till of image 
+      var placeHolderEnd = findTextOffsetInSlide(elementText[i][j].asRenderedString(), delim[1], temp); 
+
+      debugLog("Start and End of equation: " + placeHolderStart + " " + placeHolderEnd);
+      // debugLog("Isolating Equation Textrange: " + element.getText().getRange(placeHolderStart, placeHolderEnd).asRenderedString());
+      
+      if(element.getPageElementType() == "TABLE"){
+        var textColor = [0,0,0]
+      }
+      else{
+        var textColor = getRgbColor(element.getText().getRange(placeHolderStart+1, placeHolderEnd), slideNum);
+      }
+
+      var red = textColor[0];
+      debugLog("red: " + red)
+      var green = textColor[1];
+      debugLog("green: " + green)
+      var blue = textColor[2];
+      debugLog("blue: " + blue);
+
+      if(placeHolderEnd - placeHolderStart == 2.0) { // empty equation
+        console.log("Empty equation!");
+        EMPTY_EQUATIONS ++;
+        return [defaultSize, 1]; // default behavior of placeImage
+      }
+
+      return placeImage(slideNum, elementNum, elementText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, red, green, blue);
+    }
   }
-  // end position till of image 
-  var placeHolderEnd = findTextOffsetInSlide(elementText.asRenderedString(), delim[1], temp); 
-
-  debugLog("Start and End of equation: " + placeHolderStart + " " + placeHolderEnd);
-  // debugLog("Isolating Equation Textrange: " + element.getText().getRange(placeHolderStart, placeHolderEnd).asRenderedString());
-  
-  if(element.getPageElementType() == "TABLE"){
-    var textColor = [0,0,0]
-  }
-  else{
-    var textColor = getRgbColor(element.getText().getRange(placeHolderStart+1, placeHolderEnd), slideNum);
-  }
-
-  var red = textColor[0];
-  debugLog("red: " + red)
-  var green = textColor[1];
-  debugLog("green: " + green)
-  var blue = textColor[2];
-  debugLog("blue: " + blue);
-
-  if(placeHolderEnd - placeHolderStart == 2.0) { // empty equation
-    console.log("Empty equation!");
-    EMPTY_EQUATIONS ++;
-    return [defaultSize, 1]; // default behavior of placeImage
-  }
-
-  return placeImage(slideNum, elementNum, elementText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, red, green, blue);
 }
 
 function assert(value, command="unspecified"){
