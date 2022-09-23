@@ -1,3 +1,6 @@
+/**
+ * @OnlyCurrentDoc
+ */
 //***REMOVED***	
 //Auto-Latex Equations - (For api keys, ask aayush)
 
