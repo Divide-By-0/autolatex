@@ -1,3 +1,6 @@
+/**
+ * @OnlyCurrentDoc
+ */
 //850293439076-9mad9mt23tgjm7q4hc1orrd4uq51t9h5.apps.googleusercontent.com	
 //Auto-Latex Equations - api-project-850293439076
 
