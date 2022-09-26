@@ -218,7 +218,7 @@ function unwrapEQ(element){
   try{
     for (var i = 0; i < element.getNumRows(); i++){
       for (var j = 0; j < element.getNumColumns(); j++){
-        textValue[i][j] = element.getCell(i, j).getText(); // returns a string
+        textValue[i][j] = element.getCell(i, j).getText(); // returns a text range
         debugLog("Total Rows: " + element.getNumRows())
         debugLog("Total Cols :" + element.getNumColumns())
         debugLog("Table Text: " + element.getCell(i, j).getText() + " Row: " + i + " Col: " + j);
@@ -248,8 +248,8 @@ function findPos(slideNum, elementNum, delim, quality, size, defaultSize, isInli
   var elementText = unwrapEQ(element); // TextRange
 
   // debugLog("Looking for delimiter :" + delim[2] + " in text");
-  for(var i = 0; i < elementText.length; i++){
-    for (var j = 0; j < elementText[0].length; j++){
+  for(var i = 0; i < (elementText + "").length; i++){
+    for (var j = 0; j < (elementText[0] + "").length; j++){
       var checkForDelimiter = elementText[i][j].find(delim[2]);  // TextRange[]
 
       if(checkForDelimiter == null) 
