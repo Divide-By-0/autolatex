@@ -2,7 +2,7 @@
  * @OnlyCurrentDoc
  */
 //850293439076-9mad9mt23tgjm7q4hc1orrd4uq51t9h5.apps.googleusercontent.com
-//Auto-Latex Equations - ***REMOVED***
+//Auto-Latex Equations
 
 var SIDEBAR_TITLE = "Auto-LaTeX Equations";
 var DEBUG = true; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information

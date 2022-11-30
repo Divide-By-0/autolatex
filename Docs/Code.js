@@ -1,12 +1,12 @@
 /**
  * @OnlyCurrentDoc
  */
-//850293439076-9mad9mt23tgjm7q4hc1orrd4uq51t9h5.apps.googleusercontent.com	
-//Auto-Latex Equations - ***REMOVED***
+//850293439076-9mad9mt23tgjm7q4hc1orrd4uq51t9h5.apps.googleusercontent.com
+//Auto-Latex Equations
 
 var SIDEBAR_TITLE = 'Auto-LaTeX Equations';
-var DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information 
-var TIMING_DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information 
+var DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
+var TIMING_DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
 var previousTime = 0;
 var previousLine = 0;
 var equationRenderingTime = 0;
@@ -40,7 +40,7 @@ var invalidEquationHashSciweaversFirst50 = "%0D%0A%09%3C%21DOCTYPE%20html%20PUBL
 // 		return activeDoc;
 // 	},
 // 	getPageWidth: function() {
-// 		let activeWidth = DocumentApp.getActiveDocument().getPageWidth();  
+// 		let activeWidth = DocumentApp.getActiveDocument().getPageWidth();
 // 		return activeWidth;
 // 	}
 // };
@@ -101,7 +101,7 @@ function showSidebar() {
 		.setTitle('Auto-LaTeX Equations')
 		.setSandboxMode(HtmlService.SandboxMode.IFRAME);    // choose mode IFRAME which is fastest option
 		DocumentApp.getUi().showSidebar(ui);
-}	
+}
 
 //add to log
 function addLog(str) {
@@ -149,7 +149,7 @@ function encodeFlag(flag, renderCount){
  	if(size < 0){
  		isInline = true;
  		size = 0;
- 	} 
+ 	}
  	reportDeltaTime(140);
  	var delim = getDelimiters(delimiter);
  	savePrefs(sizeRaw, delimiter);
@@ -163,8 +163,8 @@ function encodeFlag(flag, renderCount){
 	} catch (error) {
   	console.error(error);
 		return encodeFlag(-1, 0)
-	}	
-	
+	}
+
 	let childCount = body.getBody().getParent().getNumChildren();
  	reportDeltaTime(156);
 	for (var index = 0; index < childCount; index++){
@@ -173,7 +173,7 @@ function encodeFlag(flag, renderCount){
 			// prevFailedStartElemIfIsEmpty is here so when $$$$ fails again and again, it doesn't get stuck there and moves on.
 			let [gotSize, returnedFailedStartElemIfIsEmpty] = findPos(index, delim, quality, size, defaultSize, isInline, failedStartElemIfIsEmpty);   //or: "\\\$\\\$", "\\\$\\\$"
 			allEmpty = returnedFailedStartElemIfIsEmpty ? allEmpty + 1 : 0
-			failedStartElemIfIsEmpty = returnedFailedStartElemIfIsEmpty	
+			failedStartElemIfIsEmpty = returnedFailedStartElemIfIsEmpty
 
 			if(allEmpty > 10) break; 			//Assume we quit on 10 consecutive empty equations.
 
@@ -193,9 +193,9 @@ function encodeFlag(flag, renderCount){
 /**
  * Get position of insertion then place the image there.
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order. E.g. ["\\[", "\\]", "\\\\\\[", "\\\\\\]", 2, 1, 1]
- 
+
  returns: [gotSize, isEmpty]
-				gotSize: 
+				gotSize:
 					-100000 -> none of the renderers work
 					0 => failure finding delimiters, probably means last equation rendered
 					nonzero positive size => size to render equations at by default. also when there is a blank equation
@@ -237,7 +237,7 @@ function assert(value, command="unspecified"){
 	}
 }
 
-//encode function that gets Missed. Google Docs characters stuff 
+//encode function that gets Missed. Google Docs characters stuff
 function getCustomEncode(equation, direction, time){
 	// there are two sublists because they happen at differeent times (on encode or decoded string).
 	// In addition, the second set is one way due to typing errors/unsupported characters.
@@ -277,7 +277,7 @@ function getFilenameEncode(equation, direction){
  	equation = getCustomEncode((equation), 0, 1);
 	var equationStringEncoded =  getCustomEncode(encodeURIComponent(equation), 0, 0 ); //escape deprecated
 	return equationStringEncoded;
-} 
+}
 
 function deEncode(equation){
  	reportDeltaTime(269);
@@ -291,7 +291,7 @@ function deEncode(equation){
 	var equationStringDecoded = getCustomEncode(equationStringDecoded, 1, 1);
 	debugLog("Decoded with replacing: " + equationStringDecoded);
 	return equationStringDecoded;
-} 
+}
 
 function getEquation(paragraph, childIndex, start, end, delimiters){
 	var equationOriginal = [];
@@ -314,7 +314,7 @@ function getEquation(paragraph, childIndex, start, end, delimiters){
  * @param {string}  inlineStyle            The text to be inserted for inline text, dependent on CodeCogs or TeXRendr.
  * @param {integer} size                   The size of the text, whose neg/pos indicated whether the equation is inline or not.
  */
- 
+
 function getStyle(equationStringEncoded, quality, renderer, isInline, type){//ERROR?
 	var equation = [];
 	equationStringEncoded = equationStringEncoded;
@@ -375,7 +375,7 @@ function setSize(size, defaultSize, paragraph, childIndex, start){
 
 // deprecated, use the indexing method to get all odd/even footers etc. as well
 function getBodyFromLocation(location){
-	var docBody; 
+	var docBody;
  	reportDeltaTime(365);
 	if(location == "header"){
 		docBody = DocumentApp.getActiveDocument().getHeader();
@@ -420,13 +420,13 @@ function getBodyFromIndex(index){
  * @param {integer} defaultSize  The default/previous size of the text, in case size is null.
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
- 
+
 function placeImage(index, startElement, start, end, quality, size, defaultSize, delim, isInline) {
  	reportDeltaTime(411);
  	var docBody = getBodyFromIndex(index);
  	reportDeltaTime(413);
 	// GET VARIABLES
-	var textElement = startElement.getElement(); 
+	var textElement = startElement.getElement();
 	var text      = textElement.getText();
 	var paragraph = textElement.getParent();
 	var childIndex          = paragraph.getChildIndex(textElement);  //gets index of found text in paragaph
@@ -444,14 +444,14 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
 	var worked = 1;
 	var failure = 1;
 	var rendererType ="";
-	
+
 
 	var failedCodecogs = 0;
 	var failedTexrendr = 0;
 	var failedResp;
 	// if only failed codecogs, probably weird evening bug from 10/15/19
 	// if failed codecogs and texrendr, probably shitty equation and the codecogs error is more descriptive so show it
-	
+
 	// note the last few renderers might be legacy, so ignored
 	for (; worked <= capableRenderers; ++worked){//[3,"https://latex.codecogs.com/png.latex?","http://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]
 		try {
@@ -463,13 +463,13 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
 				// console.log("Used texrendr", equation, equation.replace("%5C%5C", "%0D"))
 				equation = equation.split("%A0").join("%0D") //.replace("%5C%5C", "%0D") .replace("%C2%AD", "%0D")
 			} else if(rendererType == "Codecogs"){
-				// console.log("Used Codecogs", equation, equation.split("%5C%5C%5C%5C").join("%5C%5C")) 
+				// console.log("Used Codecogs", equation, equation.split("%5C%5C%5C%5C").join("%5C%5C"))
 				equation = equation.split("%5C%5C%5C%5C").join("%5C%5C") //.replace("%A0", "%0D") .replace("%C2%AD", "%0D")
 			} else if(rendererType == "Sciweavers"){
-				// console.log("Used Sciweavers", equation, equation.split("%5C%5C%5C%5C").join("%5C%5C")) 
+				// console.log("Used Sciweavers", equation, equation.split("%5C%5C%5C%5C").join("%5C%5C"))
 				equation = equation.split("%5C%5C%5C%5C").join("%5C%5C") //.replace("%A0", "%0D") .replace("%C2%AD", "%0D")
 			}
-			
+
 			debugLog("Raw equation", equation);
 			renderer[1] = renderer[1].split("FILENAME").join(getFilenameEncode (equation, 0));
 			renderer[1] = renderer[1].split("EQUATION").join(equation);
@@ -483,9 +483,9 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
  			// }
 			console.log("Fetching ", renderer[1], " and ", renderer[2] + renderer[6] + equation)
 
-			var _createFileInCache = UrlFetchApp.fetch(renderer[2] + renderer[6] + equation); 
+			var _createFileInCache = UrlFetchApp.fetch(renderer[2] + renderer[6] + equation);
 			// needed for codecogs to generate equation properly, need to figure out which other renderers need this. to test, use align* equations.
- 			
+
  			reportDeltaTime(458, " fetching w eqn len " + equation.length + " with renderer " + rendererType);
 			let didTimeOut = true;
 			if(rendererType == "Codecogs" || rendererType == "Sciweavers"){
@@ -543,7 +543,7 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
 		if (failure == 0) break;
 	}
 	if (worked > capableRenderers) return [-100000, null];
-	// SAVING FORMATTING 
+	// SAVING FORMATTING
  	reportDeltaTime(511);
 	if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50){
 		worked = 1 //assumes codecogs is 1
@@ -597,7 +597,7 @@ function repairImage(index, startElement, paragraph, childIndex, size, defaultSi
 		}
 	}
 	if(attemptsToSetImageUrl < 3){
-		console.log("At ", attemptsToSetImageUrl, " attemptsToSetImageUrls of failing to get child and link , ", equation) 
+		console.log("At ", attemptsToSetImageUrl, " attemptsToSetImageUrls of failing to get child and link , ", equation)
 		if(attemptsToSetImageUrl == 0){
 			throw new Error('Couldn\'t get equation child!'); // of image immediately after inserting
 		}
@@ -609,10 +609,10 @@ function repairImage(index, startElement, paragraph, childIndex, size, defaultSi
 	var height = paragraph.getChild(childIndex+1).getHeight();
 	var width  = paragraph.getChild(childIndex+1).getWidth();
 	console.log("Pre-fixing size, width, height: " + size + ", " + width + ", " + height);                 //only a '1' is rendered as a 100 height (as of 10/20/19, now it is fetched as 90 height). putting an equationrendertime here just doesnt work
-	
+
 	//SET PROPERTIES OF IMAGE (Height, Width)
 	var oldSize = size; // why use oldsize instead of new size
-	
+
 	if(escape(resp.getBlob().getDataAsString()).substring(0,50) == invalidEquationHashCodecogsFirst50 || (size > 10 && width == 126 && height == 24)){
 	 size *= 5 // make codecogs errors readable, size constraint just in case some small equation is 126x24 as well
 	}
@@ -648,7 +648,7 @@ function repairImage(index, startElement, paragraph, childIndex, size, defaultSi
  * @param {element} paragraph  The paragraph which the child is in.
  * @param {integer} childIndex The childIndex in the paragraph where the text is in, to give the place to edit image.
  * @param {integer} height     The scaled height of the equation based on font size.
- * @param {integer} width      The scaled width of the equation based on font size. 
+ * @param {integer} width      The scaled width of the equation based on font size.
  */
 
  function sizeImage(paragraph, childIndex, height, width){
@@ -674,14 +674,14 @@ function repairImage(index, startElement, paragraph, childIndex, size, defaultSi
  *
  * @param {string} sizeRaw     Sidebar-selected size.
  */
- 
+
  function removeEquations(sizeRaw, delimiter){
  	var quality = 900;
  	var size = getSize(sizeRaw);
  	var delim = getDelimiters(delimiter);
  	savePrefs(sizeRaw, delimiter);
  	var equationsDerenderedCount = 0;
-	equationsDerenderedCount += removeAll(delim);   
+	equationsDerenderedCount += removeAll(delim);
 	console.log("Derendered this many equations: " + equationsDerenderedCount);
 	return equationsDerenderedCount;
 }
@@ -691,23 +691,23 @@ function repairImage(index, startElement, paragraph, childIndex, size, defaultSi
  *
  * @param {string} sizeRaw     Sidebar-selected size.
  */
- 
+
  function editEquations(sizeRaw, delimiter){
  	var quality = 900;
  	var size = getSize(sizeRaw);
  	var delim = getDelimiters(delimiter);
  	savePrefs(sizeRaw, delimiter);
- 	var toReturn = undoImage(delim);                     
+ 	var toReturn = undoImage(delim);
  	console.log("Undoimage return flag: " + toReturn);
  	return toReturn;
  }
 
 /**
  * Given string of size, return integer value.
- * 
- * @param {string} sizeRaw     The text value of the size from HTML selection. 
+ *
+ * @param {string} sizeRaw     The text value of the size from HTML selection.
  */
- 
+
  function getSize(sizeRaw){
  	var size = 0;
  	if(sizeRaw=="smart"){size = 0;}
@@ -754,8 +754,8 @@ function getRenderer(worked) {//  order of execution ID, image URL, editing URL,
 }//http://www.sciweavers.org/tex2img.php?bc=White&fc=Black&im=jpg&fs=78&ff=txfonts&edit=0&eq=
 /**
  * Given string of size, return integer value.
- *  
- * @param {string} delimiters     The text value of the delimiters from HTML selection. 
+ *
+ * @param {string} delimiters     The text value of the delimiters from HTML selection.
  */
 
 function getDelimiters(delimiters){// Todo - fix hardcoded delimiters. Potentially do escape(escape(original)) or something like that.
@@ -784,14 +784,14 @@ function debugLog(...strings){
  * @param {[string, string]} delim     Start/end delimiters to insert.
  */
 function removeAll(delimRaw) {
- 	counter = 0;  
+ 	counter = 0;
  	var delim = getDelimiters(delimRaw);
  	for (var index = 0; index < DocumentApp.getActiveDocument().getBody().getParent().getNumChildren(); index++){
  		var body = getBodyFromIndex(index);
 		var img = body.getImages(); //places all InlineImages from the active document into the array img
 		for(i=0; i < img.length; i++) {
 			var image = img[i];
-			var origURL = new String(image.getLinkUrl()); //becomes "null", not null, if no equation link 
+			var origURL = new String(image.getLinkUrl()); //becomes "null", not null, if no equation link
 			if (image.getLinkUrl() === null) {continue;}
 			// console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
 			// console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
