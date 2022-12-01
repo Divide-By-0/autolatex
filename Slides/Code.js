@@ -1,7 +1,6 @@
 /**
  * @OnlyCurrentDoc
  */
-//***REMOVED***
 //Auto-Latex Equations - (For api keys, ask aayush)
 
 var SIDEBAR_TITLE = "Auto-LaTeX Equations";
