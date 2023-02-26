@@ -204,42 +204,47 @@ function getRgbColor(textRange, slideNum){
 
 function unwrapEQ(element){
   debugLog("Element Type: " + element.getPageElementType());
-  var textValue = [10][10]; // supposed to be a 2D array of strings
   // test if it's a text box
   try{
-    textValue = textValue.push(element.getText()); // TextRange
-    debugLog("TextBox Text: " + element.asShape().getText().asString());
+    let textValue = element.getText(); // TextRange
+    debugLog("TextBox Text: " + textValue.asString());
+    return [[textValue]]; // Convert it into a two dimensional array for a standard return type
   }
-  catch{
+  catch (err){
     debugLog("not a text box");
   }
 
   // test if it's a table
   try{
+    let textRanges = [];
     for (var i = 0; i < element.getNumRows(); i++){
+      let currentRow = [];
       for (var j = 0; j < element.getNumColumns(); j++){
-        textValue[i][j] = element.getCell(i, j).getText(); // returns a text range
+        currentRow.push(element.getCell(i, j).getText()); // returns a text range
         debugLog("Total Rows: " + element.getNumRows())
         debugLog("Total Cols :" + element.getNumColumns())
         debugLog("Table Text: " + element.getCell(i, j).getText() + " Row: " + i + " Col: " + j);
       }
+      textRanges.push(currentRow);
     }
+    return textRanges;
   }
-  catch{
+  catch (err){
     debugLog("not a table");
   }
 
-  return textValue; // returns TextRange
+  return [[]]; // No text could be unwrapped so return an empty 2D array
 }
 
 
 function findPos(slideNum, elementNum, delim, quality, size, defaultSize, isInline){
-  
+  let returnValues = [];
   // get the shape (elementNum) on the given slide (slideNum)
   var element = getElementFromIndices(slideNum, elementNum);
   // debugLog("shape is: " + shape.getPageElementType())
   if(element == null){
-    return [0, 0];
+    returnValues.push([0, 0]);
+    return returnValues;
   }
 
   // Get the text of the shape.
@@ -248,32 +253,27 @@ function findPos(slideNum, elementNum, delim, quality, size, defaultSize, isInli
   var elementText = unwrapEQ(element); // TextRange
 
   // debugLog("Looking for delimiter :" + delim[2] + " in text");
-  for(var i = 0; i < (elementText + "").length; i++){
-    for (var j = 0; j < (elementText[0] + "").length; j++){
-      var checkForDelimiter = elementText[i][j].find(delim[2]);  // TextRange[]
-
-      if(checkForDelimiter == null) 
-        return [0, 0];  // didn't find first delimiter
+  for (let row of elementText){
+    for (let textRange of row){
+      var checkForDelimiter = textRange.find(delim[2]);  // TextRange[]
+      if(checkForDelimiter == null) {
+        returnValues.push([0, 0]);  // didn't find first delimiter
+        continue;
+      }
 
       // start position of image
-      var placeHolderStart = findTextOffsetInSlide(elementText[i][j].asRenderedString(), delim[0], 0); 
+      var placeHolderStart = findTextOffsetInSlide(textRange.asRenderedString(), delim[0], 0); 
       
       var temp = 2;
-      if(placeHolderStart != -1){
+      if(placeHolderStart != -1)
         temp += placeHolderStart;
-      }
       // end position till of image 
-      var placeHolderEnd = findTextOffsetInSlide(elementText[i][j].asRenderedString(), delim[1], temp); 
+      var placeHolderEnd = findTextOffsetInSlide(textRange.asRenderedString(), delim[1], temp); 
 
       debugLog("Start and End of equation: " + placeHolderStart + " " + placeHolderEnd);
       // debugLog("Isolating Equation Textrange: " + element.getText().getRange(placeHolderStart, placeHolderEnd).asRenderedString());
       
-      if(element.getPageElementType() == "TABLE"){
-        var textColor = [0,0,0]
-      }
-      else{
-        var textColor = getRgbColor(element.getText().getRange(placeHolderStart+1, placeHolderEnd), slideNum);
-      }
+      let textColor = getRgbColor(textRange.getRange(placeHolderStart+1, placeHolderEnd), slideNum);
 
       var red = textColor[0];
       debugLog("red: " + red)
@@ -285,10 +285,10 @@ function findPos(slideNum, elementNum, delim, quality, size, defaultSize, isInli
       if(placeHolderEnd - placeHolderStart == 2.0) { // empty equation
         console.log("Empty equation!");
         EMPTY_EQUATIONS ++;
-        return [defaultSize, 1]; // default behavior of placeImage
+        returnValues.push([defaultSize, 1]); // default behavior of placeImage
+        continue; 
       }
-
-      return placeImage(slideNum, elementNum, elementText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, red, green, blue);
+      returnValues.push(placeImage(slideNum, elementNum, textRange, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, red, green, blue));
     }
   }
 }
@@ -657,7 +657,7 @@ function getElementFromIndices(slideNum, elementNum){
   var json = JSON.stringify(obj);  
 
   if(textElement.getPageElementType() == "TABLE"){ // if table
-    textElement.getCell(0, 0).getText().clear(start, end+2);
+    text.clear(start, Math.min(text.getLength(), end + 2));
   }
   else{ // else if text box
     textElement.getText().clear(start, end+2);
@@ -685,9 +685,9 @@ function getElementFromIndices(slideNum, elementNum){
   scale = 2.5;
 
   resize(image, textElement, textSize, scale);
-  if(textElement.getText().asRenderedString().length == 1){
+  if (textElement.getPageElementType() != "TABLE" && textElement.getText().asRenderedString().length == 1) // else if text box, with no other text
     textElement.remove();
-  }
+
   image.setTitle(json);
 
 
