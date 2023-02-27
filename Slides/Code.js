@@ -148,13 +148,11 @@ function findTextOffsetInSlide(str, search, offset = 0){
   }
   let slides = IntegratedApp.getBody()
   let childCount = slides.length;
-  for (var x = 0; x < 5; x++){ //please remove this, this is a terrible fix
-    for (var slideNum = 0; slideNum < childCount; slideNum++){
-      for (var elementNum = 0; elementNum < slides[slideNum].getPageElements().length; elementNum++){
-        debugLog("Slide Num: " + slideNum + " Num of shapes: " + slides[slideNum].getPageElements().length);
-        findPos(slideNum, elementNum, delim, quality, size, defaultSize, isInline);   //or: "\\\$\\\$", "\\\$\\\$"
-        c = c + 1;
-      }
+  for (var slideNum = 0; slideNum < childCount; slideNum++){
+    for (var elementNum = 0; elementNum < slides[slideNum].getPageElements().length; elementNum++){
+      debugLog("Slide Num: " + slideNum + " Num of shapes: " + slides[slideNum].getPageElements().length);
+      findPos(slideNum, elementNum, delim, quality, size, defaultSize, isInline);   //or: "\\\$\\\$", "\\\$\\\$"
+      c++;
     }
   }
   
