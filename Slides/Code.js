@@ -145,34 +145,31 @@ function replaceEquations(sizeRaw, delimiter) {
   }
   let slides = IntegratedApp.getBody();
   let childCount = slides.length;
-  for (var x = 0; x < 5; x++) {
-    //please remove this, this is a terrible fix
-    for (var slideNum = 0; slideNum < childCount; slideNum++) {
-      for (var elementNum = 0; elementNum < slides[slideNum].getPageElements().length; elementNum++) {
-        debugLog("Slide Num: " + slideNum + " Num of shapes: " + slides[slideNum].getPageElements().length);
-        // This reverses the findpos return logic from docs to make it more accurate
-        if (isTable(slideNum, elementNum)) {
-          for (var i = 0; i < element.getNumRows(); i++) {
-            for (var j = 0; j < element.getNumColumns(); j++) {
-              var element = getElementFromIndices(slideNum, elementNum).getCell(i, j);
-              let [gotSize, imagesPlaced] = findPos(slideNum, element, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
-              c = imagesPlaced ? c + 1 : c;
-            }
+  for (var slideNum = 0; slideNum < childCount; slideNum++) {
+    for (var elementNum = 0; elementNum < slides[slideNum].getPageElements().length; elementNum++) {
+      debugLog("Slide Num: " + slideNum + " Num of shapes: " + slides[slideNum].getPageElements().length);
+      let element = getElementFromIndices(slideNum, elementNum);
+      // This reverses the findpos return logic from docs to make it more accurate
+      if (isTable(element)) {
+        for (var i = 0; i < element.getNumRows(); i++) {
+          for (var j = 0; j < element.getNumColumns(); j++) {
+            var cell = element.getCell(i, j);
+            let [, imagesPlaced] = findPos(slideNum, cell, elementNum, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+            if (imagesPlaced) c++;
           }
-        } else {
-          var element = getElementFromIndices(slideNum, elementNum);
-          let [gotSize, imagesPlaced] = findPos(slideNum, element, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
-          c = imagesPlaced ? c + 1 : c;
         }
+      } else {
+        let [, imagesPlaced] = findPos(slideNum, element, elementNum, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+        if (imagesPlaced) c++;
       }
     }
   }
   return encodeFlag(0, c);
 }
 
-function isTable(slideNum, elementNum) {
+function isTable(element) {
   try {
-    var element = getElementFromIndices(slideNum, elementNum).getCell(0, 0);
+    element.getCell(0, 0);
   } catch {
     return false;
   }
@@ -219,29 +216,13 @@ function getRgbColor(textRange, slideNum) {
 */
 
 function unwrapEQ(element) {
-  debugLog("Element Type: " + element.getPageElementType());
   var textValue = "";
-  // test if it's a text box
+  // test if it's a text box (table cells work)
   try {
     textValue = element.getText(); // TextRange
     debugLog("TextBox Text: " + element.asShape().getText().asString());
   } catch {
     debugLog("not a text box");
-  }
-
-  // test if it's a table
-  try {
-    textValue = element.getText(); // TextRange
-    // for (var i = 0; i < element.getNumRows(); i++) {
-    //   for (var j = 0; j < element.getNumColumns(); j++) {
-    //     textValue = element.getCell(i, j).getText(); // returns a string
-    //     debugLog("Total Rows: " + element.getNumRows());
-    //     debugLog("Total Cols :" + element.getNumColumns());
-    //     debugLog("Table Text: " + element.getCell(i, j).getText() + " Row: " + i + " Col: " + j);
-    //   }
-    // }
-  } catch {
-    debugLog("not a table");
   }
 
   return textValue; // returns TextRange
@@ -273,7 +254,7 @@ function unwrapEQ(element) {
 //   var equationOriginal = getEquation(textElement, text, 0, start, end, delim);
 //   debugLog("placeImage- EquationOriginal: " + equationOriginal);
 
-function findPos(slideNum, element, delim, quality, size, defaultSize, isInline) {
+function findPos(slideNum, element, elementNum, delim, quality, size, defaultSize, isInline) {
   // get the shape (elementNum) on the given slide (slideNum)
   // var element = getElementFromIndices(slideNum, elementNum);
   // debugLog("shape is: " + shape.getPageElementType())
@@ -303,11 +284,7 @@ function findPos(slideNum, element, delim, quality, size, defaultSize, isInline)
   debugLog("Start and End of equation: " + placeHolderStart + " " + placeHolderEnd);
   // debugLog("Isolating Equation Textrange: " + element.getText().getRange(placeHolderStart, placeHolderEnd).asRenderedString());
 
-  if (element.getPageElementType() == "TABLE") {
-    var textColor = [0, 0, 0];
-  } else {
-    var textColor = getRgbColor(element.getText().getRange(placeHolderStart + 1, placeHolderEnd), slideNum);
-  }
+  var textColor = getRgbColor(element.getText().getRange(placeHolderStart + 1, placeHolderEnd), slideNum);
 
   var red = textColor[0];
   debugLog("red: " + red);
@@ -711,10 +688,7 @@ function placeImage(slideNum, elementNum, elementText, start, end, quality, size
 
   if (textElement.getPageElementType() == "TABLE") {
     // if table
-    textElement
-      .getCell(0, 0)
-      .getText()
-      .clear(start, end + 2);
+    text.clear(start, Math.min(text.getLength(), end + 2));
   } else {
     // else if text box
     textElement.getText().clear(start, end + 2);
@@ -746,9 +720,8 @@ function placeImage(slideNum, elementNum, elementText, start, end, quality, size
   scale = 2.5;
 
   resize(image, textElement, textSize, scale);
-  if (textElement.getText().asRenderedString().length == 1) {
+  if (textElement.getPageElementType() != "TABLE" && textElement.getText().asRenderedString().length == 1) // else if text box, with no other text
     textElement.remove();
-  }
   image.setTitle(json);
   return [size, 1];
 
