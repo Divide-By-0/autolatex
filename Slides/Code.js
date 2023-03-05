@@ -464,11 +464,15 @@ function getKey() {
   return Session.getTemporaryActiveUserKey();
 }
 
-function resize(eqnImage, textElement, size, scale) {
-  eqnImage.setLeft(textElement.getLeft());
-  eqnImage.setTop(textElement.getTop());
+function resize(eqnImage, textElement, size, scale, horizontalAlignment, verticalAlignment) {
   eqnImage.setWidth(Math.round(((size * eqnImage.getWidth()) / eqnImage.getHeight()) * scale));
   eqnImage.setHeight(size * scale);
+  if (horizontalAlignment == "END") eqnImage.setLeft(textElement.getLeft() + textElement.getWidth() - eqnImage.getWidth()); // subtracting the image width emulates "setRight"
+  else if (horizontalAlignment == "CENTER") eqnImage.setLeft(textElement.getLeft() + textElement.getWidth() / 2 - eqnImage.getWidth() / 2);
+  else eqnImage.setLeft(textElement.getLeft());
+  if (verticalAlignment == "TOP") eqnImage.setTop(textElement.getTop());
+  else if (verticalAlignment == "BOTTOM") eqnImage.setTop(textElement.getTop() + textElement.getHeight() - eqnImage.getHeight()); // emulating "setBottom"
+  else eqnImage.setTop(textElement.getTop() + textElement.getHeight() / 2 - eqnImage.getHeight() / 2);
 }
 
 // deprecated, use the indexing method to get all odd/even footers etc. as well
@@ -540,13 +544,12 @@ function getElementFromIndices(slideNum, elementNum) {
 
 // var linkEquation = [];
 
-function placeImage(slideNum, elementNum, elementText, start, end, quality, size, defaultSize, delim, isInline, red, green, blue) {
+function placeImage(slideNum, elementNum, text, start, end, quality, size, defaultSize, delim, isInline, red, green, blue) {
   // get the textElement (elementNum) on the given slide (slideNum)
   var textElement = getElementFromIndices(slideNum, elementNum);
   debugLog("placeImage- EquationOriginal: " + textElement + ", type: " + typeof textElement);
 
   // var text = textElement.getText(); // text range
-  var text = elementText; // text range
   // var textColor = getRgbColor(textElement, slideNum);
   // console.log("equation color: " + textColor);
 
@@ -556,6 +559,15 @@ function placeImage(slideNum, elementNum, elementText, start, end, quality, size
     .getRange(start + 1, end)
     .getTextStyle()
     .getFontSize();
+  // Gets the horizontal alignment of the equation. If it somehow spans multiple paragraphs, this will return the alignment of the first one
+  var textHorizontalAlignment = textElement.getPageElementType() == "TABLE" ? "START" : 
+    text
+    .getRange(start + 1, end)
+    .getParagraphs()[0]
+    .getRange()
+    .getParagraphStyle()
+    .getParagraphAlignment();
+  var textVerticalAlignment = textElement.getPageElementType() == "TABLE" ? "MIDDLE" : textElement.getContentAlignment();
   // var textSize = text.getTextStyle().getFontSize();
   debugLog("My Text Size is: " + textSize.toString());
   if (textSize == null) {
@@ -719,8 +731,10 @@ function placeImage(slideNum, elementNum, elementText, start, end, quality, size
 
   scale = 2.5;
 
-  resize(image, textElement, textSize, scale);
-  if (textElement.getPageElementType() != "TABLE" && textElement.getText().asRenderedString().length == 1) // else if text box, with no other text
+  resize(image, textElement, textSize, scale, textHorizontalAlignment, textVerticalAlignment);
+  if (textElement.getPageElementType() == "SHAPE" &&
+    textElement.getShapeType() == "TEXT_BOX" &&
+    textElement.getText().asRenderedString().length == 1) // else if text box, with no other text
     textElement.remove();
   image.setTitle(json);
   return [size, 1];
