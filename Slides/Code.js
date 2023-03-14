@@ -154,13 +154,13 @@ function replaceEquations(sizeRaw, delimiter) {
         for (var i = 0; i < element.getNumRows(); i++) {
           for (var j = 0; j < element.getNumColumns(); j++) {
             var cell = element.getCell(i, j);
-            let [, imagesPlaced] = findPos(slideNum, cell, elementNum, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
-            if (imagesPlaced) c++;
+            let parsedEquations = findPos(slideNum, cell, elementNum, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+            c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
           }
         }
       } else {
-        let [, imagesPlaced] = findPos(slideNum, element, elementNum, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
-        if (imagesPlaced) c++;
+        let parsedEquations = findPos(slideNum, element, elementNum, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+        c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
       }
     }
   }
@@ -216,7 +216,7 @@ function getRgbColor(textRange, slideNum) {
 */
 
 function unwrapEQ(element) {
-  var textValue = "";
+  var textValue = null;
   // test if it's a text box (table cells work)
   try {
     textValue = element.getText(); // TextRange
@@ -225,7 +225,7 @@ function unwrapEQ(element) {
     debugLog("not a text box");
   }
 
-  return textValue; // returns TextRange
+  return textValue; // returns TextRange or null
 }
 
 // function placeImage(slideNum, elementNum, elementText, start, end, quality, size, defaultSize, delim, isInline, red, green, blue) {
@@ -258,49 +258,55 @@ function findPos(slideNum, element, elementNum, delim, quality, size, defaultSiz
   // get the shape (elementNum) on the given slide (slideNum)
   // var element = getElementFromIndices(slideNum, elementNum);
   // debugLog("shape is: " + shape.getPageElementType())
-  if (element == null) {
-    return [0, 0];
+  let imagesPlaced = [];
+  if (!element)
+    imagesPlaced.push([0, 0]);
+  else {
+    for (let i = 0; i < 100; i++) { // Parse a maximum of 100 equations per TextRange
+      // Get the text of the shape.
+      // var elementText = shape.getText(); // TextRange
+      var elementText = unwrapEQ(element); // TextRange
+      if(elementText == null) {
+        imagesPlaced.push([0, 0]);
+        continue;
+      }
+      // debugLog("Looking for delimiter :" + delim[2] + " in text");
+      var checkForDelimiter = elementText.find(delim[2]); // TextRange[]
+
+      if (checkForDelimiter == null) {
+        imagesPlaced.push([0, 0]); // didn't find first delimiter
+        break;
+      }
+
+      // start position of image
+      var placeHolderStart = findTextOffsetInSlide(elementText.asRenderedString(), delim[0], 0);
+
+      var offset = 2;
+      if (placeHolderStart != -1)
+        offset += placeHolderStart;
+
+      // end position till of image
+      var placeHolderEnd = findTextOffsetInSlide(elementText.asRenderedString(), delim[1], offset);
+
+      debugLog("Start and End of equation: " + placeHolderStart + " " + placeHolderEnd);
+      // debugLog("Isolating Equation Textrange: " + element.getText().getRange(placeHolderStart, placeHolderEnd).asRenderedString());
+
+      var textColor = getRgbColor(element.getText().getRange(placeHolderStart + 1, placeHolderEnd), slideNum);
+
+      debugLog(`RGB: ${textColor.join()}`);
+
+      if (placeHolderEnd - placeHolderStart == 2.0) {
+        // empty equation
+        debugLog("Empty equation!");
+        EMPTY_EQUATIONS++;
+        imagesPlaced.push([defaultSize, 0]); // default behavior of placeImage
+        break;
+      }
+
+      imagesPlaced.push(placeImage(slideNum, elementNum, elementText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, ...textColor));
+    }
   }
-
-  // Get the text of the shape.
-  // var elementText = shape.getText(); // TextRange
-  var elementText = unwrapEQ(element); // TextRange
-
-  // debugLog("Looking for delimiter :" + delim[2] + " in text");
-  var checkForDelimiter = elementText.find(delim[2]); // TextRange[]
-
-  if (checkForDelimiter == null) return [0, 0]; // didn't find first delimiter
-
-  // start position of image
-  var placeHolderStart = findTextOffsetInSlide(elementText.asRenderedString(), delim[0], 0);
-
-  var temp = 2;
-  if (placeHolderStart != -1) {
-    temp += placeHolderStart;
-  }
-  // end position till of image
-  var placeHolderEnd = findTextOffsetInSlide(elementText.asRenderedString(), delim[1], temp);
-
-  debugLog("Start and End of equation: " + placeHolderStart + " " + placeHolderEnd);
-  // debugLog("Isolating Equation Textrange: " + element.getText().getRange(placeHolderStart, placeHolderEnd).asRenderedString());
-
-  var textColor = getRgbColor(element.getText().getRange(placeHolderStart + 1, placeHolderEnd), slideNum);
-
-  var red = textColor[0];
-  debugLog("red: " + red);
-  var green = textColor[1];
-  debugLog("green: " + green);
-  var blue = textColor[2];
-  debugLog("blue: " + blue);
-
-  if (placeHolderEnd - placeHolderStart == 2.0) {
-    // empty equation
-    console.log("Empty equation!");
-    EMPTY_EQUATIONS++;
-    return [defaultSize, 0]; // default behavior of placeImage
-  }
-
-  return placeImage(slideNum, elementNum, elementText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, red, green, blue);
+  return imagesPlaced;
 }
 
 function assert(value, command = "unspecified") {
@@ -729,7 +735,7 @@ function placeImage(slideNum, elementNum, text, start, end, quality, size, defau
 
   var image = body.insertImage(renderer[1]);
 
-  scale = 2.5;
+  scale = 2.5 / 3;
 
   resize(image, textElement, textSize, scale, textHorizontalAlignment, textVerticalAlignment);
   if (textElement.getPageElementType() == "SHAPE" &&
