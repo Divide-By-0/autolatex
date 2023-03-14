@@ -154,12 +154,12 @@ function replaceEquations(sizeRaw, delimiter) {
         for (var i = 0; i < element.getNumRows(); i++) {
           for (var j = 0; j < element.getNumColumns(); j++) {
             var cell = element.getCell(i, j);
-            let parsedEquations = findPos(slideNum, cell, elementNum, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+            let parsedEquations = findPos(slideNum, cell, element, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
             c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
           }
         }
       } else {
-        let parsedEquations = findPos(slideNum, element, elementNum, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+        let parsedEquations = findPos(slideNum, element, element, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
         c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
       }
     }
@@ -254,7 +254,7 @@ function unwrapEQ(element) {
 //   var equationOriginal = getEquation(textElement, text, 0, start, end, delim);
 //   debugLog("placeImage- EquationOriginal: " + equationOriginal);
 
-function findPos(slideNum, element, elementNum, delim, quality, size, defaultSize, isInline) {
+function findPos(slideNum, element, parentElement, delim, quality, size, defaultSize, isInline) {
   // get the shape (elementNum) on the given slide (slideNum)
   // var element = getElementFromIndices(slideNum, elementNum);
   // debugLog("shape is: " + shape.getPageElementType())
@@ -281,9 +281,12 @@ function findPos(slideNum, element, elementNum, delim, quality, size, defaultSiz
       // start position of image
       var placeHolderStart = findTextOffsetInSlide(elementText.asRenderedString(), delim[0], 0);
 
-      var offset = 2;
-      if (placeHolderStart != -1)
-        offset += placeHolderStart;
+      if (placeHolderStart === -1) {
+        imagesPlaced.push([0, 0]); // didn't find first delimiter
+        break;
+      }
+
+      var offset = 2 + placeHolderStart;
 
       // end position till of image
       var placeHolderEnd = findTextOffsetInSlide(elementText.asRenderedString(), delim[1], offset);
@@ -299,11 +302,12 @@ function findPos(slideNum, element, elementNum, delim, quality, size, defaultSiz
         // empty equation
         debugLog("Empty equation!");
         EMPTY_EQUATIONS++;
+        elementText.clear(placeHolderStart, Math.min(elementText.getLength(), placeHolderEnd + 2));
         imagesPlaced.push([defaultSize, 0]); // default behavior of placeImage
-        break;
+        continue;
       }
 
-      imagesPlaced.push(placeImage(slideNum, elementNum, elementText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, ...textColor));
+      imagesPlaced.push(placeImage(slideNum, parentElement, elementText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, ...textColor));
     }
   }
   return imagesPlaced;
@@ -550,9 +554,7 @@ function getElementFromIndices(slideNum, elementNum) {
 
 // var linkEquation = [];
 
-function placeImage(slideNum, elementNum, text, start, end, quality, size, defaultSize, delim, isInline, red, green, blue) {
-  // get the textElement (elementNum) on the given slide (slideNum)
-  var textElement = getElementFromIndices(slideNum, elementNum);
+function placeImage(slideNum, textElement, text, start, end, quality, size, defaultSize, delim, isInline, red, green, blue) {
   debugLog("placeImage- EquationOriginal: " + textElement + ", type: " + typeof textElement);
 
   // var text = textElement.getText(); // text range
