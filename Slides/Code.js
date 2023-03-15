@@ -3,6 +3,8 @@
  */
 //Auto-Latex Equations - (For api keys, ask aayush)
 
+/* exported onOpen, showSidebar, replaceEquations */
+
 var SIDEBAR_TITLE = "Auto-LaTeX Equations";
 var DEBUG = true; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
 var EMPTY_EQUATIONS = 0;
@@ -475,7 +477,7 @@ function getKey() {
 }
 
 function resize(eqnImage, textElement, size, scale, horizontalAlignment, verticalAlignment) {
-  eqnImage.setWidth(Math.round(((size * eqnImage.getWidth()) / eqnImage.getHeight()) * scale));
+  eqnImage.setWidth(((size * eqnImage.getWidth()) / eqnImage.getHeight()) * scale);
   eqnImage.setHeight(size * scale);
   if (horizontalAlignment == "END") eqnImage.setLeft(textElement.getLeft() + textElement.getWidth() - eqnImage.getWidth()); // subtracting the image width emulates "setRight"
   else if (horizontalAlignment == "CENTER") eqnImage.setLeft(textElement.getLeft() + textElement.getWidth() / 2 - eqnImage.getWidth() / 2);
@@ -716,28 +718,22 @@ function placeImage(slideNum, textElement, text, start, end, quality, size, defa
 
   // textElement.setLeft(textElement.getLeft() + image.getWidth() * 1.1);
 
-  let scale = 2 / 100.0;
+  // CodeCogs, other: (2 / 100.0) * (125 / 3)
+  let scale = (2 / 100.0) * (125 / 3);
   if (rendererType.valueOf() === "Texrendr".valueOf())
     //TexRendr
-    scale = 2 / 42.0;
+    scale = (2 / 42.0) * (125 / 3);
   else if (rendererType.valueOf() === "Roger's renderer".valueOf())
     //Rogers renderer
-    scale = 2 / 200.0;
-  else if (rendererType.valueOf() === "Codecogs".valueOf())
-    //CodeCogs, other
-    scale = 2 / 100.0;
+    scale = (2 / 200.0) * (125 / 3);
   else if (rendererType.valueOf() === "Sciweavers".valueOf())
     //Scieweavers
-    scale = 2 / 98.0;
+    scale = (2 / 98.0) * (125 / 3);
   else if (rendererType.valueOf() === "Sciweavers_old".valueOf())
     //C [75.4, 79.6] on width and height ratio
-    scale = 2 / 76.0;
-  //CodeCogs, other
-  else scale = 2 / 100.0;
+    scale = (2 / 76.0) * (125 / 3);
 
   var image = body.insertImage(renderer[1]);
-
-  scale = 2.5 / 3;
 
   resize(image, textElement, textSize, scale, textHorizontalAlignment, textVerticalAlignment);
   if (textElement.getPageElementType() == "SHAPE" &&
