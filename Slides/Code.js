@@ -3,6 +3,8 @@
  */
 //Auto-Latex Equations - (For api keys, ask aayush)
 
+/* exported onOpen, showSidebar, replaceEquations */
+
 var SIDEBAR_TITLE = "Auto-LaTeX Equations";
 var DEBUG = true; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
 var EMPTY_EQUATIONS = 0;
@@ -145,18 +147,35 @@ function replaceEquations(sizeRaw, delimiter) {
   }
   let slides = IntegratedApp.getBody();
   let childCount = slides.length;
-  for (var x = 0; x < 5; x++) {
-    //please remove this, this is a terrible fix
-    for (var slideNum = 0; slideNum < childCount; slideNum++) {
-      for (var elementNum = 0; elementNum < slides[slideNum].getPageElements().length; elementNum++) {
-        debugLog("Slide Num: " + slideNum + " Num of shapes: " + slides[slideNum].getPageElements().length);
-        findPos(slideNum, elementNum, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
-        c = c + 1;
+  for (var slideNum = 0; slideNum < childCount; slideNum++) {
+    for (var elementNum = 0; elementNum < slides[slideNum].getPageElements().length; elementNum++) {
+      debugLog("Slide Num: " + slideNum + " Num of shapes: " + slides[slideNum].getPageElements().length);
+      let element = getElementFromIndices(slideNum, elementNum);
+      // This reverses the findpos return logic from docs to make it more accurate
+      if (isTable(element)) {
+        for (var i = 0; i < element.getNumRows(); i++) {
+          for (var j = 0; j < element.getNumColumns(); j++) {
+            var cell = element.getCell(i, j);
+            let parsedEquations = findPos(slideNum, cell, element, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+            c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
+          }
+        }
+      } else {
+        let parsedEquations = findPos(slideNum, element, element, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+        c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
       }
     }
   }
+  return encodeFlag(0, c);
+}
 
-  return encodeFlag(0, c - EMPTY_EQUATIONS);
+function isTable(element) {
+  try {
+    element.getCell(0, 0);
+  } catch {
+    return false;
+  }
+  return true;
 }
 
 // slideNum and slideObjectNum are integers
@@ -199,9 +218,8 @@ function getRgbColor(textRange, slideNum) {
 */
 
 function unwrapEQ(element) {
-  debugLog("Element Type: " + element.getPageElementType());
-  var textValue = "";
-  // test if it's a text box
+  var textValue = null;
+  // test if it's a text box (table cells work)
   try {
     textValue = element.getText(); // TextRange
     debugLog("TextBox Text: " + element.asShape().getText().asString());
@@ -209,75 +227,92 @@ function unwrapEQ(element) {
     debugLog("not a text box");
   }
 
-  // test if it's a table
-  try {
-    for (var i = 0; i < element.getNumRows(); i++) {
-      for (var j = 0; j < element.getNumColumns(); j++) {
-        textValue = element.getCell(i, j).getText(); // returns a string
-        debugLog("Total Rows: " + element.getNumRows());
-        debugLog("Total Cols :" + element.getNumColumns());
-        debugLog("Table Text: " + element.getCell(i, j).getText() + " Row: " + i + " Col: " + j);
-      }
-    }
-  } catch {
-    debugLog("not a table");
-  }
-
-  return textValue; // returns TextRange
+  return textValue; // returns TextRange or null
 }
 
-function findPos(slideNum, elementNum, delim, quality, size, defaultSize, isInline) {
+// function placeImage(slideNum, elementNum, elementText, start, end, quality, size, defaultSize, delim, isInline, red, green, blue) {
+//   // get the textElement (elementNum) on the given slide (slideNum)
+//   var textElement = getElementFromIndices(slideNum, elementNum);
+//   debugLog("placeImage- EquationOriginal: " + textElement + ", type: " + typeof textElement);
+
+//   // var text = textElement.getText(); // text range
+//   var text = elementText; // text range
+//   // var textColor = getRgbColor(textElement, slideNum);
+//   // console.log("equation color: " + textColor);
+
+//   // var paragraph = textElement.getParent();
+//   // var childIndex  = paragraph.getChildIndex(textElement);  //gets index of found text in paragaph
+//   var textSize = text
+//     .getRange(start + 1, end)
+//     .getTextStyle()
+//     .getFontSize();
+//   // var textSize = text.getTextStyle().getFontSize();
+//   debugLog("My Text Size is: " + textSize.toString());
+//   if (textSize == null) {
+//     textSize = defaultSize;
+//   }
+
+//   // var equationOriginal = getEquation(textElement, text, 0, start, end, delim);
+//   var equationOriginal = getEquation(textElement, text, 0, start, end, delim);
+//   debugLog("placeImage- EquationOriginal: " + equationOriginal);
+
+function findPos(slideNum, element, parentElement, delim, quality, size, defaultSize, isInline) {
   // get the shape (elementNum) on the given slide (slideNum)
-  var element = getElementFromIndices(slideNum, elementNum);
+  // var element = getElementFromIndices(slideNum, elementNum);
   // debugLog("shape is: " + shape.getPageElementType())
-  if (element == null) {
-    return [0, 0];
+  let imagesPlaced = [];
+  if (!element)
+    imagesPlaced.push([0, 0]);
+  else {
+    for (let i = 0; i < 100; i++) { // Parse a maximum of 100 equations per TextRange
+      // Get the text of the shape.
+      // var elementText = shape.getText(); // TextRange
+      var elementText = unwrapEQ(element); // TextRange
+      if(elementText == null) {
+        imagesPlaced.push([0, 0]);
+        continue;
+      }
+      // debugLog("Looking for delimiter :" + delim[2] + " in text");
+      var checkForDelimiter = elementText.find(delim[2]); // TextRange[]
+
+      if (checkForDelimiter == null) {
+        imagesPlaced.push([0, 0]); // didn't find first delimiter
+        break;
+      }
+
+      // start position of image
+      var placeHolderStart = findTextOffsetInSlide(elementText.asRenderedString(), delim[0], 0);
+
+      if (placeHolderStart === -1) {
+        imagesPlaced.push([0, 0]); // didn't find first delimiter
+        break;
+      }
+
+      var offset = 2 + placeHolderStart;
+
+      // end position till of image
+      var placeHolderEnd = findTextOffsetInSlide(elementText.asRenderedString(), delim[1], offset);
+
+      debugLog("Start and End of equation: " + placeHolderStart + " " + placeHolderEnd);
+      // debugLog("Isolating Equation Textrange: " + element.getText().getRange(placeHolderStart, placeHolderEnd).asRenderedString());
+
+      var textColor = getRgbColor(element.getText().getRange(placeHolderStart + 1, placeHolderEnd), slideNum);
+
+      debugLog(`RGB: ${textColor.join()}`);
+
+      if (placeHolderEnd - placeHolderStart == 2.0) {
+        // empty equation
+        debugLog("Empty equation!");
+        EMPTY_EQUATIONS++;
+        elementText.clear(placeHolderStart, Math.min(elementText.getLength(), placeHolderEnd + 2));
+        imagesPlaced.push([defaultSize, 0]); // default behavior of placeImage
+        continue;
+      }
+
+      imagesPlaced.push(placeImage(slideNum, parentElement, elementText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, ...textColor));
+    }
   }
-
-  // Get the text of the shape.
-  // var elementText = shape.getText(); // TextRange
-
-  var elementText = unwrapEQ(element); // TextRange
-
-  // debugLog("Looking for delimiter :" + delim[2] + " in text");
-  var checkForDelimiter = elementText.find(delim[2]); // TextRange[]
-
-  if (checkForDelimiter == null) return [0, 0]; // didn't find first delimiter
-
-  // start position of image
-  var placeHolderStart = findTextOffsetInSlide(elementText.asRenderedString(), delim[0], 0);
-
-  var temp = 2;
-  if (placeHolderStart != -1) {
-    temp += placeHolderStart;
-  }
-  // end position till of image
-  var placeHolderEnd = findTextOffsetInSlide(elementText.asRenderedString(), delim[1], temp);
-
-  debugLog("Start and End of equation: " + placeHolderStart + " " + placeHolderEnd);
-  // debugLog("Isolating Equation Textrange: " + element.getText().getRange(placeHolderStart, placeHolderEnd).asRenderedString());
-
-  if (element.getPageElementType() == "TABLE") {
-    var textColor = [0, 0, 0];
-  } else {
-    var textColor = getRgbColor(element.getText().getRange(placeHolderStart + 1, placeHolderEnd), slideNum);
-  }
-
-  var red = textColor[0];
-  debugLog("red: " + red);
-  var green = textColor[1];
-  debugLog("green: " + green);
-  var blue = textColor[2];
-  debugLog("blue: " + blue);
-
-  if (placeHolderEnd - placeHolderStart == 2.0) {
-    // empty equation
-    console.log("Empty equation!");
-    EMPTY_EQUATIONS++;
-    return [defaultSize, 1]; // default behavior of placeImage
-  }
-
-  return placeImage(slideNum, elementNum, elementText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, red, green, blue);
+  return imagesPlaced;
 }
 
 function assert(value, command = "unspecified") {
@@ -441,11 +476,15 @@ function getKey() {
   return Session.getTemporaryActiveUserKey();
 }
 
-function resize(eqnImage, textElement, size, scale) {
-  eqnImage.setLeft(textElement.getLeft());
-  eqnImage.setTop(textElement.getTop());
-  eqnImage.setWidth(Math.round(((size * eqnImage.getWidth()) / eqnImage.getHeight()) * scale));
+function resize(eqnImage, textElement, size, scale, horizontalAlignment, verticalAlignment) {
+  eqnImage.setWidth(((size * eqnImage.getWidth()) / eqnImage.getHeight()) * scale);
   eqnImage.setHeight(size * scale);
+  if (horizontalAlignment == "END") eqnImage.setLeft(textElement.getLeft() + textElement.getWidth() - eqnImage.getWidth()); // subtracting the image width emulates "setRight"
+  else if (horizontalAlignment == "CENTER") eqnImage.setLeft(textElement.getLeft() + textElement.getWidth() / 2 - eqnImage.getWidth() / 2);
+  else eqnImage.setLeft(textElement.getLeft());
+  if (verticalAlignment == "TOP") eqnImage.setTop(textElement.getTop());
+  else if (verticalAlignment == "BOTTOM") eqnImage.setTop(textElement.getTop() + textElement.getHeight() - eqnImage.getHeight()); // emulating "setBottom"
+  else eqnImage.setTop(textElement.getTop() + textElement.getHeight() / 2 - eqnImage.getHeight() / 2);
 }
 
 // deprecated, use the indexing method to get all odd/even footers etc. as well
@@ -517,13 +556,10 @@ function getElementFromIndices(slideNum, elementNum) {
 
 // var linkEquation = [];
 
-function placeImage(slideNum, elementNum, elementText, start, end, quality, size, defaultSize, delim, isInline, red, green, blue) {
-  // get the textElement (elementNum) on the given slide (slideNum)
-  var textElement = getElementFromIndices(slideNum, elementNum);
+function placeImage(slideNum, textElement, text, start, end, quality, size, defaultSize, delim, isInline, red, green, blue) {
   debugLog("placeImage- EquationOriginal: " + textElement + ", type: " + typeof textElement);
 
   // var text = textElement.getText(); // text range
-  var text = elementText; // text range
   // var textColor = getRgbColor(textElement, slideNum);
   // console.log("equation color: " + textColor);
 
@@ -533,6 +569,15 @@ function placeImage(slideNum, elementNum, elementText, start, end, quality, size
     .getRange(start + 1, end)
     .getTextStyle()
     .getFontSize();
+  // Gets the horizontal alignment of the equation. If it somehow spans multiple paragraphs, this will return the alignment of the first one
+  var textHorizontalAlignment = textElement.getPageElementType() == "TABLE" ? "START" : 
+    text
+    .getRange(start + 1, end)
+    .getParagraphs()[0]
+    .getRange()
+    .getParagraphStyle()
+    .getParagraphAlignment();
+  var textVerticalAlignment = textElement.getPageElementType() == "TABLE" ? "MIDDLE" : textElement.getContentAlignment();
   // var textSize = text.getTextStyle().getFontSize();
   debugLog("My Text Size is: " + textSize.toString());
   if (textSize == null) {
@@ -665,10 +710,7 @@ function placeImage(slideNum, elementNum, elementText, start, end, quality, size
 
   if (textElement.getPageElementType() == "TABLE") {
     // if table
-    textElement
-      .getCell(0, 0)
-      .getText()
-      .clear(start, end + 2);
+    text.clear(start, Math.min(text.getLength(), end + 2));
   } else {
     // else if text box
     textElement.getText().clear(start, end + 2);
@@ -676,34 +718,30 @@ function placeImage(slideNum, elementNum, elementText, start, end, quality, size
 
   // textElement.setLeft(textElement.getLeft() + image.getWidth() * 1.1);
 
-  let scale = 2 / 100.0;
+  // CodeCogs, other: (2 / 100.0) * (125 / 3)
+  let scale = (2 / 100.0) * (125 / 3);
   if (rendererType.valueOf() === "Texrendr".valueOf())
     //TexRendr
-    scale = 2 / 42.0;
+    scale = (2 / 42.0) * (125 / 3);
   else if (rendererType.valueOf() === "Roger's renderer".valueOf())
     //Rogers renderer
-    scale = 2 / 200.0;
-  else if (rendererType.valueOf() === "Codecogs".valueOf())
-    //CodeCogs, other
-    scale = 2 / 100.0;
+    scale = (2 / 200.0) * (125 / 3);
   else if (rendererType.valueOf() === "Sciweavers".valueOf())
     //Scieweavers
-    scale = 2 / 98.0;
+    scale = (2 / 98.0) * (125 / 3);
   else if (rendererType.valueOf() === "Sciweavers_old".valueOf())
     //C [75.4, 79.6] on width and height ratio
-    scale = 2 / 76.0;
-  //CodeCogs, other
-  else scale = 2 / 100.0;
+    scale = (2 / 76.0) * (125 / 3);
 
   var image = body.insertImage(renderer[1]);
 
-  scale = 2.5;
-
-  resize(image, textElement, textSize, scale);
-  if (textElement.getText().asRenderedString().length == 1) {
+  resize(image, textElement, textSize, scale, textHorizontalAlignment, textVerticalAlignment);
+  if (textElement.getPageElementType() == "SHAPE" &&
+    textElement.getShapeType() == "TEXT_BOX" &&
+    textElement.getText().asRenderedString().length == 1) // else if text box, with no other text
     textElement.remove();
-  }
   image.setTitle(json);
+  return [size, 1];
 
   // debugLog("equation description: " + image.getDescription());
 
