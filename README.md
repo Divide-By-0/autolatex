@@ -8,6 +8,13 @@ You need to get the .clasp.json files within Docs/, Slides/, and Sheets/ by dm'i
 
 clasp is used to sync your local folder with the actual code sandbox in the Google Doc/Slide/whatever that's eventually published. We use Github for development with multiple people. You can `clasp push -w` which will live update the code in the Google sandbox so you dont have to deal with push/pull anymore. More info at https://www.toptal.com/google-docs/extending-google-sheets-app-scripts.
 
+## Deployment
+
+- Set debugLog to false in all of the Code.js files.
+- `clasp push` in each directory you want to update
+- Create new version in the script editor
+- Deploy the new version by hitting save in the GCP workspace project
+
 ## Helpful documentation pages for Slides
 
 [class selection](https://developers.google.com/apps-script/reference/slides/selection)
