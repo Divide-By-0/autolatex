@@ -7,6 +7,14 @@
         "serviceId": "analytics",
         "version": "v3"
       }
+    ],
+    "libraries": [
+      {
+        "userSymbol": "Common",
+        "version": "0",
+        "libraryId": "",
+        "developmentMode": true
+      }
     ]
   },
   "exceptionLogging": "STACKDRIVER",
