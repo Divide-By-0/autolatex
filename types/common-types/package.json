@@ -1,0 +1,11 @@
+{
+  "name": "common-types",
+  "version": "1.0.0",
+  "description": "Typescript definitions for Common",
+  "main": "Code.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {},
+  "devDependencies": {},
+  "types": "./index.d.ts"
+}

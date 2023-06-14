@@ -1,0 +1,11 @@
+{
+  "name": "common",
+  "version": "1.0.0",
+  "description": "",
+  "main": "Code.js",
+  "author": "",
+  "license": "ISC",
+  "scripts": {
+    "build-types": "clasp-types -o ../types -p AutoLatexCommon -n Common"
+  }
+}

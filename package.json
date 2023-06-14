@@ -17,7 +17,16 @@
   },
   "homepage": "https://github.com/Divide-By-0/autolatex#readme",
   "devDependencies": {
+    "@grimsteel/clasp-types": "^1.4.0",
+    "@types/google-apps-script": "^1.0.58",
+    "@typescript-eslint/eslint-plugin": "^5.55.0",
+    "@typescript-eslint/parser": "^5.55.0",
     "eslint": "^7.32.0",
     "eslint-config-google": "^0.14.0"
-  }
+  },
+  "workspaces": [
+    "Common",
+    "Docs",
+    "Slides"
+  ]
 }
