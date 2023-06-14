@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "moduleDetection": "force",
+    "typeRoots": ["./node_modules/@types", "./types"],
+    "experimentalDecorators": true,
+    "module": "CommonJS",
+    "target": "ES5",
+    "lib": ["ES6", "ES2016", "ES2017", "ES2018"]
+  }
+}
