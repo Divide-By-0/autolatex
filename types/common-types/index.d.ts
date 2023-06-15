@@ -55,7 +55,7 @@ declare namespace AutoLatexCommon {
          */
         removeAll(app: IntegratedApp, delimRaw: string): number;
 
-        renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number): {renderer: Renderer, rendererType: string, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, worked: number};
+        renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number): {equation: string, renderer: Renderer, rendererType: string, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, worked: number};
 
         reportDeltaTime(line?: number, forcePrint?: string): number;
 
@@ -65,6 +65,12 @@ declare namespace AutoLatexCommon {
          * Given the locations of the delimiters, run code to get font size, get equation, remove equation, encode/style equation, insert/style image.
          */
         sizeImage(app: IntegratedApp, paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, height: number, width: number): void;
+
+        capableDerenderers: 12;
+
+        capableRenderers: 8;
+
+        invalidEquationHashCodecogsFirst50: "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD%u0315%uFFFD3%";
 
     }
 
@@ -122,6 +128,12 @@ declare namespace AutoLatexCommon {
         6: string;
 
     }
+
+    export const capableDerenderers: 12;
+
+    export const capableRenderers: 8;
+
+    export const invalidEquationHashCodecogsFirst50: "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD%u0315%uFFFD3%";
 
 }
 

@@ -46,9 +46,18 @@ let previousLine = 0;
 let equationRenderingTime = 0;
 let codecogsSlow = 0;
 let texrendrDown = 0;
+/**
+ * @public
+ */
 const capableRenderers = 8;
+/**
+ * @public
+ */
 const capableDerenderers = 12;
 //render bug variables
+/**
+ * @public
+ */
 const invalidEquationHashCodecogsFirst50 = "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD%u0315%uFFFD3%"; // invalid codecogs equation
 const invalidEquationHashCodecogsFirst50_3 = "%uFFFDPNG%0D%0A%1A%0A%00%00%00%0DIHDR%00%00%00%01%"; // this is one space in codecogs. not pushed yet.
 const invalidEquationHashCodecogsFirst50_4 = "GIF89a%01%00%01%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%0";
@@ -354,7 +363,8 @@ function renderEquation(equationOriginal: string, quality: number, delim: Delimi
     resp,
     renderer,
     rendererType,
-    worked
+    worked,
+    equation
   }
 }
 
