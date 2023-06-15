@@ -5,7 +5,6 @@
 
 /* exported onOpen, showSidebar, replaceEquations */
 
-const SIDEBAR_TITLE = "Auto-LaTeX Equations";
 var DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
 
 const IntegratedApp = {
@@ -22,21 +21,22 @@ const IntegratedApp = {
 		return activeDoc;
 	},
 	getPageWidth: function() {
-		let activeWidth = DocumentApp.getActiveDocument().getPageWidth();
+		let activeWidth = DocumentApp.getActiveDocument().getBody().getPageWidth();
 		return activeWidth;
-	}
+	},
+  undoImage
 };
 
 
 /** //8.03 - De-Render, Inline, Advanced Delimiters > Fixed Inline Not Appearing
  * Creates a menu entry in the Google Docs UI when the document is opened.
  *
- * @param {object} e The event parameter for a simple onOpen trigger. To
+ * @param {object} _e The event parameter for a simple onOpen trigger. To
  *     determine which authorization mode (ScriptApp.AuthMode) the trigger is
  *     running in, inspect e.authMode.
  */
-function onOpen(e) {
-  AutoLatexCommon.onOpen(IntegratedApp);
+function onOpen(_e: object) {
+  IntegratedApp.getUi().createAddonMenu().addItem("Start", "showSidebar").addToUi();
 }
 
 /**
@@ -48,7 +48,7 @@ function onOpen(e) {
  *     run in AuthMode.FULL, but onOpen triggers may be AuthMode.LIMITED or
  *     AuthMode.NONE.)
  */
-function onInstall(e) {
+function onInstall(e: object) {
   onOpen(e);
 }
 
@@ -56,36 +56,37 @@ function onInstall(e) {
  * Opens a sidebar in the document containing the add-on's user interface.
  */
 function showSidebar() {
-  AutoLatexCommon.showSidebar(IntegratedApp);
+  const ui = HtmlService.createTemplateFromFile("Sidebar").evaluate().setTitle("Auto-LaTeX Equations").setSandboxMode(HtmlService.SandboxMode.IFRAME); // choose mode IFRAME which is fastest option
+  IntegratedApp.getUi().showSidebar(ui);
 }
 /**
  * Constantly keep replacing latex till all are finished
  */
-function replaceEquations(sizeRaw, delimiter) {
-  var quality = 900;
-  var size = getSize(sizeRaw);
-  var isInline = false;
+function replaceEquations(sizeRaw: string, delimiter: string) {
+  const quality = 900;
+  let size = Common.getSize(sizeRaw);
+  let isInline = false;
   if (size < 0) {
     isInline = true;
     size = 0;
   }
-  reportDeltaTime(140);
-  var delim = getDelimiters(delimiter);
-  savePrefs(sizeRaw, delimiter);
-  var c = 0; //counter
-  var defaultSize = 11;
-  var allEmpty = 0;
-  reportDeltaTime(146);
-  let body;
+  Common.reportDeltaTime(140);
+  const delim = Common.getDelimiters(delimiter);
+  Common.savePrefs(sizeRaw, delimiter);
+  let c = 0; //counter
+  let defaultSize = 11;
+  let allEmpty = 0;
+  Common.reportDeltaTime(146);
+  let body: GoogleAppsScript.Document.Document;
   try {
     body = DocumentApp.getActiveDocument();
   } catch (error) {
     console.error(error);
-    return encodeFlag(-1, 0);
+    return Common.encodeFlag(-1, 0);
   }
 
   let childCount = body.getBody().getParent().getNumChildren();
-  reportDeltaTime(156);
+  Common.reportDeltaTime(156);
   for (var index = 0; index < childCount; index++) {
     let failedStartElemIfIsEmpty = null;
     while (true) {
@@ -98,7 +99,7 @@ function replaceEquations(sizeRaw, delimiter) {
 
       if (gotSize == -100000)
         // means all renderers didn't return/bugged out.
-        return encodeFlag(-2, c); // instead, return pair of number and bool flag in list but whatever
+        return Common.encodeFlag(-2, c); // instead, return pair of number and bool flag in list but whatever
 
       if (gotSize == 0) break; // finished with renders in this section
 
@@ -107,7 +108,7 @@ function replaceEquations(sizeRaw, delimiter) {
       console.log("Rendered equations: " + c);
     }
   }
-  return encodeFlag(0, c);
+  return Common.encodeFlag(0, c);
 }
 
 /**
@@ -123,65 +124,68 @@ function replaceEquations(sizeRaw, delimiter) {
 					1 if eqn is "" and 0 if not. Assume we close on 4 consecutive empty ones.
 */
 
-function findPos(index, delim, quality, size, defaultSize, isInline, prevFailedStartElemIfIsEmpty = null) {
-  debugLog("Checking document section index # ", index);
-  reportDeltaTime(195);
-  var docBody = getBodyFromIndex(index);
+function findPos(index: number, delim: AutoLatexCommon.Delimiter, quality: number, size: number, defaultSize: number, isInline: boolean, prevFailedStartElemIfIsEmpty = null): [number, GoogleAppsScript.Document.RangeElement | null] {
+  Common.debugLog("Checking document section index # ", index);
+  Common.reportDeltaTime(195);
+  const docBody = Common.getBodyFromIndex(IntegratedApp, index);
   if (docBody == null) {
     return [0, null];
   }
-  var startElement = docBody.findText(delim[2]);
+  let startElement = docBody.findText(delim[2]);
   if (prevFailedStartElemIfIsEmpty) {
-    var startElement = docBody.findText(delim[2], prevFailedStartElemIfIsEmpty);
+    startElement = docBody.findText(delim[2], prevFailedStartElemIfIsEmpty);
   }
   if (startElement == null) return [0, null]; //didn't find first delimiter
-  var placeHolderStart = startElement.getStartOffset(); //position of image insertion
+  const placeHolderStart = startElement.getStartOffset(); //position of image insertion
 
-  var endElement = docBody.findText(delim[3], startElement);
+  const endElement = docBody.findText(delim[3], startElement);
   if (endElement == null) return [0, null]; //didn't find end delimiter (maybe make error different?)
-  var placeHolderEnd = endElement.getEndOffsetInclusive(); //text between placeHolderStart and placeHolderEnd will be permanently deleted
-  debugLog(delim[2], " single escaped delimiters ", placeHolderEnd - placeHolderStart, " characters long");
+  const placeHolderEnd = endElement.getEndOffsetInclusive(); //text between placeHolderStart and placeHolderEnd will be permanently deleted
+  Common.debugLog(delim[2], " single escaped delimiters ", placeHolderEnd - placeHolderStart, " characters long");
 
-  reportDeltaTime(214);
+  Common.reportDeltaTime(214);
   if (placeHolderEnd - placeHolderStart == 2.0) {
     // empty equation
     console.log("Empty equation! In index " + index + " and offset " + placeHolderStart);
     return [defaultSize, endElement]; // default behavior of placeImage
   }
 
-  return placeImage(index, startElement, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline);
+  return placeImage(startElement, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline);
 }
 
 
-function getEquation(paragraph, childIndex, start, end, delimiters) {
-  var equationOriginal = [];
-  reportDeltaTime(284);
-  debugLog("See text", paragraph.getChild(childIndex).getText(), paragraph.getChild(childIndex).getText().length);
-  var equation = paragraph
+function getEquation(paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, start: number, end: number, delimiters: AutoLatexCommon.Delimiter) {
+  const equationOriginal = [];
+  Common.reportDeltaTime(284);
+  Common.debugLog("See text", paragraph.getChild(childIndex).asText().getText(), paragraph.getChild(childIndex).asText().getText().length);
+  const equation = paragraph
     .getChild(childIndex)
+    .asText()
     .getText()
     .substring(start + delimiters[4], end - delimiters[4] + 1);
-  debugLog("See equation", equation);
-  var equationStringEncoded = reEncode(equation); //escape deprecated
+    Common.debugLog("See equation", equation);
+    const equationStringEncoded = Common.reEncode(equation); //escape deprecated
   equationOriginal.push(equationStringEncoded);
-  reportDeltaTime(290);
+  Common.reportDeltaTime(290);
   //console.log("Encoded: " + equationStringEncoded);
   return equationStringEncoded;
 }
 
 //retrieve size from text
-function setSize(size, defaultSize, paragraph, childIndex, start) {
+function setSize(size: number, defaultSize: number, paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, start: number) {
   //GET SIZE
   let newSize = size;
   if (size == 0) {
     try {
       newSize = paragraph
         .getChild(childIndex)
+        .asText()
         .editAsText()
         .getFontSize(start + 3); //Fix later: Change from 3 to 1
     } catch (err) {
       newSize = paragraph
         .getChild(childIndex)
+        .asText()
         .editAsText()
         .getFontSize(start + 1); //Fix later: Change from 3 to 1
     }
@@ -208,70 +212,68 @@ function setSize(size, defaultSize, paragraph, childIndex, start) {
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
 
-function placeImage(index, startElement, start, end, quality, size, defaultSize, delim, isInline) {
-  reportDeltaTime(411);
-  var docBody = getBodyFromIndex(index);
-  reportDeltaTime(413);
+function placeImage(startElement: GoogleAppsScript.Document.RangeElement, start: number, end: number, quality: number, size: number, defaultSize: number, delim: AutoLatexCommon.Delimiter, isInline: boolean): [number, GoogleAppsScript.Document.RangeElement | null] {
+  Common.reportDeltaTime(411);
+  Common.reportDeltaTime(413);
   // GET VARIABLES
-  var textElement = startElement.getElement();
-  var text = textElement.getText();
-  var paragraph = textElement.getParent();
-  var childIndex = paragraph.getChildIndex(textElement); //gets index of found text in paragaph
+  const textElement = startElement.getElement().asText();
+  const text = textElement.getText();
+  const paragraph = textElement.getParent().asParagraph();
+  const childIndex = paragraph.getChildIndex(textElement); //gets index of found text in paragaph
   size = setSize(size, defaultSize, paragraph, childIndex, start);
-  var equationOriginal = getEquation(paragraph, childIndex, start, end, delim);
+  const equationOriginal = getEquation(paragraph, childIndex, start, end, delim);
 
   if (equationOriginal == "") {
     console.log("No equation but undetected start and end as ", start, " ", end);
     return [defaultSize, startElement];
   }
 
-  let { resp, renderer, rendererType, worked } = AutoLatexCommon.renderEquation(equationOriginal, quality, delim, isInline, 0, 0, 0); 
-  if (worked > capableRenderers) return [-100000, null];
+  let { resp, renderer, rendererType, worked, equation } = Common.renderEquation(equationOriginal, quality, delim, isInline, 0, 0, 0); 
+  if (worked > Common.capableRenderers) return [-100000, null];
   // SAVING FORMATTING
-  reportDeltaTime(511);
-  if (escape(resp.getBlob().getDataAsString()).substring(0, 50) == invalidEquationHashCodecogsFirst50) {
+  Common.reportDeltaTime(511);
+  if (escape(resp.getBlob().getDataAsString()).substring(0, 50) == Common.invalidEquationHashCodecogsFirst50) {
     worked = 1; //assumes codecogs is 1
-    renderer = getRenderer(worked);
+    renderer = Common.getRenderer(worked);
     rendererType = renderer[5];
   }
-  reportDeltaTime(517);
-  var textCopy = textElement.asText().copy();
-  var endLimit = end;
+  Common.reportDeltaTime(517);
+  const textCopy = textElement.asText().copy();
+  let endLimit = end;
   if (text.length - 1 < endLimit) endLimit = text.length - 1;
   textCopy.asText().editAsText().deleteText(0, endLimit); // the copy only has the stuff after the equation
-  reportDeltaTime(522);
+  Common.reportDeltaTime(522);
   textElement.editAsText().deleteText(start, text.length - 1); // from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
-  var logoBlob = resp.getBlob();
-  reportDeltaTime(526);
+  const logoBlob = resp.getBlob();
+  Common.reportDeltaTime(526);
 
   try {
     paragraph.insertInlineImage(childIndex + 1, logoBlob); // TODO ISSUE: sometimes fails because it times out and yeets
-    returnParams = repairImage(index, startElement, paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
+    const returnParams = repairImage(paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
     return returnParams;
   } catch (err) {
     console.log("Could not insert image try 1");
     console.error(err);
   }
-  reportDeltaTime(536);
+  Common.reportDeltaTime(536);
   try {
     Utilities.sleep(1000);
     paragraph.insertInlineImage(childIndex + 1, logoBlob); // TODO ISSUE: sometimes fails because it times out and yeets
-    returnParams = repairImage(index, startElement, paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
+    const returnParams = repairImage(paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
     return returnParams;
   } catch (err) {
     console.log("Could not insert image try 2 after 1000ms");
     console.error(err);
   }
   throw new Error("Could not insert image at childindex!");
-  // return repairImage(index, startElement, paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
 }
 
-function repairImage(index, startElement, paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal) {
-  var attemptsToSetImageUrl = 3;
-  reportDeltaTime(552); // 3 seconds!! inserting an inline image takes time
+function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, size:  number, defaultSize: number, renderer: AutoLatexCommon.Renderer, delim: AutoLatexCommon.Delimiter, textCopy: GoogleAppsScript.Document.Text, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, rendererType: string, equation: string, equationOriginal: string): [number, null] {
+  let attemptsToSetImageUrl = 3;
+  Common.reportDeltaTime(552); // 3 seconds!! inserting an inline image takes time
   while (attemptsToSetImageUrl > 0) {
     try {
-      paragraph.getChild(childIndex + 1).setLinkUrl(renderer[2] + equationOriginal + "#" + delim[6]); //added % delim 6 to keep track of which delimiter was used to render
+      paragraph.getChild(childIndex + 1).asInlineImage().setLinkUrl(renderer[2] + equationOriginal + "#" + delim[6]); //added % delim 6 to keep track of which delimiter was used to render
       break;
     } catch (err) {
       console.log("Couldn't insert child index!");
@@ -286,16 +288,16 @@ function repairImage(index, startElement, paragraph, childIndex, size, defaultSi
     }
   }
 
-  reportDeltaTime(570);
+  Common.reportDeltaTime(570);
   if (textCopy.getText() != "") paragraph.insertText(childIndex + 2, textCopy); // reinsert deleted text after the image, with all the formatting
-  var height = paragraph.getChild(childIndex + 1).getHeight();
-  var width = paragraph.getChild(childIndex + 1).getWidth();
+  const height = paragraph.getChild(childIndex + 1).asInlineImage().getHeight();
+  const width = paragraph.getChild(childIndex + 1).asInlineImage().getWidth();
   console.log("Pre-fixing size, width, height: " + size + ", " + width + ", " + height); //only a '1' is rendered as a 100 height (as of 10/20/19, now it is fetched as 90 height). putting an equationrendertime here just doesnt work
 
   //SET PROPERTIES OF IMAGE (Height, Width)
-  var oldSize = size; // why use oldsize instead of new size
+  const oldSize = size; // why use oldsize instead of new size
 
-  if (escape(resp.getBlob().getDataAsString()).substring(0, 50) == invalidEquationHashCodecogsFirst50 || (size > 10 && width == 126 && height == 24)) {
+  if (escape(resp.getBlob().getDataAsString()).substring(0, 50) == Common.invalidEquationHashCodecogsFirst50 || (size > 10 && width == 126 && height == 24)) {
     size *= 5; // make codecogs errors readable, size constraint just in case some small equation is 126x24 as well
   }
   // console.log(rendererType, rendererType.valueOf(), "Texrendr".valueOf(), rendererType.valueOf() === "Codecogs".valueOf(), rendererType.valueOf() == "Codecogs".valueOf(), rendererType === "Codecogs", rendererType.valueOf() === "Texrendr".valueOf(), rendererType.valueOf() == "Texrendr".valueOf(), rendererType === "Texrendr")
@@ -323,8 +325,8 @@ function repairImage(index, startElement, paragraph, childIndex, size, defaultSi
   else multiple = size / 100.0;
 
   size = Math.round(height * multiple);
-  reportDeltaTime(595);
-  sizeImage(paragraph, childIndex + 1, size, Math.round(width * multiple));
+  Common.reportDeltaTime(595);
+  Common.sizeImage(IntegratedApp, paragraph, childIndex + 1, size, Math.round(width * multiple));
   defaultSize = oldSize;
   return [defaultSize, null];
 }
@@ -335,17 +337,15 @@ function repairImage(index, startElement, paragraph, childIndex, size, defaultSi
  * @param {string} sizeRaw     Sidebar-selected size.
  */
 
-function editEquations(sizeRaw, delimiter) {
-  return AutoLatexCommon.editEquations(sizeRaw, delimiter);
+function editEquations(sizeRaw: string, delimiter: string) {
+  return Common.editEquations(IntegratedApp, sizeRaw, delimiter);
 }
 
 /**
  * Given a cursor right before an equation, de-encode URL and replace image with raw equation between delimiters.
- *
- * @param {[string, string]} delim     Start/end delimiters to insert.
  */
-function removeAll(delimRaw) {
-  return AutoLatexCommon.removeAll(IntegratedApp, delimRaw);
+function removeAll(delimRaw: string) {
+  return Common.removeAll(IntegratedApp, delimRaw);
 }
 
 /* Returns: -4 if the URL is null (link removed for instance)
@@ -355,27 +355,27 @@ function removeAll(delimRaw) {
 						0 if cursor not found entirely
 						1 if it was fine
 */
-function undoImage(delim) {
-  var cursor = DocumentApp.getActiveDocument().getCursor();
+function undoImage(delim: AutoLatexCommon.Delimiter) {
+  const cursor = DocumentApp.getActiveDocument().getCursor();
   if (cursor) {
     // Attempt to insert text at the cursor position. If the insertion returns null, the cursor's
     // containing element doesn't allow insertions, so show the user an error message.
-    var element = cursor.getElement(); //startElement
+    const element = cursor.getElement().asParagraph(); //startElement
 
     if (element) {
       console.log("Valid cursor.");
 
-      var position = cursor.getOffset(); //offset
+      const position = cursor.getOffset(); //offset
       //element.getChild(position).removeFromParent();  //SUCCESSFULLY REMOVES IMAGE FROM PARAGRAPH
       // console.log(element.getAllContent(), element.type())
-      var image = element.getChild(position).asInlineImage();
-      debugLog("Image height", image.getHeight());
-      var origURL = image.getLinkUrl();
+      const image = element.getChild(position).asInlineImage();
+      Common.debugLog("Image height", image.getHeight());
+      const origURL = image.getLinkUrl();
       if (!origURL) {
         return -4;
       }
-      debugLog("Original URL from image", origURL);
-      const { delim: newDelim, origEq } = AutoLatexCommon.derenderEquation(origURL);
+      Common.debugLog("Original URL from image", origURL);
+      const { delim: newDelim, origEq } = Common.derenderEquation(origURL);
       if (newDelim) delim = newDelim;
       if (origEq.length <= 0) {
         console.log("Empty equation derender.");

@@ -56,10 +56,16 @@ function showSidebar() {
   IntegratedApp.getUi().showSidebar(ui);
 }
 
+/**
+ * @public
+ */
 function getPrefs() {
   return Common.getPrefs();
 }
 
+/**
+ * @public
+ */
 function getKey() {
   return Common.getKey();
 }
@@ -75,6 +81,7 @@ function findTextOffsetInSlide(str: string, search: string, offset = 0) {
 
 /**
  * Constantly keep replacing latex till all are finished
+ * @public
  */
 function replaceEquations(sizeRaw: string, delimiter: string) {
   const quality = 900;
@@ -336,7 +343,7 @@ function placeImage(slideNum: number, textElement: GoogleAppsScript.Slides.Shape
   }
 
   const { renderer, rendererType, worked } = Common.renderEquation(equationOriginal, quality, delim, isInline, red, green, blue); 
-  if (worked > 5) return -100000;
+  if (worked > Common.capableRenderers) return -100000;
   var doc = IntegratedApp.getBody();
   var body = doc[slideNum];
 
@@ -387,6 +394,7 @@ function placeImage(slideNum: number, textElement: GoogleAppsScript.Slides.Shape
  * Given a size and a cursor right before an equation, call function to undo the image within delimeters. Returns success indicator.
  *
  * @param sizeRaw    Sidebar-selected size.
+ * @public
  */
 
 function editEquations(sizeRaw: string, delimiter: string) {
@@ -395,6 +403,7 @@ function editEquations(sizeRaw: string, delimiter: string) {
 
 /**
  * Given a cursor right before an equation, de-encode URL and replace image with raw equation between delimiters.
+ * @public
  */
 function removeAll(delimRaw: string) {
   return Common.removeAll(IntegratedApp, delimRaw);

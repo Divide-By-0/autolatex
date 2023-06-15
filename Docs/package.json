@@ -7,7 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "preclasp-push": "node ../LibraryLinker.js link Docs",
     "postclasp-push": "node ../LibraryLinker.js unlink Docs",
-    "clasp-push": "clasp push"
+    "clasp-push": "clasp push",
+    "build-types": "clasp-types -o ../types --client"
   },
   "author": "",
   "license": "ISC"
