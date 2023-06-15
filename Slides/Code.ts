@@ -79,6 +79,15 @@ function findTextOffsetInSlide(str: string, search: string, offset = 0) {
   return str.substring(offset).indexOf(search) + offset;
 }
 
+function isTable(element: any) {
+  try {
+    element.getCell(0, 0);
+  } catch {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Constantly keep replacing latex till all are finished
  * @public
@@ -111,16 +120,18 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
       let element = getElementFromIndices(slideNum, elementNum);
       if (element === null) continue;
       // This reverses the findpos return logic from docs to make it more accurate
-      if ("getNumRows" in element) { // if it's a table
-        for (let i = 0; i < element.getNumRows(); i++) {
-          for (let j = 0; j < element.getNumColumns(); j++) {
-            const cell = element.getCell(i, j);
-            const parsedEquations = findPos(slideNum, cell, element, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+      if (isTable(element)) { // if it's a table
+        let tableElement = element as GoogleAppsScript.Slides.Table;
+        for (let i = 0; i < tableElement.getNumRows(); i++) {
+          for (let j = 0; j < tableElement.getNumColumns(); j++) {
+            const cell = tableElement.getCell(i, j);
+            const parsedEquations = findPos(slideNum, cell, tableElement, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
             c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
           }
         }
       } else {
-        let parsedEquations = findPos(slideNum, element, element, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+        let shapeElement = element as GoogleAppsScript.Slides.Shape;
+        let parsedEquations = findPos(slideNum, shapeElement, element, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
         c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
       }
     }
