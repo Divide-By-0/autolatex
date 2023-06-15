@@ -20,7 +20,18 @@ If you would like to watch for changes, `npm -w Slides/Docs run clasp-push -- -w
 
 ## Types
 
-Types are built with an updated version of `clasp-types`. To build the types for the Common library, run `npm -w Common run build-types`. This will build the types into the `types/` directory.
+Types are built with an updated version of `clasp-types`.
+
+To build the types for either the Common library, Slides, or Docs run `npm -w Common/Slides/Docs run build-types`. This will build the types into the `types/` directory.
+
+To build the types for all three, run `npm -ws run build-types`.
+
+## Sidebar Files
+
+> **Note**
+> These files will be removed once the addon is completely upgraded to the new Google Workspace style. As of right now, Google offers no way to automatically upgrade users to this new style.
+
+To get types for google.script.run, the sidebar JS must be contained in its own JS file. When the `clasp-push` script is run, `sed` will copy the contents of this to `SidebarJS.html`. Therefore, don't edit `SidebarJS.html` directly unless you know what you're doing.s
 
 ## Helpful documentation pages for Slides
 
