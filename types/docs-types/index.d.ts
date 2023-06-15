@@ -10,6 +10,16 @@ declare namespace google {
 
             withUserObject(object: any): Runner;
 
+            editEquations(sizeRaw: string, delimiter: string): void //union;
+
+            getKey(): void //intrinsic;
+
+            getPrefs(): void //reflection;
+
+            removeAll(delimRaw: string): void //intrinsic;
+
+            replaceEquations(sizeRaw: string, delimiter: string): void //intrinsic;
+
         }
 
         export const run: Runner;

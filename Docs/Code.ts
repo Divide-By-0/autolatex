@@ -59,8 +59,24 @@ function showSidebar() {
   const ui = HtmlService.createTemplateFromFile("Sidebar").evaluate().setTitle("Auto-LaTeX Equations").setSandboxMode(HtmlService.SandboxMode.IFRAME); // choose mode IFRAME which is fastest option
   IntegratedApp.getUi().showSidebar(ui);
 }
+
+/**
+ * @public
+ */
+function getPrefs() {
+  return Common.getPrefs();
+}
+
+/**
+ * @public
+ */
+function getKey() {
+  return Common.getKey();
+}
+
 /**
  * Constantly keep replacing latex till all are finished
+ * @public
  */
 function replaceEquations(sizeRaw: string, delimiter: string) {
   const quality = 900;
@@ -335,6 +351,7 @@ function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex:
  * Given a size and a cursor right before an equation, call function to undo the image within delimeters. Returns success indicator.
  *
  * @param {string} sizeRaw     Sidebar-selected size.
+ * @public
  */
 
 function editEquations(sizeRaw: string, delimiter: string) {
@@ -343,6 +360,7 @@ function editEquations(sizeRaw: string, delimiter: string) {
 
 /**
  * Given a cursor right before an equation, de-encode URL and replace image with raw equation between delimiters.
+ * @public
  */
 function removeAll(delimRaw: string) {
   return Common.removeAll(IntegratedApp, delimRaw);

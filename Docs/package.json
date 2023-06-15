@@ -5,10 +5,11 @@
   "main": "Code.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "preclasp-push": "node ../LibraryLinker.js link Docs",
+    "preclasp-push": "npm run copy-sidebar-js && node ../LibraryLinker.js link Docs",
     "postclasp-push": "node ../LibraryLinker.js unlink Docs",
     "clasp-push": "clasp push",
-    "build-types": "clasp-types -o ../types --client"
+    "build-types": "clasp-types -o ../types --client",
+    "copy-sidebar-js": "sed -i -e '/^<script>$/r Sidebar.js' -e '/^<script>$/,/^<\\/script>$/!b' -e '/^<script>$\\|^<\\/script>$/!d' SidebarJS.html"
   },
   "author": "",
   "license": "ISC"
