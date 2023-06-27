@@ -1,6 +1,4 @@
-<script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
-<script>
-/// <reference path="../types/docs-types/index.d.ts" />
+/// <reference path="../types/slides-types/index.d.ts" />
 /// <reference types="jquery" />
 
 /* global google, $ */
@@ -10,6 +8,7 @@
 /**
  * On document load, assign click handlers to each button. Added document.ready.
  */
+
 $('document').ready(function(){
   $(function() {
       google.script.run.withSuccessHandler(loadPreferences)
@@ -20,9 +19,8 @@ $('document').ready(function(){
       $('#renderList').click(showRenderDropdown);
   });
 });
-
 function showRenderDropdown() {
-    $('#renderList').toggleClass('show');
+  $('#renderList').toggleClass('show');
 }
 
 function runDotAnimation() {
@@ -43,8 +41,11 @@ function getCurrentSettings() {
 //$('donate_button').on("click",function(e){e.preventDefault;}); // for paypal to disable sidebar disappearing
 
 // Close the dropdown menu if the user clicks outside of it
+/**
+ * @param {MouseEvent} event
+ */
 window.onclick = function(event) {
-  if (!event.target.matches('.dropbtn')) {
+  if (!(/** @type {HTMLElement?} */ (event.target))?.matches('.dropbtn')) {
 
     var dropdowns = document.getElementsByClassName("dropdown-content");
     var i;
@@ -82,6 +83,7 @@ function loadPreferences(choicePrefs) {
 }
   
 function insertText(){ 
+  // console.log("TEST insertText");
   this.disabled = true;
   $('#error').remove();
   $("#loading").html("Status: Loading");
@@ -114,10 +116,9 @@ function insertText(){
         if(flag == -1)
           showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", "Status: " + renderCount +  " equations replaced");
         else if(flag == -2 && renderCount > 0)
-          showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used.", "Status: " + renderCount +  " equations replaced");
+          showError("Sorry, the equation is too long or another problem occurred.", "Status: " + renderCount +  " equations replaced");
         else if(flag == -2 && renderCount == 0)
-          showError("Sorry, likely (temporarily) unavailable commands (i.e. align, &) were used or the equation was too long.", 
-                    "Status: " + "no" +  " equations replaced");
+          showError("Sorry, the renderers are down, an equation is too long, or an equation is misformed.", "Status: " + renderCount +  " equations replaced");
         else if(flag == 0 && renderCount == 0)
           $("#loading").html("Status: " + "No"          + " equations rendered");
         else if(flag == 0 && renderCount == 1)
@@ -130,7 +131,7 @@ function insertText(){
         $("#loading").html('');
         clearInterval(runDots);
         console.error("Error console errored!", msg, element)
-        showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts.", "Status: Error, please reload.");
+        showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page.", "Status: Error, please reload.");
         element.disabled = false;
       })
     .withUserObject(this)
@@ -156,15 +157,15 @@ function editText(){
           $("#loading").html("Status: " + "No"          + " equations replaced.");
           
         if(returnSuccess == -4)
-          showError("Cannot retrieve equation. Is your cursor before an Auto-LaTeX rendered equation?", "Status: Error, please ensure link is still on equation.");
+          showError("Cannot retrieve equation. Is your equation selected?", "Status: Error, please ensure link is still on equation.");
         else if(returnSuccess == -3)
-          showError("Cannot retrieve equation. Is your cursor before an Auto-LaTeX rendered equation?", "Status: Error, please move cursor before inline equation.");
+          showError("Cannot retrieve equation. Is your equation selected?", "Status: Error, please select image.");
         else if(returnSuccess == -2)
-          showError("Cannot insert text here. Is your cursor before an equation?", "Status: Error, please move cursor before equation.");
+          showError("Cannot insert text here. Is your equation selected?", "Status: Error, please select equation.");
         else if(returnSuccess == -1)
-          showError("Cannot find a cursor/equation. Please click before an equation.", "Status: Error, please move cursor before equation.");
+          showError("Cannot find a equation. Please click on equation image.", "Status: Error, please select equation.");
         else if(returnSuccess == 0)
-          $("#loading").html("Status: " + "Error: Please insert cursor right before image.");
+          $("#loading").html("Status: " + "Error: Please select equation image.");
         else if(returnSuccess == 1)
           $("#loading").html("Status: " + returnSuccess + " equation de-rendered.");
         else
@@ -174,7 +175,7 @@ function editText(){
       function(msg, element) {
         $("#loading").html('');
         clearInterval(runDots);
-        showError("Please ensure cursor is immediately before the equation to be derendered.", "Status: Error, please move cursor before equation.");
+        showError("Please select equation image to be derendered.", "Status: Error, please select equation to be derendered.");
         element.disabled = false;
       })
     .withUserObject(this)
@@ -200,7 +201,7 @@ function undoAll(){
       $("#loading").html("Status: " + 0 + " equations de-rendered.");
       if(returnSuccess < 0){
         $("#loading").html("Status: " + "No"          + " equations de-rendered.");
-        showError("Cannot find any equations.", "Status: Error, please move cursor before equation.");
+        showError("Cannot find any equations.", "Status: Error, please click equation image.");
       }
       else if(returnSuccess == 0)
         $("#loading").html("Status: " + "No"          + " equations found to de-render.");
@@ -213,7 +214,7 @@ function undoAll(){
     function(msg, element) {
       $("#loading").html('');
       clearInterval(runDots);
-      showError("Please ensure cursor is inside document.", "Status: Error, please move cursor into document.");
+      showError("Please select image.", "Status: Error, please select image.");
       element.disabled = false;
     })
   .withUserObject(this)
@@ -258,7 +259,7 @@ $(document).keydown(function(e){
         $("#loading").html("Status: " + 0 + " equations de-rendered.");
         if(returnSuccess < 0){
           $("#loading").html("Status: " + "No"          + " equations de-rendered.");
-          showError("Cannot find any equations.", "Status: Error, please move cursor before equation.");
+          showError("Cannot find any equations.", "Status: Error, please select image.");
         }
         else if(returnSuccess == 0)
           $("#loading").html("Status: " + "No"          + " equations found to de-render.");
@@ -271,7 +272,7 @@ $(document).keydown(function(e){
       function() {
         $("#loading").html('');
         clearInterval(runDots);
-        showError("Please ensure cursor is inside document.", "Status: Error, please move cursor into document.");
+        showError("Please select image.", "Status: Error, please select image.");
       })
     .removeAll(delimiter);
   }
@@ -288,4 +289,4 @@ function showError(msg1, msg2) {//CHANGE TO OTHER DIV WHEN PUBLISHING
   var div = $('<div id="error" class="error">' + msg1  + '</div>');
   $('#loading').after(div);
   $('#loading').html(msg2);
-}</script>
+}
