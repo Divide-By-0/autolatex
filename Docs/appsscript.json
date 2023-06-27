@@ -7,8 +7,22 @@
         "serviceId": "analytics",
         "version": "v3"
       }
+    ],
+    "libraries": [
+      {
+        "userSymbol": "Common",
+        "version": "0",
+        "libraryId": "",
+        "developmentMode": true
+      }
     ]
   },
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/script.container.ui",
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/documents.currentonly"
+  ],
   "exceptionLogging": "STACKDRIVER",
   "runtimeVersion": "V8"
 }
