@@ -16,7 +16,7 @@ declare namespace google {
 
             getPrefs(): void //reflection;
 
-            removeAll(delimRaw: string): void //intrinsic;
+            removeAll(defaultDelimRaw: string): void //intrinsic;
 
             replaceEquations(sizeRaw: string, delimiter: string): void //intrinsic;
 

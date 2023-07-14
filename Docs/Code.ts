@@ -143,7 +143,7 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
 function findPos(index: number, delim: AutoLatexCommon.Delimiter, quality: number, size: number, defaultSize: number, isInline: boolean, prevFailedStartElemIfIsEmpty = null): [number, GoogleAppsScript.Document.RangeElement | null] {
   Common.debugLog("Checking document section index # ", index);
   Common.reportDeltaTime(195);
-  const docBody = Common.getBodyFromIndex(IntegratedApp, index);
+  const docBody = getBodyFromIndex(index);
   if (docBody == null) {
     return [0, null];
   }
@@ -358,12 +358,55 @@ function editEquations(sizeRaw: string, delimiter: string) {
   return Common.editEquations(IntegratedApp, sizeRaw, delimiter);
 }
 
+function getBodyFromIndex(index: number) {
+  const doc = IntegratedApp.getActive();
+  const p = doc.getBody().getParent();
+  const all = p.getNumChildren();
+  Common.assert(index < all, "index < all");
+  const body = p.getChild(index);
+  const type = body.getType();
+  if (type === DocumentApp.ElementType.BODY_SECTION || type === DocumentApp.ElementType.HEADER_SECTION || type === DocumentApp.ElementType.FOOTER_SECTION) {
+    // handles alternating footers etc.
+    return body as GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection | GoogleAppsScript.Document.FooterSection;
+  }
+  return null;
+}
+
 /**
  * Given a cursor right before an equation, de-encode URL and replace image with raw equation between delimiters.
  * @public
  */
-function removeAll(delimRaw: string) {
-  return Common.removeAll(IntegratedApp, delimRaw);
+function removeAll(defaultDelimRaw: string) {
+  let counter = 0;
+  const defaultDelim = Common.getDelimiters(defaultDelimRaw);
+  
+  for (var index = 0; index < IntegratedApp.getBody().getParent().getNumChildren(); index++) {
+    const body = getBodyFromIndex(index);
+    const img = body?.getImages(); //places all InlineImages from the active document into the array img
+    for (let i = 0; i < (img?.length || 0); i++) {
+      const image = img![i];
+      let origURL = new String(image.getLinkUrl()).toString(); //becomes "null", not null, if no equation link
+      if (image.getLinkUrl() === null) {
+        continue;
+      }
+      // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
+      // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
+      const result = Common.derenderEquation(origURL);
+      if (!result) continue;
+      const { origEq, delim: newDelim } = result;
+      const delim = newDelim || defaultDelim;
+      const imageIndex = image.getParent().getChildIndex(image);
+      if (origEq.length <= 0) {
+        console.log("Empty. at " + imageIndex + " fold " + image.getParent().getText());
+        image.removeFromParent();
+        continue;
+      }
+      image.getParent().asParagraph().insertText(imageIndex, delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
+      image.removeFromParent();
+      counter += 1;
+    }
+  }
+  return counter;
 }
 
 /* Returns: -5 if no derenderer was able to get the raw equation out

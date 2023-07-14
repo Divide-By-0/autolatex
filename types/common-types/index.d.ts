@@ -22,11 +22,6 @@ declare namespace AutoLatexCommon {
         encodeFlag(flag: number, renderCount: number): number;
 
         /**
-         * to get doc section from index (i.e. header, footer, body etc)
-         */
-        getBodyFromIndex(app: IntegratedApp, index: number): (GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection);
-
-        /**
          * Given string of size, return integer value.
          */
         getDelimiters(delimiters: string): Delimiter;
@@ -49,11 +44,6 @@ declare namespace AutoLatexCommon {
          * Retrives the equation from the paragraph, encodes it, and returns it.
          */
         reEncode(equation: string): string;
-
-        /**
-         * Given a cursor right before an equation, de-encode URL and replace image with raw equation between delimiters.
-         */
-        removeAll(app: IntegratedApp, defaultDelimRaw: string): number;
 
         renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number): {equation: string, renderer: Renderer, rendererType: string, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, worked: number};
 

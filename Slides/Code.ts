@@ -413,11 +413,45 @@ function editEquations(sizeRaw: string, delimiter: string) {
 }
 
 /**
- * Given a cursor right before an equation, de-encode URL and replace image with raw equation between delimiters.
+ * De-encode all equations
  * @public
  */
-function removeAll(delimRaw: string) {
-  return Common.removeAll(IntegratedApp, delimRaw);
+function removeAll(defaultDelimRaw: string) {
+  let counter = 0;
+  const defaultDelim = Common.getDelimiters(defaultDelimRaw);
+  for (const slide of IntegratedApp.getBody()) {
+    for (const image of slide.getImages()) {
+      const positionX = image.getLeft(); // returns horizontal position in points measured from upper-left of the page
+      const positionY = image.getTop(); // returns vertical position
+      const width = image.getWidth();
+      const height = image.getHeight();
+      const [red, green, blue, origURL] = JSON.parse(image.getTitle());
+      const colors = [red, green, blue].map((x: string) => Number(x)) as [number, number, number];
+      if (!origURL) continue;
+      image.remove();
+      // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
+      // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
+      const result = Common.derenderEquation(origURL);
+      if (!result) continue;
+      const { origEq, delim: newDelim } = result;
+      const delim = newDelim || defaultDelim;
+
+      if (origEq.length <= 0) {
+        console.log("Empty equation derender");
+        continue;
+      }
+
+      const shape = slide.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
+      const textRange = shape.getText();
+      textRange
+        .insertText(0, delim[0] + origEq + delim[1])
+        .getTextStyle()
+        .setForegroundColor(...colors);
+
+      counter += 1;
+    }
+  }
+  return counter;
 }
 
 /* Returns: -4 if the URL is null (link removed for instance)
@@ -427,33 +461,32 @@ function removeAll(delimRaw: string) {
 						0 if cursor not found entirely
 						1 if it was fine
 */
-function undoImage(delim: AutoLatexCommon.Delimiter) {
+function undoImage(defaultDelim: AutoLatexCommon.Delimiter) {
   // var cursor = IntegratedApp.getActive().getCursor(); // * no cursor for slides => replace with highlighted textbox
   //* 1. check if selected element is image
   //* 2. get position of element
   //* 3. render selected element by using element.getChild.asInlineImage(); then
-  var selection = SlidesApp.getActivePresentation().getSelection();
+  const selection = SlidesApp.getActivePresentation().getSelection();
   Common.debugLog("The Slides App is:" + selection);
-  var currentPage = selection.getCurrentPage();
+  const currentPage = selection.getCurrentPage();
   // debugLog("current slide number is: " + pageNum + "pageNum is: " + pageNum)
-  var selectionType = selection.getSelectionType();
+  const selectionType = selection.getSelectionType();
   Common.debugLog("selection Type is: " + selectionType);
 
   if (selectionType == SlidesApp.SelectionType.PAGE_ELEMENT) {
-    var element = selection.getPageElementRange().getPageElements()[0].asImage();
-    if (element) {
+    var image = selection.getPageElementRange().getPageElements()[0].asImage();
+    if (image) {
       console.log("valid selection");
-      Common.debugLog(element);
-      var positionX = element.getLeft(); // returns horizontal position in points measured from upper-left of the page
+      Common.debugLog(image);
+      const positionX = image.getLeft(); // returns horizontal position in points measured from upper-left of the page
       // debugLog("Left: " + positionX)
-      var positionY = element.getTop(); // returns vertical position
+      const positionY = image.getTop(); // returns vertical position
       // debugLog("Top: " + positionY)
-      var width = element.getWidth();
+      const width = image.getWidth();
       // debugLog("Width: " + width)
-      var height = element.getHeight();
+      const height = image.getHeight();
       // debugLog("Height: " + height)
       // var image = element.getChild(position).asInlineImage();
-      var image = element;
       // debugLog("Image height: " + image.getHeight());
       // var origURL = image.getContentUrl();
       // image.setDescription("https://www.codecogs.com/eqnedit.php?latex=f(t)%3D%5Csum_%7B-%5Cinfty%7D%5E%7B%5Cinfty%7Dc_ne%5E%7Bi%5Cfrac%7B2%5Cpi%20n%7D%7BT%7Dt%7D%3D%5Ccdots%2Bc_%7B-2%7De%5E%7B-i%5Cfrac%7B4%5Cpi%7D%7BT%7Dt%7D%2Bc_%7B-1%7De%5E%7B-i%5Cfrac%7B2%5Cpi%7D%7BT%7Dt%7D%2Bc_0%2Bc_1e%5E%7Bi%5Cfrac%7B2%5Cpi%7D%7BT%7Dt%7D%2Bc_2e%5E%7Bi%5Cfrac%7B4%5Cpi%7D%7BT%7Dt%7D%2B%5Ccdots#0");
@@ -464,22 +497,21 @@ function undoImage(delim: AutoLatexCommon.Delimiter) {
 
       // image.setDescription('' + linkEquation[0])
       // debugLog("element in Link Equation is: " + linkEquation[0])
-      var red = Number(JSON.parse(image.getTitle())[0]);
-      var green = Number(JSON.parse(image.getTitle())[1]);
-      var blue = Number(JSON.parse(image.getTitle())[2]);
-      var origURL = JSON.parse(image.getTitle())[3];
+      const [red, green, blue, origURL] = JSON.parse(image.getTitle());
+      const colors = [red, green, blue].map((x: string) => Number(x)) as [number, number, number];
 
-      // var origURL = image.getTitle();
       image.remove();
 
       Common.debugLog("image description is: " + origURL);
 
-      if (!origURL) {
-        return -4;
-      }
+      if (!origURL) return -4;
+
       Common.debugLog("Original URL from image", origURL);
-      const { delim: newDelim, origEq } = Common.derenderEquation(origURL);
-      if (newDelim) delim = newDelim;
+      const result = Common.derenderEquation(origURL);
+      if (!result) return -5;
+      const { delim: newDelim, origEq } = result;
+      const delim = newDelim || defaultDelim;
+
       if (origEq.length <= 0) {
         console.log("Empty equation derender.");
         return -3;
@@ -487,12 +519,13 @@ function undoImage(delim: AutoLatexCommon.Delimiter) {
 
       // insert textbox
 
-      var shape = currentPage.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
-      var textRange = shape.getText();
+      const shape = currentPage.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
+      const textRange = shape.getText();
       textRange
         .insertText(0, delim[0] + origEq + delim[1])
         .getTextStyle()
-        .setForegroundColor(red, green, blue);
+        .setForegroundColor(...colors);
+      
       Common.debugLog("textRange: " + textRange + "type: " + typeof textRange);
       Common.debugLog(typeof textRange.insertText);
       // insert original equation into newly created text box

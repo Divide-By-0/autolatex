@@ -585,61 +585,6 @@ function debugLog(...strings: any[]) {
 }
 
 /**
- * to get doc section from index (i.e. header, footer, body etc)
- * @public
- */
-function getBodyFromIndex(app: IntegratedApp, index: number) {
-  const doc = app.getActive();
-  const p = (doc as GoogleAppsScript.Document.Document).getBody().getParent(); // TODO: Fix this for slides
-  const all = p.getNumChildren();
-  assert(index < all, "index < all");
-  const body = p.getChild(index);
-  const type = body.getType();
-  if (type === DocumentApp.ElementType.BODY_SECTION || type === DocumentApp.ElementType.HEADER_SECTION || type === DocumentApp.ElementType.FOOTER_SECTION) {
-    // handles alternating footers etc.
-    return body as GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection | GoogleAppsScript.Document.FooterSection;
-  }
-  return null;
-}
-
-/**
- * Given a cursor right before an equation, de-encode URL and replace image with raw equation between delimiters.
- * @public
- */
-function removeAll(app: IntegratedApp, defaultDelimRaw: string) {
-  let counter = 0;
-  const defaultDelim = getDelimiters(defaultDelimRaw);
-  // @ts-ignore
-  for (var index = 0; index < app.getBody().getParent().getNumChildren(); index++) { // TODO: Fix this for slides (is this what fixing derendendering on slides means? - Github Issue #6)
-    const body = getBodyFromIndex(app, index);
-    const img = body?.getImages(); //places all InlineImages from the active document into the array img
-    for (let i = 0; i < (img?.length || 0); i++) {
-      const image = img![i];
-      let origURL = new String(image.getLinkUrl()).toString(); //becomes "null", not null, if no equation link
-      if (image.getLinkUrl() === null) {
-        continue;
-      }
-      // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
-      // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
-      const result = derenderEquation(origURL);
-      if (!result) continue;
-      const { origEq, delim: newDelim } = result;
-      const delim = newDelim || defaultDelim;
-      const imageIndex = image.getParent().getChildIndex(image);
-      if (origEq.length <= 0) {
-        console.log("Empty. at " + imageIndex + " fold " + image.getParent().getText());
-        image.removeFromParent();
-        continue;
-      }
-      image.getParent().asParagraph().insertText(imageIndex, delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
-      image.removeFromParent();
-      counter += 1;
-    }
-  }
-  return counter;
-}
-
-/**
  * Given string of size, return integer value.
  *
  * @param sizeRaw     The text value of the size from HTML selection.
