@@ -17,7 +17,7 @@ declare namespace AutoLatexCommon {
         /**
          * Given a size and a cursor right before an equation, call function to undo the image within delimeters. Returns success indicator.
          */
-        editEquations(app: IntegratedApp, sizeRaw: string, delimiter: string): (1 | -1 | -2 | -4 | -3);
+        editEquations(app: IntegratedApp, sizeRaw: string, delimiter: string): (-2 | 1 | -1 | -4 | -5 | -3);
 
         encodeFlag(flag: number, renderCount: number): number;
 
@@ -43,7 +43,7 @@ declare namespace AutoLatexCommon {
         /**
          * Given string of size, return integer value.
          */
-        getSize(sizeRaw: string): (0 | -1 | 12 | 24);
+        getSize(sizeRaw: string): (0 | -1 | 24 | 12);
 
         /**
          * Retrives the equation from the paragraph, encodes it, and returns it.
@@ -53,7 +53,7 @@ declare namespace AutoLatexCommon {
         /**
          * Given a cursor right before an equation, de-encode URL and replace image with raw equation between delimiters.
          */
-        removeAll(app: IntegratedApp, delimRaw: string): number;
+        removeAll(app: IntegratedApp, defaultDelimRaw: string): number;
 
         renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number): {equation: string, renderer: Renderer, rendererType: string, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, worked: number};
 
@@ -102,7 +102,7 @@ declare namespace AutoLatexCommon {
 
         getUi(): GoogleAppsScript.Base.Ui;
 
-        undoImage(delim: Delimiter): (1 | -1 | -2 | -4 | -3);
+        undoImage(delim: Delimiter): (-2 | 1 | -1 | -4 | -5 | -3);
 
     }
 

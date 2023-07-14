@@ -24,7 +24,7 @@ interface IntegratedApp {
   getBody(): GoogleAppsScript.Document.Body | GoogleAppsScript.Slides.Slide[];
   getActive(): GoogleAppsScript.Document.Document | GoogleAppsScript.Slides.Presentation;
   getPageWidth(): number;
-  undoImage(delim: Delimiter): -1 | -2 | 1 | -4 | -3;
+  undoImage(delim: Delimiter): -1 | -2 | 1 | -4 | -5 | -3;
 }
 
 /**
@@ -606,9 +606,9 @@ function getBodyFromIndex(app: IntegratedApp, index: number) {
  * Given a cursor right before an equation, de-encode URL and replace image with raw equation between delimiters.
  * @public
  */
-function removeAll(app: IntegratedApp, delimRaw: string) {
+function removeAll(app: IntegratedApp, defaultDelimRaw: string) {
   let counter = 0;
-  let delim = getDelimiters(delimRaw);
+  const defaultDelim = getDelimiters(defaultDelimRaw);
   // @ts-ignore
   for (var index = 0; index < app.getBody().getParent().getNumChildren(); index++) { // TODO: Fix this for slides (is this what fixing derendendering on slides means? - Github Issue #6)
     const body = getBodyFromIndex(app, index);
@@ -621,36 +621,10 @@ function removeAll(app: IntegratedApp, delimRaw: string) {
       }
       // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
       // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
-      let origEq: string;
-      let worked = 1;
-      let found = 0;
-      let renderer: string[] = [];
-      for (; worked <= capableDerenderers; ++worked) {
-        // example, [3,"https://latex.codecogs.com/png.latex?","http://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]
-        renderer = getRenderer(worked)[2].split("FILENAME"); //list of possibly more than one string
-        for (var I = 0; I < renderer.length; ++I) {
-          if (origURL.indexOf(renderer[I]) > -1) {
-            debugLog("Changing: " + origURL + " by removing " + renderer[I]);
-            origURL = origURL.substring(origURL.indexOf(renderer[I])).split(renderer[I]).join(""); //removes prefix
-            found = 1;
-          } else break;
-        }
-      }
-      if (found == 0) {
-        console.log("Not an equation link! " + origURL, origURL.indexOf(renderer[0]), origURL.indexOf(renderer[1]));
-        continue; // not an equation link
-      }
-      let last2 = origURL.slice(-2);
-      let delimtype = 0;
-      if (last2.length > 1 && (last2.charAt(0) == "%" || last2.charAt(0) == "#") && last2.charAt(1) >= "0" && last2.charAt(1) <= "9") {
-        //rendered with updated renderer
-        debugLog("Passed: " + last2);
-        delimtype = parseInt(last2.charAt(1)) - 0;
-        origURL = origURL.slice(0, -2);
-        delim = getDelimiters(getNumDelimiters(delimtype));
-      }
-      origEq = deEncode(origURL);
-      debugLog("Undid: " + origEq);
+      const result = derenderEquation(origURL);
+      if (!result) continue;
+      const { origEq, delim: newDelim } = result;
+      const delim = newDelim || defaultDelim;
       const imageIndex = image.getParent().getChildIndex(image);
       if (origEq.length <= 0) {
         console.log("Empty. at " + imageIndex + " fold " + image.getParent().getText());
@@ -692,25 +666,30 @@ function getSize(sizeRaw: string) {
  */
 function derenderEquation(origURL: string) {
   let worked = 1;
-  let failure = 1;
+  let found = 0;
+  let renderer: string[] = [];
   for (; worked <= capableDerenderers; ++worked) {
     //[3,"https://latex.codecogs.com/png.latex?","http://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]
-    const renderer = getRenderer(worked)[2].split("FILENAME"); //list of possibly more than one string
+    renderer = getRenderer(worked)[2].split("FILENAME"); //list of possibly more than one string
     for (let I = 0; I < renderer.length; ++I) {
       if (origURL.indexOf(renderer[I]) > -1) {
         debugLog("Changing: " + origURL + " by removing " + renderer[I]);
         origURL = origURL.substring(origURL.indexOf(renderer[I])).split(renderer[I]).join(""); //removes prefix
+        found = 1;
         debugLog("Next check: " + origURL + " for " + renderer[I + 1]);
       } else break;
     }
   }
+  if (found == 0) {
+    console.log("Not an equation link! " + origURL, origURL.indexOf(renderer[0]), origURL.indexOf(renderer[1]));
+    return null; // not an equation link
+  }
   const last2 = origURL.slice(-2);
-  let delimtype = 0;
   let delim: Delimiter | null = null;
   if (last2.length > 1 && (last2.charAt(0) == "%" || last2.charAt(0) == "#") && last2.charAt(1) >= "0" && last2.charAt(1) <= "9") {
     //rendered with updated renderer
     debugLog("Passed: " + last2);
-    delimtype = parseInt(last2.charAt(1)) - 0;
+    const delimtype = parseInt(last2.charAt(1)) - 0;
     origURL = origURL.slice(0, -2);
     delim = getDelimiters(getNumDelimiters(delimtype));
   }

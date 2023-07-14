@@ -152,8 +152,10 @@ function editText(){
         $("#loading").html("Status: " + "1"             + " equation replaced.");
         if(returnSuccess < 0)
           $("#loading").html("Status: " + "No"          + " equations replaced.");
-          
-        if(returnSuccess == -4)
+        
+        if(returnSuccess == -5)
+          showError("Cannot retrieve equation. The equation may not have been rendered by Auto-LaTeX.", "Status: Error, please ensure link is still on equation.");
+        else if(returnSuccess == -4)
           showError("Cannot retrieve equation. Is your cursor before an Auto-LaTeX rendered equation?", "Status: Error, please ensure link is still on equation.");
         else if(returnSuccess == -3)
           showError("Cannot retrieve equation. Is your cursor before an Auto-LaTeX rendered equation?", "Status: Error, please move cursor before inline equation.");

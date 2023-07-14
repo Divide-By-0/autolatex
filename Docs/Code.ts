@@ -366,14 +366,15 @@ function removeAll(delimRaw: string) {
   return Common.removeAll(IntegratedApp, delimRaw);
 }
 
-/* Returns: -4 if the URL is null (link removed for instance)
+/* Returns: -5 if no derenderer was able to get the raw equation out
+            -4 if the URL is null (link removed for instance)
 						-3 if empty equation derender
 						-2 if the element the cursor is in doesnt exist
 						-1 if cursor element is not found (?)
 						0 if cursor not found entirely
 						1 if it was fine
 */
-function undoImage(delim: AutoLatexCommon.Delimiter) {
+function undoImage(defaultDelim: AutoLatexCommon.Delimiter) {
   const cursor = DocumentApp.getActiveDocument().getCursor();
   if (cursor) {
     // Attempt to insert text at the cursor position. If the insertion returns null, the cursor's
@@ -393,8 +394,10 @@ function undoImage(delim: AutoLatexCommon.Delimiter) {
         return -4;
       }
       Common.debugLog("Original URL from image", origURL);
-      const { delim: newDelim, origEq } = Common.derenderEquation(origURL);
-      if (newDelim) delim = newDelim;
+      const result = Common.derenderEquation(origURL);
+      if (!result) return -5;
+      const { delim: newDelim, origEq } = result;
+      const delim = newDelim || defaultDelim;
       if (origEq.length <= 0) {
         console.log("Empty equation derender.");
         return -3;
