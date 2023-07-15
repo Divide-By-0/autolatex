@@ -8,6 +8,8 @@ declare namespace AutoLatexCommon {
      */
     export interface Common {
 
+        DerenderResult: typeof DerenderResult;
+
         assert(value: boolean, command?: string): void;
 
         debugLog(...strings: any[]): void;
@@ -17,14 +19,9 @@ declare namespace AutoLatexCommon {
         /**
          * Given a size and a cursor right before an equation, call function to undo the image within delimeters. Returns success indicator.
          */
-        editEquations(app: IntegratedApp, sizeRaw: string, delimiter: string): (1 | -1 | -2 | -4 | -3);
+        editEquations(app: IntegratedApp, sizeRaw: string, delimiter: string): DerenderResult;
 
         encodeFlag(flag: number, renderCount: number): number;
-
-        /**
-         * to get doc section from index (i.e. header, footer, body etc)
-         */
-        getBodyFromIndex(app: IntegratedApp, index: number): (GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection);
 
         /**
          * Given string of size, return integer value.
@@ -43,17 +40,12 @@ declare namespace AutoLatexCommon {
         /**
          * Given string of size, return integer value.
          */
-        getSize(sizeRaw: string): (0 | -1 | 12 | 24);
+        getSize(sizeRaw: string): (0 | -1 | 24 | 12);
 
         /**
          * Retrives the equation from the paragraph, encodes it, and returns it.
          */
         reEncode(equation: string): string;
-
-        /**
-         * Given a cursor right before an equation, de-encode URL and replace image with raw equation between delimiters.
-         */
-        removeAll(app: IntegratedApp, delimRaw: string): number;
 
         renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number): {equation: string, renderer: Renderer, rendererType: string, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, worked: number};
 
@@ -102,7 +94,7 @@ declare namespace AutoLatexCommon {
 
         getUi(): GoogleAppsScript.Base.Ui;
 
-        undoImage(delim: Delimiter): (1 | -1 | -2 | -4 | -3);
+        undoImage(delim: Delimiter): DerenderResult;
 
     }
 
@@ -126,6 +118,22 @@ declare namespace AutoLatexCommon {
         5: string;
 
         6: string;
+
+    }
+
+    export const enum DerenderResult {
+
+        CursorNotFound,
+
+        EmptyEquation,
+
+        InvalidUrl,
+
+        NonExistentElement,
+
+        NullUrl,
+
+        Success,
 
     }
 

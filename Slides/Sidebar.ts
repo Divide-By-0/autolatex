@@ -1,9 +1,8 @@
-/// <reference path="../types/slides-types/index.d.ts" />
-/// <reference types="jquery" />
-
 /* global google, $ */
 
-// @ts-check
+/// <reference path="../types/docs-types/index.d.ts" />
+/// <reference path="../types/common-types/index.d.ts" />
+/// <reference lib="dom" />
 
 /**
  * On document load, assign click handlers to each button. Added document.ready.
@@ -33,28 +32,17 @@ function runDotAnimation() {
 }
 
 function getCurrentSettings() {
-  const sizeRaw = (/** @type {string} */ ($('#size :selected').val()));
-  const delimiter = (/** @type {string} */ ($('#delimit :selected').val()));
+  const sizeRaw = $('#size :selected').val() as string;
+  const delimiter = $('#delimit :selected').val() as string;
   return {sizeRaw, delimiter};
 }
 
 //$('donate_button').on("click",function(e){e.preventDefault;}); // for paypal to disable sidebar disappearing
 
 // Close the dropdown menu if the user clicks outside of it
-/**
- * @param {MouseEvent} event
- */
 window.onclick = function(event) {
-  if (!(/** @type {HTMLElement?} */ (event.target))?.matches('.dropbtn')) {
-
-    var dropdowns = document.getElementsByClassName("dropdown-content");
-    var i;
-    for (i = 0; i < dropdowns.length; i++) {
-      var openDropdown = dropdowns[i];
-      if (openDropdown.classList.contains('show')) {
-        openDropdown.classList.remove('show');
-      }
-    }
+  if (!event.target.matches('.dropbtn')) {
+    document.querySelectorAll(".dropdown-content.show").forEach(openDropdown => openDropdown.classList.remove('show'));
   }
 }
 $("#advanced").click(function(event){//.live({click:
@@ -71,7 +59,7 @@ $("#advanced").click(function(event){//.live({click:
   });
 });
 
-function loadPreferences(choicePrefs) {
+function loadPreferences(choicePrefs: {size: string, delim: string}) {
   $('#insert-text').prop("disabled", true);
   $('#edit-text').prop("disabled", true);
   $('#undo-all').prop("disabled", true);
@@ -156,20 +144,27 @@ function editText(){
         if(returnSuccess < 0)
           $("#loading").html("Status: " + "No"          + " equations replaced.");
           
-        if(returnSuccess == -4)
-          showError("Cannot retrieve equation. Is your equation selected?", "Status: Error, please ensure link is still on equation.");
-        else if(returnSuccess == -3)
-          showError("Cannot retrieve equation. Is your equation selected?", "Status: Error, please select image.");
-        else if(returnSuccess == -2)
-          showError("Cannot insert text here. Is your equation selected?", "Status: Error, please select equation.");
-        else if(returnSuccess == -1)
-          showError("Cannot find a equation. Please click on equation image.", "Status: Error, please select equation.");
-        else if(returnSuccess == 0)
-          $("#loading").html("Status: " + "Error: Please select equation image.");
-        else if(returnSuccess == 1)
-          $("#loading").html("Status: " + returnSuccess + " equation de-rendered.");
-        else
-          $("#loading").html("Status: " + 1             + " equation de-rendered.");
+          switch (returnSuccess) {
+            case AutoLatexCommon.DerenderResult.InvalidUrl:
+              showError("Cannot retrieve equation. The equation may not have been rendered by Auto-LaTeX.", "Status: Error, please ensure link is still on equation.");
+              break;
+            case AutoLatexCommon.DerenderResult.NullUrl:
+              showError("Cannot retrieve equation. Is your cursor before an Auto-LaTeX rendered equation?", "Status: Error, please ensure link is still on equation.");
+              break;
+            case AutoLatexCommon.DerenderResult.EmptyEquation:
+              showError("Cannot retrieve equation. Is your cursor before an Auto-LaTeX rendered equation?", "Status: Error, please move cursor before inline equation.");
+              break;
+            case AutoLatexCommon.DerenderResult.NonExistentElement:
+              showError("Cannot insert text here. Is your cursor before an equation?", "Status: Error, please move cursor before equation.");
+              break;
+            case AutoLatexCommon.DerenderResult.CursorNotFound:
+              showError("Cannot find a cursor/equation. Please click before an equation.", "Status: Error, please move cursor before equation.");
+              break;
+            case AutoLatexCommon.DerenderResult.Success:
+            default:
+              $("#loading").html("Status: 1 equation de-rendered.");
+              break;
+          }
       })
     .withFailureHandler(
       function(msg, element) {
@@ -284,7 +279,7 @@ $(document).keydown(function(e){
  * @param msg1 The status to display.
  * @param msg2 The error message to display.
  */
-function showError(msg1, msg2) {//CHANGE TO OTHER DIV WHEN PUBLISHING
+function showError(msg1: any, msg2: any) {//CHANGE TO OTHER DIV WHEN PUBLISHING
   //var div = $('<div id="error" class="error">' + msg + '</div>');
   var div = $('<div id="error" class="error">' + msg1  + '</div>');
   $('#loading').after(div);
