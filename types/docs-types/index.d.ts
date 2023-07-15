@@ -4,13 +4,13 @@ declare namespace google {
 
         export interface Runner {
 
-            withSuccessHandler(handler: (response: any) => void): Runner;
+            withSuccessHandler(handler: (response: any, userObject?: any) => void): Runner;
 
-            withFailureHandler(handler: (error: Error) => void): Runner;
+            withFailureHandler(handler: (error: Error, userObject?: any) => void): Runner;
 
             withUserObject(object: any): Runner;
 
-            editEquations(sizeRaw: string, delimiter: string): void //union;
+            editEquations(sizeRaw: string, delimiter: string): void //reference;
 
             getKey(): void //intrinsic;
 

@@ -5,10 +5,11 @@
   "main": "Code.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "preclasp-push": "npm run copy-sidebar-js && node ../LibraryLinker.js link Docs",
+    "preclasp-push": "npm run build-sidebar-js && npm run copy-sidebar-js && node ../LibraryLinker.js link Docs",
     "postclasp-push": "node ../LibraryLinker.js unlink Docs",
     "clasp-push": "clasp push",
     "build-types": "clasp-types -o ../types --client",
+    "build-sidebar-js": "tsc --preserveConstEnums Sidebar.ts &> /dev/null || true",
     "copy-sidebar-js": "sed -i -e '/^<script>$/r Sidebar.js' -e '/^<script>$/,/^<\\/script>$/!b' -e '/^<script>$\\|^<\\/script>$/!d' SidebarJS.html"
   },
   "author": "",

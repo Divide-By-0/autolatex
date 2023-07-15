@@ -8,6 +8,8 @@ declare namespace AutoLatexCommon {
      */
     export interface Common {
 
+        DerenderResult: typeof DerenderResult;
+
         assert(value: boolean, command?: string): void;
 
         debugLog(...strings: any[]): void;
@@ -17,7 +19,7 @@ declare namespace AutoLatexCommon {
         /**
          * Given a size and a cursor right before an equation, call function to undo the image within delimeters. Returns success indicator.
          */
-        editEquations(app: IntegratedApp, sizeRaw: string, delimiter: string): (-2 | 1 | -1 | -4 | -5 | -3);
+        editEquations(app: IntegratedApp, sizeRaw: string, delimiter: string): DerenderResult;
 
         encodeFlag(flag: number, renderCount: number): number;
 
@@ -92,7 +94,7 @@ declare namespace AutoLatexCommon {
 
         getUi(): GoogleAppsScript.Base.Ui;
 
-        undoImage(delim: Delimiter): (-2 | 1 | -1 | -4 | -5 | -3);
+        undoImage(delim: Delimiter): DerenderResult;
 
     }
 
@@ -116,6 +118,22 @@ declare namespace AutoLatexCommon {
         5: string;
 
         6: string;
+
+    }
+
+    export const enum DerenderResult {
+
+        CursorNotFound,
+
+        EmptyEquation,
+
+        InvalidUrl,
+
+        NonExistentElement,
+
+        NullUrl,
+
+        Success,
 
     }
 

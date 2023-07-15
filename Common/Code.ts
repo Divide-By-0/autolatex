@@ -19,12 +19,24 @@ interface Renderer {
 /**
  * @public
  */
+const enum DerenderResult {
+  InvalidUrl, // if no derenderer was able to get the raw equation out
+  NullUrl, // if the URL is null (link removed for instance)
+  EmptyEquation, 
+  NonExistentElement, // if the element the cursor is in doesnt exist
+  CursorNotFound,
+  Success
+}
+
+/**
+ * @public
+ */
 interface IntegratedApp {
   getUi(): GoogleAppsScript.Base.Ui;
   getBody(): GoogleAppsScript.Document.Body | GoogleAppsScript.Slides.Slide[];
   getActive(): GoogleAppsScript.Document.Document | GoogleAppsScript.Slides.Presentation;
   getPageWidth(): number;
-  undoImage(delim: Delimiter): -1 | -2 | 1 | -4 | -5 | -3;
+  undoImage(delim: Delimiter): DerenderResult;
 }
 
 /**
