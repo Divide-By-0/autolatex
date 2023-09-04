@@ -17,6 +17,31 @@
       }
     ]
   },
+  "addOns": {
+    "common": {
+      "homepageTrigger": {
+        "runFunction": "onWorkspaceAddonHomepageOpen",
+        "enabled": true
+      },
+      "layoutProperties": {
+        "primaryColor": "#4889f0",
+        "secondaryColor": "#4889f0"
+      },
+      "name": "Auto-LaTeX Equations",
+      "logoUrl": "https://raw.githubusercontent.com/Divide-By-0/autolatex/master/autolatex_assets/Docs%20to%20Latex%20Logo%20White%20Backgroud.png",
+      "openLinkUrlPrefixes": [
+        "https://www.patreon.com/autolatex",
+        "https://www.redbubble.com/shop/ap/140480196",
+        "https://sites.google.com/site/autolatexequations/",
+        "https://www.codecogs.com/eqnedit.php",
+        "https://www.autolatex.com/",
+        "https://workspace.google.com/marketplace/app/autolatex_equations/850293439076",
+        "https://www.facebook.com/autolatex/",
+        "https://lipoker.io/"
+      ]
+    },
+    "docs": {}
+  },
   "oauthScopes": [
     "https://www.googleapis.com/auth/script.container.ui",
     "https://www.googleapis.com/auth/script.external_request",
