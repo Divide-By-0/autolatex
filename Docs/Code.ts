@@ -116,7 +116,7 @@ function generateWorkspaceHomepage(status: string, error: string | null = null) 
 
   const derenderAllButton = CardService.newTextButton()
     .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
-    .setText("DE-RENDER ALL EQUATIONS")
+    .setText("⠀⠀DE-RENDER ALL EQUATIONS⠀⠀")
     .setBackgroundColor("#cd3d2d")
     .setOnClickAction(CardService.newAction().setFunctionName("onWorkspaceAddonClick").setParameters({ action: "derenderAll" }));
 
@@ -140,7 +140,7 @@ function generateWorkspaceHomepage(status: string, error: string | null = null) 
 • 'Inline' size compresses your equation height.`)
     )
     .addWidget(CardService.newImage()
-      .setImageUrl("https://i.ibb.co/d2pJpb3/Donate-Button.png")
+      .setImageUrl("https://i.ibb.co/41B2V1C/unnamed.png")
       .setOpenLink(CardService.newOpenLink().setUrl("https://www.patreon.com/autolatex?source=docs"))
     )
     .addWidget(CardService.newDecoratedText()
