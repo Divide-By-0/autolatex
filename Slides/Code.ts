@@ -19,8 +19,7 @@ const IntegratedApp = {
   },
   getPageWidth: function () {
     return SlidesApp.getActivePresentation().getPageWidth();
-  },
-  undoImage: undoImage
+  }
 };
 
 
@@ -402,17 +401,6 @@ function placeImage(slideNum: number, textElement: GoogleAppsScript.Slides.Shape
 }
 
 /**
- * Given a size and a cursor right before an equation, call function to undo the image within delimeters. Returns success indicator.
- *
- * @param sizeRaw    Sidebar-selected size.
- * @public
- */
-
-function editEquations(sizeRaw: string, delimiter: string) {
-  return Common.editEquations(IntegratedApp, sizeRaw, delimiter);
-}
-
-/**
  * De-encode all equations
  * @public
  */
@@ -454,8 +442,17 @@ function removeAll(defaultDelimRaw: string) {
   return counter;
 }
 
-// See DerenderResult in Common for more info on return values
-function undoImage(defaultDelim: AutoLatexCommon.Delimiter) {
+/**
+ * Given a size and a cursor right before an equation, call function to undo the image within delimeters. Returns success indicator.
+ * See DerenderResult in Common for more info on return values
+ *
+ * @param {string} sizeRaw     Sidebar-selected size.
+ * @public
+ */
+
+function editEquations(sizeRaw: string, delimiter: string) {
+  const defaultDelim = Common.getDelimiters(delimiter);
+  Common.savePrefs(sizeRaw, delimiter);
   // var cursor = IntegratedApp.getActive().getCursor(); // * no cursor for slides => replace with highlighted textbox
   //* 1. check if selected element is image
   //* 2. get position of element

@@ -36,7 +36,6 @@ interface IntegratedApp {
   getBody(): GoogleAppsScript.Document.Body | GoogleAppsScript.Slides.Slide[];
   getActive(): GoogleAppsScript.Document.Document | GoogleAppsScript.Slides.Presentation;
   getPageWidth(): number;
-  undoImage(delim: Delimiter): DerenderResult;
 }
 
 /**
@@ -404,20 +403,6 @@ function sizeImage(app: IntegratedApp, paragraph: GoogleAppsScript.Document.Para
   }
   paragraph.getChild(childIndex).asInlineImage().setHeight(height);
   paragraph.getChild(childIndex).asInlineImage().setWidth(width);
-}
-
-/**
- * Given a size and a cursor right before an equation, call function to undo the image within delimeters. Returns success indicator.
- *
- * @param sizeRaw     Sidebar-selected size.
- * @public
- */
-function editEquations(app: IntegratedApp, sizeRaw: string, delimiter: string) {
-  const delim = getDelimiters(delimiter);
-  savePrefs(sizeRaw, delimiter);
-  const toReturn = app.undoImage(delim);
-  console.log("Undoimage return flag: " + toReturn);
-  return toReturn;
 }
 
 /**
