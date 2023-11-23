@@ -360,7 +360,7 @@ function placeImage(slideNum: number, textElement: GoogleAppsScript.Slides.Shape
 
   // console.log("title alt text: " + renderer[2] + equationOriginal + "#" + delim[6])
 
-  var obj = [red, green, blue, renderer[2] + equationOriginal + "#" + delim[6]];
+  var obj = [red, green, blue, renderer[2] + equationOriginal + "#" + delim[6], textSize];
   var json = JSON.stringify(obj);
 
   if (textElement.getPageElementType() ===  SlidesApp.PageElementType.TABLE) {
@@ -425,7 +425,7 @@ function removeAll(defaultDelimRaw: string) {
       const positionY = image.getTop(); // returns vertical position
       const width = image.getWidth();
       const height = image.getHeight();
-      const [red, green, blue, origURL] = JSON.parse(image.getTitle());
+      const [red, green, blue, origURL, size] = JSON.parse(image.getTitle());
       const colors = [red, green, blue].map((x: string) => Number(x)) as [number, number, number];
       if (!origURL) continue;
       image.remove();
@@ -443,10 +443,15 @@ function removeAll(defaultDelimRaw: string) {
 
       const shape = slide.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
       const textRange = shape.getText();
-      textRange
+      
+      const textStyle = textRange
         .insertText(0, delim[0] + origEq + delim[1])
         .getTextStyle()
         .setForegroundColor(...colors);
+
+      if (size) {
+        textStyle.setFontSize(size);
+      }
 
       counter += 1;
     }
@@ -491,7 +496,9 @@ function undoImage(defaultDelim: AutoLatexCommon.Delimiter) {
 
       // image.setDescription('' + linkEquation[0])
       // debugLog("element in Link Equation is: " + linkEquation[0])
-      const [red, green, blue, origURL] = JSON.parse(image.getTitle());
+
+      // Note: size may be undefined if the equation was rendered with an older add-on version
+      const [red, green, blue, origURL, size] = JSON.parse(image.getTitle());
       const colors = [red, green, blue].map((x: string) => Number(x)) as [number, number, number];
 
       image.remove();
@@ -515,10 +522,15 @@ function undoImage(defaultDelim: AutoLatexCommon.Delimiter) {
 
       const shape = currentPage.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
       const textRange = shape.getText();
-      textRange
+
+      const textStyle = textRange
         .insertText(0, delim[0] + origEq + delim[1])
         .getTextStyle()
         .setForegroundColor(...colors);
+
+      if (size) {
+        textStyle.setFontSize(size);
+      }
       
       Common.debugLog("textRange: " + textRange + "type: " + typeof textRange);
       Common.debugLog(typeof textRange.insertText);
