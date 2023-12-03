@@ -13,5 +13,8 @@
     "copy-sidebar-js": "sed -i -e '/^<script>$/r Sidebar.js' -e '/^<script>$/,/^<\\/script>$/!b' -e '/^<script>$\\|^<\\/script>$/!d' SidebarJS.html"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "clasp": "^1.0.0"
+  }
 }
