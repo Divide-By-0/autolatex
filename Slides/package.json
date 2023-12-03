@@ -5,7 +5,7 @@
   "main": "Code.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "preclasp-push": "npm run build-sidebar-js && npm run copy-sidebar-js && node ../LibraryLinker.js link Slides",
+    "preclasp-push": "npm run build-sidebar-js && npm run copy-sidebar-js && node ../LibraryLinker.js link Slides $npm_config_common_version",
     "postclasp-push": "node ../LibraryLinker.js unlink Slides",
     "clasp-push": "clasp push",
     "build-types": "clasp-types -o ../types --client",
