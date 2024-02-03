@@ -16,11 +16,6 @@ declare namespace AutoLatexCommon {
 
         derenderEquation(origURL: string): {delim: Delimiter, origEq: string};
 
-        /**
-         * Given a size and a cursor right before an equation, call function to undo the image within delimeters. Returns success indicator.
-         */
-        editEquations(app: IntegratedApp, sizeRaw: string, delimiter: string): DerenderResult;
-
         encodeFlag(flag: number, renderCount: number): number;
 
         /**
@@ -93,8 +88,6 @@ declare namespace AutoLatexCommon {
         getPageWidth(): number;
 
         getUi(): GoogleAppsScript.Base.Ui;
-
-        undoImage(delim: Delimiter): DerenderResult;
 
     }
 

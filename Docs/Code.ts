@@ -7,7 +7,7 @@
 
 var DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
 
-const IntegratedApp = {
+const DocsApp = {
 	getUi: function(){
 		let activeUi = DocumentApp.getUi();
 		return activeUi;
@@ -23,8 +23,7 @@ const IntegratedApp = {
 	getPageWidth: function() {
 		let activeWidth = DocumentApp.getActiveDocument().getBody().getPageWidth();
 		return activeWidth;
-	},
-  undoImage
+	}
 };
 
 
@@ -36,7 +35,7 @@ const IntegratedApp = {
  *     running in, inspect e.authMode.
  */
 function onOpen(_e: object) {
-  IntegratedApp.getUi().createAddonMenu().addItem("Start", "showSidebar").addToUi();
+  DocsApp.getUi().createAddonMenu().addItem("Start", "showSidebar").addToUi();
 }
 
 /**
@@ -57,7 +56,7 @@ function onInstall(e: object) {
  */
 function showSidebar() {
   const ui = HtmlService.createTemplateFromFile("Sidebar").evaluate().setTitle("Auto-LaTeX Equations").setSandboxMode(HtmlService.SandboxMode.IFRAME); // choose mode IFRAME which is fastest option
-  IntegratedApp.getUi().showSidebar(ui);
+  DocsApp.getUi().showSidebar(ui);
 }
 
 /**
@@ -342,24 +341,13 @@ function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex:
 
   size = Math.round(height * multiple);
   Common.reportDeltaTime(595);
-  Common.sizeImage(IntegratedApp, paragraph, childIndex + 1, size, Math.round(width * multiple));
+  Common.sizeImage(DocsApp, paragraph, childIndex + 1, size, Math.round(width * multiple));
   defaultSize = oldSize;
   return [defaultSize, null];
 }
 
-/**
- * Given a size and a cursor right before an equation, call function to undo the image within delimeters. Returns success indicator.
- *
- * @param {string} sizeRaw     Sidebar-selected size.
- * @public
- */
-
-function editEquations(sizeRaw: string, delimiter: string) {
-  return Common.editEquations(IntegratedApp, sizeRaw, delimiter);
-}
-
 function getBodyFromIndex(index: number) {
-  const doc = IntegratedApp.getActive();
+  const doc = DocsApp.getActive();
   const p = doc.getBody().getParent();
   const all = p.getNumChildren();
   Common.assert(index < all, "index < all");
@@ -380,7 +368,7 @@ function removeAll(defaultDelimRaw: string) {
   let counter = 0;
   const defaultDelim = Common.getDelimiters(defaultDelimRaw);
   
-  for (var index = 0; index < IntegratedApp.getBody().getParent().getNumChildren(); index++) {
+  for (var index = 0; index < DocsApp.getBody().getParent().getNumChildren(); index++) {
     const body = getBodyFromIndex(index);
     const img = body?.getImages(); //places all InlineImages from the active document into the array img
     for (let i = 0; i < (img?.length || 0); i++) {
@@ -409,8 +397,17 @@ function removeAll(defaultDelimRaw: string) {
   return counter;
 }
 
-// See DerenderResult in Common for more info on return values
-function undoImage(defaultDelim: AutoLatexCommon.Delimiter) {
+/**
+ * Given a size and a cursor right before an equation, call function to undo the image within delimeters. Returns success indicator.
+ * See DerenderResult in Common for more info on return values
+ *
+ * @param {string} sizeRaw     Sidebar-selected size.
+ * @public
+ */
+
+function editEquations(sizeRaw: string, delimiter: string) {
+  const defaultDelim = Common.getDelimiters(delimiter);
+  Common.savePrefs(sizeRaw, delimiter);
   const cursor = DocumentApp.getActiveDocument().getCursor();
   if (cursor) {
     // Attempt to insert text at the cursor position. If the insertion returns null, the cursor's
@@ -421,6 +418,9 @@ function undoImage(defaultDelim: AutoLatexCommon.Delimiter) {
       console.log("Valid cursor.");
 
       const position = cursor.getOffset(); //offset
+      if (position >= element.getNumChildren()) {
+        return Common.DerenderResult.CursorNotFound;
+      }
       //element.getChild(position).removeFromParent();  //SUCCESSFULLY REMOVES IMAGE FROM PARAGRAPH
       // console.log(element.getAllContent(), element.type())
       const image = element.getChild(position).asInlineImage();

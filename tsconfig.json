@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    "moduleDetection": "force",
     "typeRoots": ["./node_modules/@types", "./types"],
     "experimentalDecorators": true,
     "module": "CommonJS",
