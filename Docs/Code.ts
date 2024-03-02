@@ -55,7 +55,10 @@ function onInstall(e: object) {
  * Opens a sidebar in the document containing the add-on's user interface.
  */
 function showSidebar() {
-  const ui = HtmlService.createTemplateFromFile("Sidebar").evaluate().setTitle("Auto-LaTeX Equations").setSandboxMode(HtmlService.SandboxMode.IFRAME); // choose mode IFRAME which is fastest option
+  const ui = HtmlService.createTemplateFromFile("Sidebar").evaluate()
+    .setTitle("Auto-LaTeX Equations")
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME) // choose mode IFRAME which is fastest option
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL); // allow third party Docs clients
   DocsApp.getUi().showSidebar(ui);
 }
 
