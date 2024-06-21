@@ -1,3 +1,5 @@
+/// <reference path="../types/common-types/index.d.ts" />
+
 function onWorkspaceAddonHomepageOpen() {
   return generateWorkspaceHomepage("Idle");
 }
@@ -8,7 +10,7 @@ function generateWorkspaceHomepage(status: string, error: string | null = null) 
     .addWidget(CardService.newTextParagraph().setText("Replace all valid mathematical equations with high-quality LaTeX rendered images.<br>Remember to wrap all latex in $$ ... $$."))
     .addWidget(CardService.newTextParagraph().setText("For example, $$3^{4^5} + \\frac{1}{2}$$ would be a valid equation. Try using this sample to render your first equation!"));
 
-  const prefs = getPrefs();
+  const prefs = Common.getPrefs();
 
   const sizes = [
     ["Automatic", "smart"],
