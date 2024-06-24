@@ -1,0 +1,54 @@
+{
+  "timeZone": "America/Los_Angeles",
+  "dependencies": {
+    "enabledAdvancedServices": [
+      {
+        "userSymbol": "Analytics",
+        "serviceId": "analytics",
+        "version": "v3"
+      }
+    ],
+    "libraries": [
+      {
+        "userSymbol": "Common",
+        "version": "0",
+        "libraryId": "",
+        "developmentMode": true
+      }
+    ]
+  },
+  "addOns": {
+    "common": {
+      "homepageTrigger": {
+        "runFunction": "onWorkspaceAddonHomepageOpen",
+        "enabled": true
+      },
+      "layoutProperties": {
+        "primaryColor": "#4889f0",
+        "secondaryColor": "#4889f0"
+      },
+      "name": "Auto-LaTeX Equations",
+      "logoUrl": "https://i.ibb.co/GC29hdn/Docs-to-Latex-Logo-with-Transparent-Border.png",
+      "openLinkUrlPrefixes": [
+        "https://www.patreon.com/autolatex",
+        "https://www.redbubble.com/shop/ap/140480196",
+        "https://sites.google.com/site/autolatexequations/",
+        "https://www.codecogs.com/eqnedit.php",
+        "https://www.autolatex.com/",
+        "https://workspace.google.com/marketplace/app/autolatex_equations/850293439076",
+        "https://www.facebook.com/autolatex/",
+        "https://lipoker.io/"
+      ]
+    },
+    "docs": {},
+    "sheets": {}
+  },
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/documents.currentonly",
+    "https://www.googleapis.com/auth/spreadsheets.currentonly"
+  ],
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8"
+}

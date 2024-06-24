@@ -29,6 +29,7 @@
   "workspaces": [
     "Common",
     "Docs",
-    "Slides"
+    "Slides",
+    "Workspace"
   ]
 }
