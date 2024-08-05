@@ -3,9 +3,12 @@
   "version": "1.0.0",
   "description": "Typescript definitions for Common",
   "main": "Code.js",
-  "author": "",
-  "license": "MIT",
   "scripts": {},
+  "dependencies": {
+    "esbuild": "^0.23.0",
+    "mathjax-full": "^3.2.2"
+  },
   "devDependencies": {},
+  "license": "MIT",
   "types": "./index.d.ts"
 }

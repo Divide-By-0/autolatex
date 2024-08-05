@@ -1,6 +1,10 @@
 // Type definitions for Common
 // Generated using clasp-types
 
+/// <reference types="esbuild" />
+
+/// <reference types="mathjax-full" />
+
 declare namespace AutoLatexCommon {
 
     /**
@@ -42,7 +46,7 @@ declare namespace AutoLatexCommon {
          */
         reEncode(equation: string): string;
 
-        renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number): {equation: string, renderer: Renderer, rendererType: string, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, worked: number};
+        renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number): {editorOriginalEqUrl: string, equation: string, imageBlob: GoogleAppsScript.Base.Blob, isCodecogsError: boolean, renderer: Renderer};
 
         reportDeltaTime(line?: number, forcePrint?: string): number;
 
@@ -57,7 +61,7 @@ declare namespace AutoLatexCommon {
 
         capableRenderers: 8;
 
-        invalidEquationHashCodecogsFirst50: "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD%u0315%uFFFD3%";
+        invalidEquationHashesCodecogs: Set;
 
     }
 
@@ -98,19 +102,17 @@ declare namespace AutoLatexCommon {
      */
     export interface Renderer {
 
-        0: number;
+        editor: string;
 
-        1: string;
+        editorEnd: string;
 
-        2: string;
+        image: string;
 
-        3: string;
+        inlineEnd: string;
 
-        4: string;
+        inlineStart: string;
 
-        5: string;
-
-        6: string;
+        name: string;
 
     }
 
@@ -134,7 +136,7 @@ declare namespace AutoLatexCommon {
 
     export const capableRenderers: 8;
 
-    export const invalidEquationHashCodecogsFirst50: "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD%u0315%uFFFD3%";
+    export const invalidEquationHashesCodecogs: Set;
 
 }
 
