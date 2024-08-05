@@ -3,9 +3,12 @@
   "version": "1.0.0",
   "description": "",
   "main": "Code.js",
-  "author": "",
-  "license": "ISC",
   "scripts": {
+    "build-mathjax": "node mathjax/build.mjs",
     "build-types": "clasp-types -o ../types -p AutoLatexCommon -n Common"
+  },
+  "dependencies": {
+    "esbuild": "^0.23.0",
+    "mathjax-full": "^3.2.2"
   }
 }
