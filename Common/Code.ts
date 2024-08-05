@@ -282,7 +282,9 @@ function renderEquation(equationOriginal: string, quality: number, delim: Delimi
         equation = equation.split("%A0").join("%0D"); //.replace("%5C%5C", "%0D") .replace("%C2%AD", "%0D")
       } else if (rendererType == "Codecogs") {
         // console.log("Used Codecogs", equation, equation.split("%5C%5C%5C%5C").join("%5C%5C"))
-        equation = equation.split("%5C%5C%5C%5C").join("%5C%5C"); //.replace("%A0", "%0D") .replace("%C2%AD", "%0D")
+        equation = equation
+          .split("%5C%5C%5C%5C").join("%5C%5C")
+          .replace("~", "%5C,%5C,"); // https://github.com/Divide-By-0/autolatex/issues/27
       } else if (rendererType == "Sciweavers") {
         // console.log("Used Sciweavers", equation, equation.split("%5C%5C%5C%5C").join("%5C%5C"))
         equation = equation.split("%5C%5C%5C%5C").join("%5C%5C"); //.replace("%A0", "%0D") .replace("%C2%AD", "%0D")
