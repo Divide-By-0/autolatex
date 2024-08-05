@@ -6,6 +6,18 @@
 /* exported onOpen, showSidebar, replaceEquations */
 
 var DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
+// number of tries to insert the equation image
+const INSERT_IMAGE_TRIES = 2;
+// number of tries to set the link on the image
+const SET_IMAGE_LINK_TRIES = 3;
+// image scale divisors for each renderer
+const IMAGE_SCALE_DIVISORS = {
+  "Texrendr": 42.0,
+  "Roger's renderer": 200.0,
+  "Codecogs": 100.0,
+  "Sciweavers": 98.0,
+  "Sciweavers_old": 76.0
+};
 
 const DocsApp = {
 	getUi: function(){
@@ -196,63 +208,56 @@ function placeImage(startElement: GoogleAppsScript.Document.RangeElement, start:
     return [defaultSize, startElement];
   }
 
-  let { resp, renderer, rendererType, worked, equation } = Common.renderEquation(equationOriginal, quality, delim, isInline, 0, 0, 0); 
-  if (worked > Common.capableRenderers) return [-100000, null];
+  const renderResult = Common.renderEquation(equationOriginal, quality, delim, isInline, 0, 0, 0); 
+  if (!renderResult) return [-100000, null];
+  const { imageBlob, renderer, editorOriginalEqUrl, isCodecogsError } = renderResult;
+  
   // SAVING FORMATTING
   Common.reportDeltaTime(511);
-  if (escape(resp.getBlob().getDataAsString()).substring(0, 50) == Common.invalidEquationHashCodecogsFirst50) {
-    worked = 1; //assumes codecogs is 1
-    renderer = Common.getRenderer(worked);
-    rendererType = renderer[5];
-  }
-  Common.reportDeltaTime(517);
   const textCopy = textElement.asText().copy();
   let endLimit = end;
   if (text.length - 1 < endLimit) endLimit = text.length - 1;
   textCopy.asText().editAsText().deleteText(0, endLimit); // the copy only has the stuff after the equation
   Common.reportDeltaTime(522);
   textElement.editAsText().deleteText(start, text.length - 1); // from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
-  const logoBlob = resp.getBlob();
   Common.reportDeltaTime(526);
 
-  try {
-    paragraph.insertInlineImage(childIndex + 1, logoBlob); // TODO ISSUE: sometimes fails because it times out and yeets
-    const returnParams = repairImage(paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
-    return returnParams;
-  } catch (err) {
-    console.log("Could not insert image try 1");
-    console.error(err);
+  for (let i = 0; i < INSERT_IMAGE_TRIES; i++) {
+    try {
+      paragraph.insertInlineImage(childIndex + 1, imageBlob); // TODO ISSUE: sometimes fails because it times out and yeets
+      const returnParams = repairImage(paragraph, childIndex, size, defaultSize, renderer, textCopy, editorOriginalEqUrl, isCodecogsError);
+      return returnParams;
+    } catch (err) {
+      console.log(`Could not insert image try ${i + 1}`);
+      console.error(err);
+
+      // wait 1 second before trying again
+      Utilities.sleep(1000);
+    }
   }
-  Common.reportDeltaTime(536);
-  try {
-    Utilities.sleep(1000);
-    paragraph.insertInlineImage(childIndex + 1, logoBlob); // TODO ISSUE: sometimes fails because it times out and yeets
-    const returnParams = repairImage(paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
-    return returnParams;
-  } catch (err) {
-    console.log("Could not insert image try 2 after 1000ms");
-    console.error(err);
-  }
+
   throw new Error("Could not insert image at childindex!");
 }
 
-function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, size:  number, defaultSize: number, renderer: AutoLatexCommon.Renderer, delim: AutoLatexCommon.Delimiter, textCopy: GoogleAppsScript.Document.Text, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, rendererType: string, equation: string, equationOriginal: string): [number, null] {
-  let attemptsToSetImageUrl = 3;
+function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, size:  number, defaultSize: number, renderer: AutoLatexCommon.Renderer, textCopy: GoogleAppsScript.Document.Text, editorOriginalEqUrl: string, isCodecogsError: boolean): [number, null] {
   Common.reportDeltaTime(552); // 3 seconds!! inserting an inline image takes time
-  while (attemptsToSetImageUrl > 0) {
+
+  // try to set the link on the image (with the derendering info)
+  for (let i = 0; i < SET_IMAGE_LINK_TRIES; i++) {
     try {
-      paragraph.getChild(childIndex + 1).asInlineImage().setLinkUrl(renderer[2] + equationOriginal + "#" + delim[6]); //added % delim 6 to keep track of which delimiter was used to render
+      paragraph.getChild(childIndex + 1).asInlineImage().setLinkUrl(editorOriginalEqUrl); //added % delim 6 to keep track of which delimiter was used to render
+
+      if (i > 0) {
+        console.log(`At ${i + 1} attemptsToSetImageUrls of failing to get child and link, ${editorOriginalEqUrl}`);
+      }
       break;
     } catch (err) {
       console.log("Couldn't insert child index!");
       console.log("Next child not found!");
-      --attemptsToSetImageUrl;
-    }
-  }
-  if (attemptsToSetImageUrl < 3) {
-    console.log("At ", attemptsToSetImageUrl, " attemptsToSetImageUrls of failing to get child and link , ", equation);
-    if (attemptsToSetImageUrl == 0) {
-      throw new Error("Couldn't get equation child!"); // of image immediately after inserting
+
+      if (i === SET_IMAGE_LINK_TRIES - 1) {
+        throw new Error("Couldn't get equation child!"); // of image immediately after inserting
+      }
     }
   }
 
@@ -265,32 +270,15 @@ function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex:
   //SET PROPERTIES OF IMAGE (Height, Width)
   const oldSize = size; // why use oldsize instead of new size
 
-  if (escape(resp.getBlob().getDataAsString()).substring(0, 50) == Common.invalidEquationHashCodecogsFirst50 || (size > 10 && width == 126 && height == 24)) {
+  if (isCodecogsError || (size > 10 && width == 126 && height == 24)) {
     size *= 5; // make codecogs errors readable, size constraint just in case some small equation is 126x24 as well
   }
-  // console.log(rendererType, rendererType.valueOf(), "Texrendr".valueOf(), rendererType.valueOf() === "Codecogs".valueOf(), rendererType.valueOf() == "Codecogs".valueOf(), rendererType === "Codecogs", rendererType.valueOf() === "Texrendr".valueOf(), rendererType.valueOf() == "Texrendr".valueOf(), rendererType === "Texrendr")
-  // note that valueOf here is not needed, and neither is === => removing both keeps trues true and falses false in V8.
+  
 
   // if(rendererType.valueOf() === "Texrendr".valueOf())  //Old TexRendr
   // 	size = Math.round(size * height / 174);
-  let multiple = size / 100.0;
-  if (rendererType.valueOf() === "Texrendr".valueOf())
-    //TexRendr
-    multiple = size / 42.0;
-  else if (rendererType.valueOf() === "Roger's renderer".valueOf())
-    //Rogers renderer
-    multiple = size / 200.0;
-  else if (rendererType.valueOf() === "Codecogs".valueOf())
-    //CodeCogs, other
-    multiple = size / 100.0;
-  else if (rendererType.valueOf() === "Sciweavers".valueOf())
-    //Scieweavers
-    multiple = size / 98.0;
-  else if (rendererType.valueOf() === "Sciweavers_old".valueOf())
-    //C [75.4, 79.6] on width and height ratio
-    multiple = size / 76.0;
-  //CodeCogs, other
-  else multiple = size / 100.0;
+
+  const multiple = size / (IMAGE_SCALE_DIVISORS[renderer.name] ?? 100.0);
 
   size = Math.round(height * multiple);
   Common.reportDeltaTime(595);
