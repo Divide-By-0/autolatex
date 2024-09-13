@@ -10,7 +10,7 @@
     "clasp-push": "clasp push",
     "build-types": "clasp-types -o ../types --client",
     "build-sidebar-js": "tsc --preserveConstEnums Sidebar.ts &> /dev/null || true",
-    "copy-sidebar-js": "sed -i -e '/^<script>$/r Sidebar.js' -e '/^<script>$/,/^<\\/script>$/!b' -e '/^<script>$\\|^<\\/script>$/!d' SidebarJS.html"
+    "copy-sidebar-js": "sed -i '' -e '/^<script>$/r Sidebar.js' -e '/^<script>$/,/^<\\/script>$/!b' -e '/^<script>$\\|^<\\/script>$/!d' SidebarJS.html"
   },
   "author": "",
   "license": "ISC"
