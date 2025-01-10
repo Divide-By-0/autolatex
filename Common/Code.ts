@@ -204,10 +204,12 @@ function getStyle(equationStringEncoded: string, quality: number, renderer: Rend
   const equation: string[] = [];
   equationStringEncoded = equationStringEncoded;
   reportDeltaTime(307);
-  if (isInline) {
-    equationStringEncoded = renderer[3] + "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D" + equationStringEncoded + renderer[4] + "%7D";
-  } else {
-    equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D" + equationStringEncoded + "%7D";
+  if (renderer[5] !== "Texrendr") {
+    if (isInline) {
+      equationStringEncoded = renderer[3] + "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D" + equationStringEncoded + renderer[4] + "%7D";
+    } else {
+      equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D" + equationStringEncoded + "%7D";
+    }
   }
   debugLog("textColor: " + red + ", " + green + ", " + blue);
   debugLog("equationStringEncoded: " + equationStringEncoded);
