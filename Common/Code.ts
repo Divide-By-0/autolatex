@@ -2,7 +2,7 @@ const DEBUG = true; //doing ctrl + m to get key to see errors is still needed; D
 
 /**
  * An array which defines a renderer
- * 
+ *
  * Note: clasp-types is not compatible with type aliases, so this is defined as an interface instead.
  * @public
  */
@@ -14,7 +14,16 @@ interface Renderer {
   4: string;
   5: string;
   6: string;
-};
+}
+
+/**
+ * Options for rendering. Currently not actually used in Common.renderEquation
+ *
+ * @public
+ */
+interface RenderOptions {
+  quality: number, size: number, defaultSize: number, inline: boolean , delim: Delimiter
+}
 
 /**
  * @public

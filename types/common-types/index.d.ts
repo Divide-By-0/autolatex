@@ -92,6 +92,23 @@ declare namespace AutoLatexCommon {
     }
 
     /**
+     * Options for rendering. Currently not actually used in Common.renderEquation
+     */
+    export interface RenderOptions {
+
+        defaultSize: number;
+
+        delim: Delimiter;
+
+        inline: boolean;
+
+        quality: number;
+
+        size: number;
+
+    }
+
+    /**
      * An array which defines a renderer
      * 
      * Note: clasp-types is not compatible with type aliases, so this is defined as an interface instead.

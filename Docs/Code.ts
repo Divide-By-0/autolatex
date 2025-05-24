@@ -7,6 +7,23 @@
 
 var DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
 
+const enum DocsEquationRenderStatus {
+  // error types
+  NoDocument,
+  NoStartDelimiter,
+  NoEndDelimiter,
+  EmptyEquation,
+  AllRenderersFailed,
+  
+  Success
+}
+
+interface DocsEquationRenderResult {
+  status: DocsEquationRenderStatus,
+  equationSize?: number,
+  nextStartElement?: GoogleAppsScript.Document.RangeElement
+}
+
 const DocsApp = {
 	getUi: function(){
 		let activeUi = DocumentApp.getUi();
@@ -92,7 +109,6 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
   const delim = Common.getDelimiters(delimiter);
   Common.savePrefs(sizeRaw, delimiter);
   let c = 0; //counter
-  let defaultSize = 11;
   let allEmpty = 0;
   Common.reportDeltaTime(146);
   let body: GoogleAppsScript.Document.Document;
@@ -102,27 +118,54 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
     console.error(error);
     return Common.encodeFlag(-1, 0);
   }
+  
+  const baseRenderOptions: AutoLatexCommon.RenderOptions = {
+    quality,
+    size,
+    defaultSize: 11,
+    inline: isInline,
+    delim
+  };
 
-  let childCount = body.getBody().getParent().getNumChildren();
+  const childCount = body.getBody().getParent().getNumChildren();
   Common.reportDeltaTime(156);
-  for (var index = 0; index < childCount; index++) {
+  for (let index = 0; index < childCount; index++) {
     let failedStartElemIfIsEmpty = null;
     while (true) {
       // prevFailedStartElemIfIsEmpty is here so when $$$$ fails again and again, it doesn't get stuck there and moves on.
-      let [gotSize, returnedFailedStartElemIfIsEmpty] = findPos(index, delim, quality, size, defaultSize, isInline, failedStartElemIfIsEmpty); //or: "\\\$\\\$", "\\\$\\\$"
-      allEmpty = returnedFailedStartElemIfIsEmpty ? allEmpty + 1 : 0;
-      failedStartElemIfIsEmpty = returnedFailedStartElemIfIsEmpty;
-
+      const {
+        status,
+        equationSize,
+        nextStartElement
+      } = findPos(index, baseRenderOptions, failedStartElemIfIsEmpty); //or: "\\\$\\\$", "\\\$\\\$"
+      
+      if (nextStartElement) failedStartElemIfIsEmpty = nextStartElement;
+      // if we found an actual equation, update the default size
+      if (equationSize) baseRenderOptions.defaultSize = equationSize;
+        
+      // count consecutive empty equations
+      if (status == DocsEquationRenderStatus.EmptyEquation) {
+        allEmpty++;
+      } else {
+        allEmpty = 0;
+      }
+      
       if (allEmpty > 10) break; //Assume we quit on 10 consecutive empty equations.
-
-      if (gotSize == -100000)
-        // means all renderers didn't return/bugged out.
-        return Common.encodeFlag(-2, c); // instead, return pair of number and bool flag in list but whatever
-
-      if (gotSize == 0) break; // finished with renders in this section
-
-      defaultSize = gotSize;
-      c = returnedFailedStartElemIfIsEmpty ? c : c + 1; // # of equations += 1 except empty equations
+      
+      // quit if all renderers failed
+      if (status == DocsEquationRenderStatus.AllRenderersFailed) {
+        return Common.encodeFlag(-2, c)
+      }
+      
+      // error status - move on to the next section
+      // note: EmptyEquation is not an error status
+      if (status == DocsEquationRenderStatus.NoDocument || status == DocsEquationRenderStatus.NoStartDelimiter || status == DocsEquationRenderStatus.NoEndDelimiter) {
+        break;
+      }
+      
+      if (status != DocsEquationRenderStatus.EmptyEquation) {
+        c++;
+      }
       console.log("Rendered equations: " + c);
     }
   }
@@ -142,43 +185,57 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
 					1 if eqn is "" and 0 if not. Assume we close on 4 consecutive empty ones.
 */
 
-function findPos(index: number, delim: AutoLatexCommon.Delimiter, quality: number, size: number, defaultSize: number, isInline: boolean, prevFailedStartElemIfIsEmpty = null): [number, GoogleAppsScript.Document.RangeElement | null] {
+function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, prevFailedStartElemIfIsEmpty = null): DocsEquationRenderResult {
   Common.debugLog("Checking document section index # ", index);
   Common.reportDeltaTime(195);
   const docBody = getBodyFromIndex(index);
   if (docBody == null) {
-    return [0, null];
+    return {
+      status: DocsEquationRenderStatus.NoDocument
+    };
   }
-  let startElement = docBody.findText(delim[2]);
+  let startElement = docBody.findText(renderOptions.delim[2]);
   if (prevFailedStartElemIfIsEmpty) {
-    startElement = docBody.findText(delim[2], prevFailedStartElemIfIsEmpty);
+    startElement = docBody.findText(renderOptions.delim[2], prevFailedStartElemIfIsEmpty);
   }
-  if (startElement == null) return [0, null]; //didn't find first delimiter
+  if (startElement == null) {
+    return {
+      status: DocsEquationRenderStatus.NoStartDelimiter
+    };
+  }
   const placeHolderStart = startElement.getStartOffset(); //position of image insertion
 
-  const endElement = docBody.findText(delim[3], startElement);
-  if (endElement == null) return [0, null]; //didn't find end delimiter (maybe make error different?)
+  const endElement = docBody.findText(renderOptions.delim[3], startElement);
+  // could not find the ending delimiter after the start
+  if (endElement == null) {
+    return {
+      status: DocsEquationRenderStatus.NoEndDelimiter
+    };
+  }
   const placeHolderEnd = endElement.getEndOffsetInclusive(); //text between placeHolderStart and placeHolderEnd will be permanently deleted
-  Common.debugLog(delim[2], " single escaped delimiters ", placeHolderEnd - placeHolderStart, " characters long");
+  Common.debugLog(renderOptions.delim[2], " single escaped delimiters ", placeHolderEnd - placeHolderStart, " characters long");
 
   Common.reportDeltaTime(214);
   if (placeHolderEnd - placeHolderStart == 2.0) {
     // empty equation
     console.log("Empty equation! In index " + index + " and offset " + placeHolderStart);
-    return [defaultSize, endElement]; // default behavior of placeImage
+    
+    return {
+      // start from the end element next time to avoid an infinite loop
+      nextStartElement: endElement,
+      status: DocsEquationRenderStatus.EmptyEquation
+    };
   }
 
-  return placeImage(startElement, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline);
+  return placeImage(startElement, placeHolderStart, placeHolderEnd, renderOptions);
 }
 
 
-function getEquation(paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, start: number, end: number, delimiters: AutoLatexCommon.Delimiter) {
+function getEquation(textElement: GoogleAppsScript.Document.Text, start: number, end: number, delimiters: AutoLatexCommon.Delimiter) {
   const equationOriginal = [];
   Common.reportDeltaTime(284);
-  Common.debugLog("See text", paragraph.getChild(childIndex).asText().getText(), paragraph.getChild(childIndex).asText().getText().length);
-  const equation = paragraph
-    .getChild(childIndex)
-    .asText()
+  Common.debugLog("See text", textElement.getText(), textElement.getText().length);
+  const equation = textElement
     .getText()
     .substring(start + delimiters[4], end - delimiters[4] + 1);
     Common.debugLog("See equation", equation);
@@ -190,19 +247,17 @@ function getEquation(paragraph: GoogleAppsScript.Document.Paragraph, childIndex:
 }
 
 //retrieve size from text
-function setSize(size: number, defaultSize: number, paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, start: number) {
+function setSize(size: number, defaultSize: number, textElement: GoogleAppsScript.Document.Text, start: number) {
   //GET SIZE
   let newSize = size;
   if (size == 0) {
     try {
-      newSize = paragraph
-        .getChild(childIndex)
+      newSize = textElement
         .asText()
         .editAsText()
         .getFontSize(start + 3); //Fix later: Change from 3 to 1
     } catch (err) {
-      newSize = paragraph
-        .getChild(childIndex)
+      newSize = textElement
         .asText()
         .editAsText()
         .getFontSize(start + 1); //Fix later: Change from 3 to 1
@@ -230,7 +285,7 @@ function setSize(size: number, defaultSize: number, paragraph: GoogleAppsScript.
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
 
-function placeImage(startElement: GoogleAppsScript.Document.RangeElement, start: number, end: number, quality: number, size: number, defaultSize: number, delim: AutoLatexCommon.Delimiter, isInline: boolean): [number, GoogleAppsScript.Document.RangeElement | null] {
+function placeImage(startElement: GoogleAppsScript.Document.RangeElement, start: number, end: number, renderOptions: AutoLatexCommon.RenderOptions): DocsEquationRenderResult {
   Common.reportDeltaTime(411);
   Common.reportDeltaTime(413);
   // GET VARIABLES
@@ -238,16 +293,23 @@ function placeImage(startElement: GoogleAppsScript.Document.RangeElement, start:
   const text = textElement.getText();
   const paragraph = textElement.getParent().asParagraph();
   const childIndex = paragraph.getChildIndex(textElement); //gets index of found text in paragaph
-  size = setSize(size, defaultSize, paragraph, childIndex, start);
-  const equationOriginal = getEquation(paragraph, childIndex, start, end, delim);
+  const size = setSize(renderOptions.size, renderOptions.defaultSize, textElement, start);
+  const equationOriginal = getEquation(textElement, start, end, renderOptions.delim);
 
   if (equationOriginal == "") {
     console.log("No equation but undetected start and end as ", start, " ", end);
-    return [defaultSize, startElement];
+    
+    return {
+      status: DocsEquationRenderStatus.EmptyEquation,
+      // TODO: this _should_ be impossible - empty equations should be detected in findPos()
+      nextStartElement: startElement
+    };
   }
 
-  let { resp, renderer, rendererType, worked, equation } = Common.renderEquation(equationOriginal, quality, delim, isInline, 0, 0, 0); 
-  if (worked > Common.capableRenderers) return [-100000, null];
+  let { resp, renderer, rendererType, worked, equation } = Common.renderEquation(equationOriginal, renderOptions.quality, renderOptions.delim, renderOptions.inline, 0, 0, 0); 
+  if (worked > Common.capableRenderers) return {
+    status: DocsEquationRenderStatus.AllRenderersFailed
+  };
   // SAVING FORMATTING
   Common.reportDeltaTime(511);
   if (escape(resp.getBlob().getDataAsString()).substring(0, 50) == Common.invalidEquationHashCodecogsFirst50) {
@@ -264,29 +326,24 @@ function placeImage(startElement: GoogleAppsScript.Document.RangeElement, start:
   textElement.editAsText().deleteText(start, text.length - 1); // from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
   const logoBlob = resp.getBlob();
   Common.reportDeltaTime(526);
+  
+  // try inserting twice
+  for (let tryNum = 1; tryNum <= 2; tryNum++) {
+    try {
+      paragraph.insertInlineImage(childIndex + 1, logoBlob); // TODO ISSUE: sometimes fails because it times out and yeets
+      return repairImage(paragraph, childIndex, size, renderOptions.defaultSize, renderer, renderOptions.delim, textCopy, resp, rendererType, equation, equationOriginal);
+    } catch (err) {
+      console.log(`Could not insert image try ${tryNum}`);
+      console.error(err);
+      
+      Utilities.sleep(1000);
+    }
+  }
 
-  try {
-    paragraph.insertInlineImage(childIndex + 1, logoBlob); // TODO ISSUE: sometimes fails because it times out and yeets
-    const returnParams = repairImage(paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
-    return returnParams;
-  } catch (err) {
-    console.log("Could not insert image try 1");
-    console.error(err);
-  }
-  Common.reportDeltaTime(536);
-  try {
-    Utilities.sleep(1000);
-    paragraph.insertInlineImage(childIndex + 1, logoBlob); // TODO ISSUE: sometimes fails because it times out and yeets
-    const returnParams = repairImage(paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
-    return returnParams;
-  } catch (err) {
-    console.log("Could not insert image try 2 after 1000ms");
-    console.error(err);
-  }
   throw new Error("Could not insert image at childindex!");
 }
 
-function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, size:  number, defaultSize: number, renderer: AutoLatexCommon.Renderer, delim: AutoLatexCommon.Delimiter, textCopy: GoogleAppsScript.Document.Text, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, rendererType: string, equation: string, equationOriginal: string): [number, null] {
+function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, size:  number, defaultSize: number, renderer: AutoLatexCommon.Renderer, delim: AutoLatexCommon.Delimiter, textCopy: GoogleAppsScript.Document.Text, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, rendererType: string, equation: string, equationOriginal: string): DocsEquationRenderResult {
   let attemptsToSetImageUrl = 3;
   Common.reportDeltaTime(552); // 3 seconds!! inserting an inline image takes time
   while (attemptsToSetImageUrl > 0) {
@@ -345,8 +402,11 @@ function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex:
   size = Math.round(height * multiple);
   Common.reportDeltaTime(595);
   Common.sizeImage(DocsApp, paragraph, childIndex + 1, size, Math.round(width * multiple));
-  defaultSize = oldSize;
-  return [defaultSize, null];
+  
+  return {
+    status: DocsEquationRenderStatus.Success,
+    equationSize: oldSize
+  };
 }
 
 function getBodyFromIndex(index: number) {
