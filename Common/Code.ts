@@ -228,13 +228,13 @@ function deEncode(equation: string) {
  * @param size                   The size of the text, whose neg/pos indicated whether the equation is inline or not.
  */
 
-function getStyle(equationStringEncoded: string, quality: number, renderer: Renderer, isInline: boolean, type: number, red: number, green: number, blue: number) {
+function getStyle(equationStringEncoded: string, renderer: Renderer, type: number, { inline, r: red, g: green, b: blue }: RenderOptions) {
   //ERROR?
   const equation: string[] = [];
-  equationStringEncoded = equationStringEncoded;
+
   reportDeltaTime(307);
   if (renderer[5] !== "Texrendr") {
-    if (isInline) {
+    if (inline) {
       equationStringEncoded = renderer[3] + "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D" + equationStringEncoded + renderer[4] + "%7D";
     } else {
       equationStringEncoded = "%7B%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D" + equationStringEncoded + "%7D";
@@ -285,8 +285,8 @@ function getKey() {
 /**
  * @public
  */
-function renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number) {
-  var equation = "";
+function renderEquation(equationOriginal: string, renderOptions: RenderOptions) {
+  let equation = "";
   let renderer: Renderer | null = null;
   let resp: GoogleAppsScript.URL_Fetch.HTTPResponse | null = null;
   let failure = 1;
@@ -306,7 +306,7 @@ function renderEquation(equationOriginal: string, quality: number, delim: Delimi
     try {
       renderer = getRenderer(worked);
       rendererType = renderer[5];
-      equation = getStyle(equationOriginal, quality, renderer, isInline, worked, red, green, blue);
+      equation = getStyle(equationOriginal, renderer, worked, renderOptions);
       // console.log(rendererType, "Texrendr", rendererType == "Texrendr")
       if (rendererType == "Texrendr") {
         // console.log("Used texrendr", equation, equation.replace("%5C%5C", "%0D"))
@@ -326,7 +326,7 @@ function renderEquation(equationOriginal: string, quality: number, delim: Delimi
       renderer[1] = renderer[1].split("EQUATION").join(equation);
       renderer[2] = renderer[2].split("FILENAME").join(getFilenameEncode(equation, 0)); // since mutating original object, important each is a new one
       debugLog("Link with equation", renderer[1]);
-      debugLog("Title Alt Text " + renderer[2] + equationOriginal + "#" + delim[6]);
+      debugLog("Title Alt Text " + renderer[2] + equationOriginal + "#" + renderOptions.delim[6]);
       debugLog("Cached equation: " + renderer[2] + renderer[6] + equation);
       reportDeltaTime(453);
       console.log("Fetching ", renderer[1], " and ", renderer[2] + renderer[6] + equation);

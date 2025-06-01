@@ -42,7 +42,7 @@ declare namespace AutoLatexCommon {
          */
         reEncode(equation: string): string;
 
-        renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number): {equation: string, renderer: Renderer, rendererType: string, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, worked: number};
+        renderEquation(equationOriginal: string, renderOptions: RenderOptions): {equation: string, renderer: Renderer, rendererType: string, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, worked: number};
 
         reportDeltaTime(line?: number, forcePrint?: string): number;
 
@@ -127,9 +127,11 @@ declare namespace AutoLatexCommon {
 
         delim: Delimiter;
 
+        g: number;
+
         inline: boolean;
 
-        quality: number;
+        r: number;
 
         size: number;
 
