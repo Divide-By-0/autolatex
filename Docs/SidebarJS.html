@@ -4,6 +4,69 @@
 /// <reference path="../types/docs-types/index.d.ts" />
 /// <reference path="../types/common-types/index.d.ts" />
 /// <reference lib="dom" />
+window.MathJax = {
+    loader: { load: ['tex-svg'] },
+    svg: {
+        fontCache: 'none'
+    },
+    startup: {
+        typeset: false // Prevent auto-typesetting
+    },
+    options: {
+        enableAssistiveMml: false
+    }
+};
+async function renderMathJaxEquation(renderOptions) {
+    // newline becomes \\
+    const equation = renderOptions.equation.replace(/\n|\r|\r\n/g, "\\\\");
+    const result = await window.MathJax.tex2svgPromise(equation, {
+        display: !renderOptions.inline,
+        em: renderOptions.size
+    });
+    const svg = result.querySelector("svg");
+    // calculate width and height by rendering this svg with the specified font size
+    svg.classList.add("mathjax-equation-hidden-render");
+    svg.style.fontSize = `${renderOptions.size}px`;
+    document.body.appendChild(svg);
+    const width = svg.clientWidth;
+    const height = svg.clientHeight;
+    svg.remove();
+    // set width/height explicitly on the svg
+    svg.setAttribute("width", `${width}px`);
+    svg.setAttribute("height", `${height}px`);
+    const styles = MathJax.svgStylesheet().outerHTML;
+    // create a URL for this svg
+    const svgString = new XMLSerializer().serializeToString(svg)
+        // inject css
+        .replace("<defs>", "<defs>" + styles);
+    const svgBlob = new Blob([svgString], {
+        type: "image/svg+xml"
+    });
+    const svgUrl = URL.createObjectURL(svgBlob);
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext("2d");
+    try {
+        // load this svg on an image
+        const svgImage = new Image(width, height);
+        svgImage.src = svgUrl;
+        // wait for load
+        await new Promise((resolve, reject) => {
+            svgImage.onload = () => resolve();
+            svgImage.onerror = err => reject(err);
+        });
+        // draw onto canvas
+        ctx.drawImage(svgImage, 0, 0);
+        const pngBlob = await canvas.convertToBlob({
+            type: "image/png"
+        });
+        console.log(URL.createObjectURL(pngBlob));
+        return pngBlob;
+    }
+    finally {
+        URL.revokeObjectURL(svgUrl);
+    }
+    // TODO: error handling
+}
 /**
  * On document load, assign click handlers to each button. Added document.ready.
  */
@@ -29,15 +92,15 @@ function runDotAnimation() {
     }, 300);
 }
 function getCurrentSettings() {
-    var sizeRaw = $('#size :selected').val();
-    var delimiter = $('#delimit :selected').val();
-    return { sizeRaw: sizeRaw, delimiter: delimiter };
+    const sizeRaw = $('#size :selected').val();
+    const delimiter = $('#delimit :selected').val();
+    return { sizeRaw, delimiter };
 }
 //$('donate_button').on("click",function(e){e.preventDefault;}); // for paypal to disable sidebar disappearing
 // Close the dropdown menu if the user clicks outside of it
 window.onclick = function (event) {
     if (!event.target.matches('.dropbtn')) {
-        document.querySelectorAll(".dropdown-content.show").forEach(function (openDropdown) { return openDropdown.classList.remove('show'); });
+        document.querySelectorAll(".dropdown-content.show").forEach(openDropdown => openDropdown.classList.remove('show'));
     }
 };
 $("#advanced").click(function (event) {
@@ -63,46 +126,47 @@ function loadPreferences(choicePrefs) {
     $('#edit-text').prop("disabled", false);
     $('#undo-all').prop("disabled", false);
 }
+function makeStatusText(successCount) {
+    if (successCount == 0)
+        return "Status: No equations rendered";
+    else if (successCount == 1)
+        return "Status: 1 equation rendered";
+    else
+        return `Status: ${successCount} equations rendered`;
+}
 function insertText() {
     this.disabled = true;
     $('#error').remove();
     $("#loading").html("Status: Loading");
-    var runDots = runDotAnimation();
-    var _a = getCurrentSettings(), sizeRaw = _a.sizeRaw, delimiter = _a.delimiter;
+    const runDots = runDotAnimation();
+    const { sizeRaw, delimiter } = getCurrentSettings();
     google.script.run
-        .withSuccessHandler(function (returnSuccess, element) {
-        $("#loading").html('');
-        clearInterval(runDots);
-        element.disabled = false;
-        console.log(returnSuccess);
-        var flag = 0;
-        var renderCount = 1;
-        if (returnSuccess < -1) {
-            flag = -2;
-            renderCount = -2 - returnSuccess;
-        }
-        else if (returnSuccess == -1) {
-            flag = -1;
-            renderCount = 0;
+        .withSuccessHandler(function ({ lastStatus, successCount, clientEquations }, element) {
+        if (lastStatus === 1 /* google.script.DocsEquationRenderStatus.ClientRender */) {
+            // we're not done yet - these equations need to be rendered on the client
+            Promise.all(clientEquations.map(async (c) => ({ options: c, result: await renderMathJaxEquation(c) })))
+                .then(rendered => {
+                const formData = new FormData();
+                for (const equation of rendered) {
+                    formData.append("");
+                }
+            });
         }
         else {
-            flag = 0;
-            renderCount = returnSuccess;
+            $("#loading").html('');
+            clearInterval(runDots);
+            element.disabled = false;
+            const statusText = makeStatusText(successCount);
+            if (lastStatus === 3 /* google.script.DocsEquationRenderStatus.NoDocument */)
+                showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", statusText);
+            else if (lastStatus === 0 /* google.script.DocsEquationRenderStatus.AllRenderersFailed */ && successCount > 0)
+                showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used.", statusText);
+            else if (lastStatus === 0 /* google.script.DocsEquationRenderStatus.AllRenderersFailed */ && successCount === 0)
+                showError("Sorry, likely (temporarily) unavailable commands (i.e. align, &) were used or the equation was too long.", statusText);
+            else {
+                $("#loading").html(statusText);
+            }
         }
-        // var flag = returnSuccess.flag
-        // var renderCount = returnSuccess.renderCount
-        if (flag == -1)
-            showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", "Status: " + renderCount + " equations replaced");
-        else if (flag == -2 && renderCount > 0)
-            showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used.", "Status: " + renderCount + " equations replaced");
-        else if (flag == -2 && renderCount == 0)
-            showError("Sorry, likely (temporarily) unavailable commands (i.e. align, &) were used or the equation was too long.", "Status: " + "no" + " equations replaced");
-        else if (flag == 0 && renderCount == 0)
-            $("#loading").html("Status: " + "No" + " equations rendered");
-        else if (flag == 0 && renderCount == 1)
-            $("#loading").html("Status: " + renderCount + " equation rendered");
-        else
-            $("#loading").html("Status: " + renderCount + " equations rendered");
     })
         .withFailureHandler(function (msg, element) {
         $("#loading").html('');
@@ -118,8 +182,8 @@ function editText() {
     this.disabled = true;
     $('#error').remove();
     $("#loading").html("Status: Loading");
-    var runDots = runDotAnimation();
-    var _a = getCurrentSettings(), sizeRaw = _a.sizeRaw, delimiter = _a.delimiter;
+    const runDots = runDotAnimation();
+    const { sizeRaw, delimiter } = getCurrentSettings();
     google.script.run
         .withSuccessHandler(function (returnSuccess, element) {
         $("#loading").html('');
@@ -165,8 +229,8 @@ function undoAll() {
     $("#loading").html("Status: Loading");
     //var div = $('<div id="clickmsg" class="text">' + 'Ctrl + q detected' + '</div>');
     //$('#button-bar').after(div);
-    var runDots = runDotAnimation();
-    var delimiter = getCurrentSettings().delimiter;
+    const runDots = runDotAnimation();
+    const { delimiter } = getCurrentSettings();
     google.script.run
         .withSuccessHandler(function (returnSuccess, element) {
         $("#loading").html('');
@@ -215,12 +279,12 @@ $(document).keydown(function (e) {
         $("#loading").html("Status: Loading");
         //var div = $('<div id="clickmsg" class="text">' + 'Ctrl + q detected' + '</div>');
         //$('#button-bar').after(div);
-        var runDots_1 = runDotAnimation();
-        var delimiter = getCurrentSettings().delimiter;
+        const runDots = runDotAnimation();
+        const { delimiter } = getCurrentSettings();
         google.script.run
             .withSuccessHandler(function (returnSuccess) {
             $("#loading").html('');
-            clearInterval(runDots_1);
+            clearInterval(runDots);
             $("#loading").html("Status: " + 0 + " equations de-rendered.");
             if (returnSuccess < 0) {
                 $("#loading").html("Status: " + "No" + " equations de-rendered.");
@@ -235,7 +299,7 @@ $(document).keydown(function (e) {
         })
             .withFailureHandler(function () {
             $("#loading").html('');
-            clearInterval(runDots_1);
+            clearInterval(runDots);
             showError("Please ensure cursor is inside document.", "Status: Error, please move cursor into document.");
         })
             .removeAll(delimiter);
@@ -254,3 +318,4 @@ function showError(msg1, msg2) {
     $('#loading').html(msg2);
 }
 </script>
+<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>

@@ -18,7 +18,25 @@ declare namespace google {
 
             removeAll(defaultDelimRaw: string): void //intrinsic;
 
-            replaceEquations(sizeRaw: string, delimiter: string): void //intrinsic;
+            replaceEquations(sizeRaw: string, delimiter: string, clientRender: boolean): void //union;
+
+        }
+
+        export const enum DocsEquationRenderStatus {
+
+            AllRenderersFailed,
+
+            ClientRender,
+
+            EmptyEquation,
+
+            NoDocument,
+
+            NoEndDelimiter,
+
+            NoStartDelimiter,
+
+            Success,
 
         }
 

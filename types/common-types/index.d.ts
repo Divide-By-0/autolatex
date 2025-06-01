@@ -61,6 +61,29 @@ declare namespace AutoLatexCommon {
 
     }
 
+    /**
+     * Options/state for rendering on the client - these are settings for a specific equation
+     */
+    export interface ClientRenderOptions {
+
+        b: number;
+
+        delim: Delimiter;
+
+        equation: string;
+
+        g: number;
+
+        inline: boolean;
+
+        r: number;
+
+        rangeId: string;
+
+        size: number;
+
+    }
+
     export interface Delimiter {
 
         0: string;
@@ -92,9 +115,13 @@ declare namespace AutoLatexCommon {
     }
 
     /**
-     * Options for rendering. Currently not actually used in Common.renderEquation
+     * Options for rendering on the server - these are general settings for all equations
      */
     export interface RenderOptions {
+
+        b: number;
+
+        clientRender: boolean;
 
         defaultSize: number;
 

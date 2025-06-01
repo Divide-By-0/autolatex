@@ -4,6 +4,82 @@
 /// <reference path="../types/common-types/index.d.ts" />
 /// <reference lib="dom" />
 
+window.MathJax = {
+ loader: {load: ['tex-svg']},
+ svg: {
+   fontCache: 'none'
+ },
+ startup: {
+   typeset: false // Prevent auto-typesetting
+ },
+  options: {
+    enableAssistiveMml: false
+  }
+};
+
+async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRenderOptions) {
+  // newline becomes \\
+  const equation = renderOptions.equation.replace(/\n|\r|\r\n/g, "\\\\");
+  
+  const result = await window.MathJax.tex2svgPromise(equation, {
+    display: !renderOptions.inline,
+    em: renderOptions.size
+  });
+  const svg: SVGSVGElement = result.querySelector("svg");
+  
+  // calculate width and height by rendering this svg with the specified font size
+  svg.classList.add("mathjax-equation-hidden-render")
+  svg.style.fontSize = `${renderOptions.size}px`;
+  document.body.appendChild(svg);
+  
+  const width = svg.clientWidth;
+  const height = svg.clientHeight;
+  
+  svg.remove();
+  
+  // set width/height explicitly on the svg
+  svg.setAttribute("width", `${width}px`);
+  svg.setAttribute("height", `${height}px`);
+  
+  const styles = MathJax.svgStylesheet().outerHTML;
+  
+  // create a URL for this svg
+  const svgString = new XMLSerializer().serializeToString(svg)
+    // inject css
+    .replace("<defs>", "<defs>" + styles);
+  const svgBlob = new Blob([svgString], {
+    type: "image/svg+xml"
+  });
+  
+  const svgUrl = URL.createObjectURL(svgBlob);
+  
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+  
+  try {
+    // load this svg on an image
+    const svgImage = new Image(width, height);
+    svgImage.src = svgUrl;
+    // wait for load
+    await new Promise<void>((resolve, reject) => {
+      svgImage.onload = () => resolve();
+      svgImage.onerror = err => reject(err);
+    });
+    
+    // draw onto canvas
+    ctx.drawImage(svgImage, 0, 0);
+    
+    const pngBlob = await canvas.convertToBlob({
+      type: "image/png"
+    });
+    console.log(URL.createObjectURL(pngBlob));
+    return pngBlob;
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+  // TODO: error handling
+}
+
 /**
  * On document load, assign click handlers to each button. Added document.ready.
  */
@@ -69,6 +145,12 @@ function loadPreferences(choicePrefs: {size: string, delim: string}) {
   $('#edit-text').prop("disabled", false);
   $('#undo-all').prop("disabled", false);
 }
+
+function makeStatusText(successCount: number) {
+  if (successCount == 0) return "Status: No equations rendered";
+  else if (successCount == 1) return "Status: 1 equation rendered";
+  else return `Status: ${successCount} equations rendered`;
+}
   
 function insertText(){ 
   this.disabled = true;
@@ -79,40 +161,33 @@ function insertText(){
 
   google.script.run
     .withSuccessHandler(
-      function(returnSuccess: number, element) {
-        $("#loading").html('');
-        clearInterval(runDots);
-        element.disabled = false;
-        console.log(returnSuccess);
-        let flag = 0;
-        let renderCount = 1;
-        if(returnSuccess < -1){
-          flag = -2;
-          renderCount = -2 - returnSuccess;
+      function ({ lastStatus, successCount, clientEquations }: { lastStatus: google.script.DocsEquationRenderStatus, successCount: number, clientEquations?: AutoLatexCommon.ClientRenderOptions[] }, element) {
+        if (lastStatus === google.script.DocsEquationRenderStatus.ClientRender) {
+          // we're not done yet - these equations need to be rendered on the client
+          Promise.all(clientEquations.map(async c => ({ options: c, result: await renderMathJaxEquation(c) })))
+            .then(rendered => {
+              const formData = new FormData();
+              for (const equation of rendered) {
+                formData.append("")
+              }
+            });
+        } else {
+          $("#loading").html('');
+          clearInterval(runDots);
+          element.disabled = false;
+          
+          const statusText = makeStatusText(successCount);
+          
+          if (lastStatus === google.script.DocsEquationRenderStatus.NoDocument)
+            showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", statusText);
+          else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount > 0)
+            showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used.", statusText);
+          else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount === 0)
+            showError("Sorry, likely (temporarily) unavailable commands (i.e. align, &) were used or the equation was too long.", statusText);
+          else {
+            $("#loading").html(statusText);
+          }
         }
-        else if(returnSuccess == -1){
-          flag = -1;
-          renderCount = 0;
-        }
-        else{
-          flag = 0;
-          renderCount = returnSuccess;
-        }
-        // var flag = returnSuccess.flag
-        // var renderCount = returnSuccess.renderCount
-        if(flag == -1)
-          showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", "Status: " + renderCount +  " equations replaced");
-        else if(flag == -2 && renderCount > 0)
-          showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used.", "Status: " + renderCount +  " equations replaced");
-        else if(flag == -2 && renderCount == 0)
-          showError("Sorry, likely (temporarily) unavailable commands (i.e. align, &) were used or the equation was too long.", 
-                    "Status: " + "no" +  " equations replaced");
-        else if(flag == 0 && renderCount == 0)
-          $("#loading").html("Status: " + "No"          + " equations rendered");
-        else if(flag == 0 && renderCount == 1)
-          $("#loading").html("Status: " + renderCount + " equation rendered" );
-        else
-          $("#loading").html("Status: " + renderCount + " equations rendered");
       })
     .withFailureHandler(
       function(msg, element) {

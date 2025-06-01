@@ -7,6 +7,9 @@
 
 var DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
 
+/**
+ * @public
+ */
 const enum DocsEquationRenderStatus {
   // error types
   NoDocument,
@@ -14,6 +17,9 @@ const enum DocsEquationRenderStatus {
   NoEndDelimiter,
   EmptyEquation,
   AllRenderersFailed,
+  
+  // equation should be rendered on the client side (MathJax)
+  ClientRender,
   
   Success
 }

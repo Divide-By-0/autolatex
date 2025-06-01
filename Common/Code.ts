@@ -16,13 +16,33 @@ interface Renderer {
   6: string;
 }
 
+interface CommonRenderOptions {
+  size: number;
+  inline: boolean;
+  // color
+  r: number, g: number, b: number;
+  // needed for constructing the derendering string
+  delim: Delimiter;
+}
+
 /**
- * Options for rendering. Currently not actually used in Common.renderEquation
+ * Options for rendering on the server - these are general settings for all equations
  *
  * @public
  */
-interface RenderOptions {
-  quality: number, size: number, defaultSize: number, inline: boolean , delim: Delimiter
+interface RenderOptions extends CommonRenderOptions {
+  defaultSize: number;
+  clientRender: boolean;
+}
+
+/**
+* Options/state for rendering on the client - these are settings for a specific equation
+* 
+* @public
+*/
+interface ClientRenderOptions extends CommonRenderOptions {
+  rangeId: string;
+  equation: string;
 }
 
 /**
