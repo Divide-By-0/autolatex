@@ -17,6 +17,25 @@ window.MathJax = {
   }
 };
 
+// animation timeout ID
+let runDots = -1;
+
+/**
+* Convert a Blob to a base64 string for transmission to the server
+* 
+* @param blob the blob to convert
+* @returns 
+*/
+async function blobToB64(blob: Blob) {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = err => reject(err);
+    reader.readAsDataURL(blob);
+  });
+  return dataUrl.substring(dataUrl.indexOf(",") + 1); // strip dataurl header
+}
+
 async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRenderOptions) {
   // newline becomes \\
   const equation = renderOptions.equation.replace(/\n|\r|\r\n/g, "\\\\");
@@ -32,8 +51,9 @@ async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRender
   svg.style.fontSize = `${renderOptions.size}px`;
   document.body.appendChild(svg);
   
-  const width = svg.clientWidth;
-  const height = svg.clientHeight;
+  // scale up by 5
+  const width = svg.clientWidth * 5;
+  const height = svg.clientHeight * 5;
   
   svg.remove();
   
@@ -72,7 +92,6 @@ async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRender
     const pngBlob = await canvas.convertToBlob({
       type: "image/png"
     });
-    console.log(URL.createObjectURL(pngBlob));
     return pngBlob;
   } finally {
     URL.revokeObjectURL(svgUrl);
@@ -151,54 +170,58 @@ function makeStatusText(successCount: number) {
   else if (successCount == 1) return "Status: 1 equation rendered";
   else return `Status: ${successCount} equations rendered`;
 }
+
+function successHandler({ lastStatus, successCount, clientEquations }: { lastStatus: google.script.DocsEquationRenderStatus, successCount: number, clientEquations?: AutoLatexCommon.ClientRenderOptions[] }, element: HTMLButtonElement) {
+  if (lastStatus === google.script.DocsEquationRenderStatus.ClientRender) {
+    console.log(clientEquations);
+    // we're not done yet - these equations need to be rendered on the client
+    Promise.all(clientEquations.map(async c => ({ options: c, renderedEquationB64: await renderMathJaxEquation(c).then(b => blobToB64(b)) })))
+      .then(rendered => {
+        google.script.run
+          .withSuccessHandler(successHandler)
+          .withFailureHandler(errorHandler)
+          .withUserObject(element)
+          .clientRenderComplete(rendered);
+      });
+  } else {
+    $("#loading").html('');
+    clearInterval(runDots);
+    element.disabled = false;
+    
+    const statusText = makeStatusText(successCount);
+    
+    if (lastStatus === google.script.DocsEquationRenderStatus.NoDocument)
+      showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", statusText);
+    else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount > 0)
+      showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used.", statusText);
+    else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount === 0)
+      showError("Sorry, likely (temporarily) unavailable commands (i.e. align, &) were used or the equation was too long.", statusText);
+    else {
+      $("#loading").html(statusText);
+    }
+  }
+}
+
+function errorHandler(msg, element) {
+  $("#loading").html('');
+  clearInterval(runDots);
+  console.error("Error console errored!", msg, element)
+  showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts.", "Status: Error, please reload.");
+  element.disabled = false;
+}
   
 function insertText(){ 
   this.disabled = true;
   $('#error').remove();
   $("#loading").html("Status: Loading");
-  const runDots = runDotAnimation();
+  runDots = runDotAnimation();
   const {sizeRaw, delimiter} = getCurrentSettings();
 
   google.script.run
-    .withSuccessHandler(
-      function ({ lastStatus, successCount, clientEquations }: { lastStatus: google.script.DocsEquationRenderStatus, successCount: number, clientEquations?: AutoLatexCommon.ClientRenderOptions[] }, element) {
-        if (lastStatus === google.script.DocsEquationRenderStatus.ClientRender) {
-          // we're not done yet - these equations need to be rendered on the client
-          Promise.all(clientEquations.map(async c => ({ options: c, result: await renderMathJaxEquation(c) })))
-            .then(rendered => {
-              const formData = new FormData();
-              for (const equation of rendered) {
-                formData.append("")
-              }
-            });
-        } else {
-          $("#loading").html('');
-          clearInterval(runDots);
-          element.disabled = false;
-          
-          const statusText = makeStatusText(successCount);
-          
-          if (lastStatus === google.script.DocsEquationRenderStatus.NoDocument)
-            showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", statusText);
-          else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount > 0)
-            showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used.", statusText);
-          else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount === 0)
-            showError("Sorry, likely (temporarily) unavailable commands (i.e. align, &) were used or the equation was too long.", statusText);
-          else {
-            $("#loading").html(statusText);
-          }
-        }
-      })
-    .withFailureHandler(
-      function(msg, element) {
-        $("#loading").html('');
-        clearInterval(runDots);
-        console.error("Error console errored!", msg, element)
-        showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts.", "Status: Error, please reload.");
-        element.disabled = false;
-      })
+    .withSuccessHandler(successHandler)
+    .withFailureHandler(errorHandler)
     .withUserObject(this)
-    .replaceEquations(sizeRaw, delimiter);
+    .replaceEquations(sizeRaw, delimiter, document.querySelector<HTMLInputElement>("#input-use-mathjax").checked);
 }
     
     
@@ -207,7 +230,7 @@ function editText(){
   $('#error').remove();
   $("#loading").html("Status: Loading");
   
-  const runDots = runDotAnimation();
+  runDots = runDotAnimation();
   const {sizeRaw, delimiter} = getCurrentSettings();
   google.script.run
     .withSuccessHandler(
@@ -260,7 +283,7 @@ function undoAll(){
   //var div = $('<div id="clickmsg" class="text">' + 'Ctrl + q detected' + '</div>');
   //$('#button-bar').after(div);
   
-  const runDots = runDotAnimation();
+  runDots = runDotAnimation();
   const {delimiter} = getCurrentSettings();
   google.script.run
   .withSuccessHandler(
@@ -319,7 +342,7 @@ $(document).keydown(function(e){
     //var div = $('<div id="clickmsg" class="text">' + 'Ctrl + q detected' + '</div>');
     //$('#button-bar').after(div);
     
-    const runDots = runDotAnimation();
+    runDots = runDotAnimation();
     const {delimiter} = getCurrentSettings();
     google.script.run
     .withSuccessHandler(

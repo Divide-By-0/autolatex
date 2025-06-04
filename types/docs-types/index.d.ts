@@ -10,6 +10,8 @@ declare namespace google {
 
             withUserObject(object: any): Runner;
 
+            clientRenderComplete(equations: {options: AutoLatexCommon.ClientRenderOptions, renderedEquationB64: string}[]): void //intrinsic;
+
             editEquations(sizeRaw: string, delimiter: string): void //reference;
 
             getKey(): void //intrinsic;
@@ -22,6 +24,9 @@ declare namespace google {
 
         }
 
+        /**
+         * enums should be alphabetical in order to work with clasp-types
+         */
         export const enum DocsEquationRenderStatus {
 
             AllRenderersFailed,
