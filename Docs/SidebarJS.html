@@ -153,7 +153,6 @@ function makeStatusText(successCount) {
 }
 function successHandler({ lastStatus, successCount, clientEquations }, element) {
     if (lastStatus === 1 /* google.script.DocsEquationRenderStatus.ClientRender */) {
-        console.log(clientEquations);
         // we're not done yet - these equations need to be rendered on the client
         Promise.all(clientEquations.map(async (c) => ({ options: c, renderedEquationB64: await renderMathJaxEquation(c).then(b => blobToB64(b)) })))
             .then(rendered => {

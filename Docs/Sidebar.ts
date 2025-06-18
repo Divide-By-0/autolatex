@@ -173,7 +173,6 @@ function makeStatusText(successCount: number) {
 
 function successHandler({ lastStatus, successCount, clientEquations }: { lastStatus: google.script.DocsEquationRenderStatus, successCount: number, clientEquations?: AutoLatexCommon.ClientRenderOptions[] }, element: HTMLButtonElement) {
   if (lastStatus === google.script.DocsEquationRenderStatus.ClientRender) {
-    console.log(clientEquations);
     // we're not done yet - these equations need to be rendered on the client
     Promise.all(clientEquations.map(async c => ({ options: c, renderedEquationB64: await renderMathJaxEquation(c).then(b => blobToB64(b)) })))
       .then(rendered => {

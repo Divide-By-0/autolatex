@@ -509,8 +509,9 @@ function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex:
     //C [75.4, 79.6] on width and height ratio
     multiple = size / 76.0;
   else if (renderer[5] === "MathJax")
-    // The MathJax renderer returns scaled equations. We scale up by 5, and 1.16 is just for consistency with other renderers.
-    multiple = 1.294 / 5;
+    // The MathJax renderer returns scaled equations. We scale down by 5 (resolution), and 1.26 is just for consistency with other renderers.
+    // TODO: When MathJax supports changing font, switch to a font that's more similar to CodeCogs
+    multiple = 1.26 / 5;
   //CodeCogs, other
   else multiple = size / 100.0;
 
