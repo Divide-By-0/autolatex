@@ -53,11 +53,16 @@ declare namespace AutoLatexCommon {
          */
         sizeImage(app: IntegratedApp, paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, height: number, width: number): void;
 
-        capableDerenderers: 12;
+        capableDerenderers: 13;
 
         capableRenderers: 8;
 
         invalidEquationHashCodecogsFirst50: "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD%u0315%uFFFD3%";
+
+        /**
+         * Renderer ID constants for retreiving info about specific renderers
+         */
+        rendererIds: {CODECOGS: number, MATHJAX: number};
 
     }
 
@@ -176,11 +181,16 @@ declare namespace AutoLatexCommon {
 
     }
 
-    export const capableDerenderers: 12;
+    export const capableDerenderers: 13;
 
     export const capableRenderers: 8;
 
     export const invalidEquationHashCodecogsFirst50: "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD%u0315%uFFFD3%";
+
+    /**
+     * Renderer ID constants for retreiving info about specific renderers
+     */
+    export const rendererIds: {CODECOGS: number, MATHJAX: number};
 
 }
 

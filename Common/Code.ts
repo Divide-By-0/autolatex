@@ -93,7 +93,17 @@ const capableRenderers = 8;
 /**
  * @public
  */
-const capableDerenderers = 12;
+const capableDerenderers = 13;
+
+/**
+ * Renderer ID constants for retreiving info about specific renderers
+ * @public
+*/
+const rendererIds = {
+  CODECOGS: 1,
+  MATHJAX: 13
+};
+
 //render bug variables
 /**
  * @public
@@ -563,9 +573,22 @@ function getRenderer(worked: number): Renderer {
       "Number empire",
       "",
     ];
-  } // to de render possibly very old equations
+  }
+  // to de render MathJax equations
+  else if (worked == 13) {
+    return [
+      13,
+      "about:blank?type=mathjax&equation=",
+      "about:blank?type=mathjax&equation=",
+      "",
+      "",
+      "MathJax",
+      "",
+    ];
+  }
+  // to de render possibly very old equations
   else
-    return [13, "https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION", "https://www.codecogs.com/eqnedit.php?latex=", "%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"];
+    return [14, "https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION", "https://www.codecogs.com/eqnedit.php?latex=", "%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"];
 }
 
 /**

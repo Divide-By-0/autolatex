@@ -321,15 +321,7 @@ function getSize(size: number, defaultSize: number, rangeElement: GoogleAppsScri
 * @public
 */
 function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRenderOptions, renderedEquationB64: string }[]) {
-  const mathjaxRenderer: AutoLatexCommon.Renderer = [
-    0,
-    "about:blank?type=mathjax&equation=",
-    "about:blank?type=mathjax&equation=",
-    "",
-    "",
-    "MathJax",
-    "",
-  ];
+  const mathjaxRenderer = Common.getRenderer(Common.rendererIds.MATHJAX);
   let c = 0;
   
   for (const equation of equations) {
@@ -417,8 +409,7 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
   // SAVING FORMATTING
   Common.reportDeltaTime(511);
   if (escape(resp.getBlob().getDataAsString()).substring(0, 50) == Common.invalidEquationHashCodecogsFirst50) {
-    //assumes codecogs is 1
-    renderer = Common.getRenderer(1);
+    renderer = Common.getRenderer(Common.rendererIds.CODECOGS);
   }
   Common.reportDeltaTime(517);
   
