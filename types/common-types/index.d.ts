@@ -42,7 +42,7 @@ declare namespace AutoLatexCommon {
          */
         reEncode(equation: string): string;
 
-        renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number): {equation: string, renderer: Renderer, rendererType: string, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, worked: number};
+        renderEquation(equationOriginal: string, renderOptions: RenderOptions): {equation: string, renderer: Renderer, rendererType: string, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, worked: number};
 
         reportDeltaTime(line?: number, forcePrint?: string): number;
 
@@ -53,11 +53,39 @@ declare namespace AutoLatexCommon {
          */
         sizeImage(app: IntegratedApp, paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, height: number, width: number): void;
 
-        capableDerenderers: 12;
+        capableDerenderers: 13;
 
         capableRenderers: 8;
 
         invalidEquationHashCodecogsFirst50: "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD%u0315%uFFFD3%";
+
+        /**
+         * Renderer ID constants for retreiving info about specific renderers
+         */
+        rendererIds: {CODECOGS: number, MATHJAX: number};
+
+    }
+
+    /**
+     * Options/state for rendering on the client - these are settings for a specific equation
+     */
+    export interface ClientRenderOptions {
+
+        b: number;
+
+        delim: Delimiter;
+
+        equation: string;
+
+        g: number;
+
+        inline: boolean;
+
+        r: number;
+
+        rangeId: string;
+
+        size: number;
 
     }
 
@@ -88,6 +116,29 @@ declare namespace AutoLatexCommon {
         getPageWidth(): number;
 
         getUi(): GoogleAppsScript.Base.Ui;
+
+    }
+
+    /**
+     * Options for rendering on the server - these are general settings for all equations
+     */
+    export interface RenderOptions {
+
+        b: number;
+
+        clientRender: boolean;
+
+        defaultSize: number;
+
+        delim: Delimiter;
+
+        g: number;
+
+        inline: boolean;
+
+        r: number;
+
+        size: number;
 
     }
 
@@ -130,11 +181,16 @@ declare namespace AutoLatexCommon {
 
     }
 
-    export const capableDerenderers: 12;
+    export const capableDerenderers: 13;
 
     export const capableRenderers: 8;
 
     export const invalidEquationHashCodecogsFirst50: "GIF89a%7F%00%18%00%uFFFD%00%00%uFFFD%u0315%uFFFD3%";
+
+    /**
+     * Renderer ID constants for retreiving info about specific renderers
+     */
+    export const rendererIds: {CODECOGS: number, MATHJAX: number};
 
 }
 
