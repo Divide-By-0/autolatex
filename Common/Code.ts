@@ -209,14 +209,14 @@ function getStyle(equationStringEncoded: string, quality: number, renderer: Rend
     // \color[RGB]{0,0,0}
     equationStringEncoded = "%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D" + equationStringEncoded;
   }
-  
+
   if (isInline) {
     // wrap in renderer inline delimiters
-    equationStringEncoded = renderer[3] + equationStringEncoded + renderer[4];
+    equationStringEncoded = renderer[3] + "%7B" + equationStringEncoded + renderer[4] + "%7D";
+  } else {
+    // just wrap in curly braces
+    equationStringEncoded = "%7B" + equationStringEncoded + "%7D";
   }
-
-  // wrap in curly braces
-  equationStringEncoded = "%7B" + equationStringEncoded + "%7D";
 
   debugLog("textColor: " + red + ", " + green + ", " + blue);
   debugLog("equationStringEncoded: " + equationStringEncoded);
