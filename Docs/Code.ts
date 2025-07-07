@@ -246,7 +246,12 @@ function placeImage(startElement: GoogleAppsScript.Document.RangeElement, start:
     return [defaultSize, startElement];
   }
 
-  let { resp, renderer, rendererType, worked, equation } = Common.renderEquation(equationOriginal, quality, delim, isInline, 0, 0, 0); 
+  // get font color
+  const colorHex = textElement.getForegroundColor(start);
+  // convert to rgb
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(colorHex.slice(i, i + 2), 16));
+
+  let { resp, renderer, rendererType, worked, equation } = Common.renderEquation(equationOriginal, quality, delim, isInline, r, g, b); 
   if (worked > Common.capableRenderers) return [-100000, null];
   // SAVING FORMATTING
   Common.reportDeltaTime(511);
