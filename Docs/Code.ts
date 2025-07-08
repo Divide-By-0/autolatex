@@ -248,8 +248,8 @@ function placeImage(startElement: GoogleAppsScript.Document.RangeElement, start:
 
   // get font color
   const colorHex = textElement.getForegroundColor(start);
-  // convert to rgb
-  const [r, g, b] = [1, 3, 5].map(i => parseInt(colorHex.slice(i, i + 2), 16));
+  // convert to rgb (default to black when colorHex is null - this happens in some weird cases where Docs can't figure out the color)
+  const [r, g, b] = colorHex ? [1, 3, 5].map(i => parseInt(colorHex.slice(i, i + 2), 16)) : [0, 0, 0];
 
   let { resp, renderer, rendererType, worked, equation } = Common.renderEquation(equationOriginal, quality, delim, isInline, r, g, b); 
   if (worked > Common.capableRenderers) return [-100000, null];
