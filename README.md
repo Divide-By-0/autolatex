@@ -35,10 +35,20 @@ To get types for google.script.run, the sidebar JS must be contained in its own 
 
 ## Deployment
 
-- Set debugLog to false in all of the Code.js files.
-- `clasp push` in each directory you want to update
-- Create new version in the script editor
-- Deploy the new version by hitting save in the GCP workspace project
+### Common Library
+
+1. Ensure `.clasp.json` points to the production script project
+2. Set `DEBUG` to `false` in Code.ts
+3. Run `clasp push`
+4. Create a new versioned library deployment 
+
+### Editor Add-ons
+
+1. Run `npm run clasp-push` to push while linking to Common
+2. Open the project on `script.google.com` and change the Common library config to point to the version you created
+3. Create a new version (update an existing deployment or make a new one)
+4. Update GCP with this new version in "App Configuration"
+5. Publish in "Store Listing"
 
 ## Helpful documentation pages for Slides
 
