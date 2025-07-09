@@ -186,7 +186,7 @@ function placeImage(startElement: GoogleAppsScript.Document.RangeElement, start:
   // GET VARIABLES
   const textElement = startElement.getElement().asText();
   const text = textElement.getText();
-  const paragraph = textElement.getParent().asParagraph();
+  const paragraph = textElement.getParent() as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph;
   const childIndex = paragraph.getChildIndex(textElement); //gets index of found text in paragaph
   size = setSize(size, defaultSize, paragraph, childIndex, start);
   const equationOriginal = getEquation(paragraph, childIndex, start, end, delim);
@@ -342,7 +342,8 @@ function removeAll(defaultDelimRaw: string) {
         image.removeFromParent();
         continue;
       }
-      image.getParent().asParagraph().insertText(imageIndex, delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
+      const parent = image.getParent() as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph;
+      parent.insertText(imageIndex, delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
       image.removeFromParent();
       counter += 1;
     }
@@ -365,7 +366,7 @@ function editEquations(sizeRaw: string, delimiter: string) {
   if (cursor) {
     // Attempt to insert text at the cursor position. If the insertion returns null, the cursor's
     // containing element doesn't allow insertions, so show the user an error message.
-    const element = cursor.getElement().asParagraph(); //startElement
+    const element = cursor.getElement() as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph; //startElement
 
     if (element) {
       console.log("Valid cursor.");
