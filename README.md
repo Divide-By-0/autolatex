@@ -37,18 +37,46 @@ To get types for google.script.run, the sidebar JS must be contained in its own 
 
 ### Common Library
 
-1. Ensure `.clasp.json` points to the production script project
+1. Ensure `.clasp.json` points to the production script project (the script ID should match the one in the URL bar on `script.google.com`)
 2. Set `DEBUG` to `false` in Code.ts
 3. Run `clasp push`
-4. Create a new versioned library deployment 
+4. Open the project on `script.google.com` (Auto-Latex Equations: Common library)
+5. Click Deploy -> New deployment
+6. Select the "Library" type
+   
+   ![selecting the library type](autolatex_assets/docs/common-deploy.png)
+7. Enter a description for the deployment. This should be of the form `commit hash: commit message` for consistency
+8. Click deploy. It should tell you what version you just created.
 
 ### Editor Add-ons
 
-1. Run `npm run clasp-push` to push while linking to Common
-2. Open the project on `script.google.com` and change the Common library config to point to the version you created
-3. Create a new version (update an existing deployment or make a new one)
-4. Update GCP with this new version in "App Configuration"
-5. Publish in "Store Listing"
+1. Run `npm run clasp-push` to push while linking to Common (this will link to the development version)
+1. Open the project on `script.google.com`, and switch to the Code tab
+1. In the Code sidebar on the left, click the Common library (just click "Common", don't click the 3 dots)
+   
+   ![opening the settings](autolatex_assets/docs/common-library.png)
+1. Switch the version to the one you just created
+   
+   ![setting version](autolatex_assets/docs/common-version.png)
+1. Click Deploy -> Manage Deployments
+1. Click the edit button
+1. Click the version dropdown and select "New version"
+   ![creating version](autolatex_assets/docs/addon-deploy.png)
+1. Enter a description (same format as Common description)
+1. Click deploy. It should tell you what version you just created.
+1. Open [App Configuration](https://console.cloud.google.com/apis/api/appsmarket-component.googleapis.com/googleapps_sdk) in GCP, and scroll down to "App Integrations"
+1. Update the "script version" to the version you just created
+   
+   ![gcp config](autolatex_assets/docs/gcp-config.png)
+1. Click Save Draft at the bottom
+1. Switch to "Store Listing" and click Publish at the bottom
+
+Wait about 10 minutes for changes to propagate
+
+### Cleanup (optional - after publish succeeds)
+
+1. Go to Deploy -> Manage Deployments for all script projects
+2. Click the archive button for all old deployments
 
 ## Helpful documentation pages for Slides
 
