@@ -168,6 +168,8 @@ function getFilenameEncode(equation: string, direction: number) {
  */
 function reEncode(equation: string) {
   equation = getCustomEncode(equation, 0, 1);
+  // remove non-ascii characters (but separate diacritics where possible)
+  equation = equation.normalize("NFD").replace(/[\u{0080}-\u{FFFF}]/gu, '');
   return getCustomEncode(encodeURIComponent(equation), 0, 0); //escape deprecated
 }
 
