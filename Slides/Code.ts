@@ -80,7 +80,7 @@ function findTextOffsetInSlide(str: string, search: string, offset = 0) {
   return str.substring(offset).indexOf(search) + offset;
 }
 
-function isTable(element: GoogleAppsScript.Slides.Table | GoogleAppsScript.Slides.Shape): element is GoogleAppsScript.Slides.Table {
+function isTable(element: GoogleAppsScript.Slides.Table | GoogleAppsScript.Slides.Shape | GoogleAppsScript.Slides.Group): element is GoogleAppsScript.Slides.Table {
   return element.getPageElementType() === SlidesApp.PageElementType.TABLE;
 }
 
@@ -120,24 +120,91 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
       Common.debugLog("Slide Num: " + slideNum + " Num of shapes: " + slides[slideNum].getPageElements().length);
       let element = getElementFromIndices(slideNum, elementNum);
       if (element === null) continue;
-      // This reverses the findpos return logic from docs to make it more accurate
-      if (isTable(element)) { // if it's a table
-        for (let i = 0; i < element.getNumRows(); i++) {
-          for (let j = 0; j < element.getNumColumns(); j++) {
-            const cell = element.getCell(i, j);
-            // ignore merged cells (the head cells of merged cells will still be counted)
-            if (cell.getMergeState() === SlidesApp.CellMergeState.MERGED) continue;
-            const parsedEquations = findPos(slideNum, cell, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
-            c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
-          }
-        }
-      } else {
-        let parsedEquations = findPos(slideNum, element, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
-        c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
-      }
+      
+      c += renderElement(slideNum, element, delim, quality, size, defaultSize, isInline);
     }
   }
   return Common.encodeFlag(0, c);
+}
+
+/**
+ * Returns the element iterating
+ */
+function getElementFromIndices(slideNum: number, elementNum: number) {
+  const doc = IntegratedApp.getBody();
+  Common.assert(slideNum < doc.length, "slideNum < doc.length");
+  const body = doc[slideNum];
+  const elements = body.getPageElements();
+  // elements = body.getPageElements();
+  Common.assert(elementNum < elements.length, "elementNum (" + elementNum + ") < elements.length (" + elements.length + ")");
+  let element: GoogleAppsScript.Slides.PageElement;
+  if (elementNum < elements.length) {
+    element = elements[elementNum];
+  } else {
+    return null;
+  }
+
+  return castElement(element);
+}
+
+function castElement(element: GoogleAppsScript.Slides.PageElement) {
+  let elementType: GoogleAppsScript.Slides.PageElementType;
+  try {
+    // type = element.getPageElementType();
+    elementType = element.getPageElementType();
+    Common.debugLog("Element Type is:" + elementType + " object ID is:" + element.getObjectId());
+  } catch {
+    Common.debugLog("Not of type shape");
+    return null;
+  }
+  
+  if (elementType === SlidesApp.PageElementType.SHAPE) {
+    // handles alternating footers etc.
+    return element.asShape();
+  } else if (elementType === SlidesApp.PageElementType.TABLE) {
+    return element.asTable();
+  } else if (elementType === SlidesApp.PageElementType.GROUP) {
+    return element.asGroup();
+  }
+  return null;
+}
+
+/**
+ * This reverses the findpos return logic from docs to make it more accurate
+ * @param element Element to search for equations
+ * @returns Count of equations successfully rendered
+ */
+function renderElement(slideNum: number, element: GoogleAppsScript.Slides.Group | GoogleAppsScript.Slides.Table | GoogleAppsScript.Slides.Shape, delim: AutoLatexCommon.Delimiter, quality: number, size: number, defaultSize: number, isInline: boolean) {
+  if ("ungroup" in element) {
+    // recursively process all elements in this group
+    let c = 0;
+    for (const childElement of element.getChildren()) {
+      // returns null if we don't recognize the type
+      const castedPageElement = castElement(childElement);
+      if (castedPageElement) {
+        c += renderElement(slideNum, castedPageElement, delim, quality, size, defaultSize, isInline);
+      }
+    }
+    return c;
+  } else if (isTable(element)) {
+    // table
+    let c = 0;
+    for (let i = 0; i < element.getNumRows(); i++) {
+      for (let j = 0; j < element.getNumColumns(); j++) {
+        const cell = element.getCell(i, j);
+        // ignore merged cells (the head cells of merged cells will still be counted)
+        if (cell.getMergeState() === SlidesApp.CellMergeState.MERGED) continue;
+        
+        let parsedEquations = findPos(slideNum, cell, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+        c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
+      }
+    }
+    return c;
+  } else {
+    // single shape
+    let parsedEquations = findPos(slideNum, element, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+    return parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
+  }
 }
 
 // slideNum and slideObjectNum are integers
@@ -322,42 +389,6 @@ function resize(eqnImage: GoogleAppsScript.Slides.Image, textElement: PageElemen
     eqnImage.setTop(bounds.y + bounds.height - eqnImage.getHeight()); // emulating "setBottom"
   else
     eqnImage.setTop(bounds.y + bounds.height / 2 - eqnImage.getHeight() / 2);
-}
-
-/**
- * Returns the element iterating
- */
-function getElementFromIndices(slideNum: number, elementNum: number) {
-  const doc = IntegratedApp.getBody();
-  Common.assert(slideNum < doc.length, "slideNum < doc.length");
-  const body = doc[slideNum];
-  const elements = body.getPageElements();
-  // elements = body.getPageElements();
-  Common.assert(elementNum < elements.length, "elementNum (" + elementNum + ") < elements.length (" + elements.length + ")");
-  let element: GoogleAppsScript.Slides.PageElement;
-  if (elementNum < elements.length) {
-    element = elements[elementNum];
-  } else {
-    return null;
-  }
-
-  let elementType: GoogleAppsScript.Slides.PageElementType;
-  try {
-    // type = element.getPageElementType();
-    elementType = element.getPageElementType();
-    Common.debugLog("Element Type is:" + elementType + " elementNum is:" + elementNum);
-  } catch {
-    Common.debugLog("Not of type shape");
-    return null;
-  }
-
-  if (elementType === SlidesApp.PageElementType.SHAPE) {
-    // handles alternating footers etc.
-    return element.asShape();
-  } else if (elementType === SlidesApp.PageElementType.TABLE) {
-    return element.asTable();
-  }
-  return null;
 }
 
 /**
