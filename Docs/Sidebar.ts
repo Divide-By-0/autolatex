@@ -5,13 +5,14 @@
 /// <reference lib="dom" />
 
 window.MathJax = {
- loader: {load: ['tex-svg']},
- svg: {
-   fontCache: 'none'
- },
- startup: {
-   typeset: false // Prevent auto-typesetting
- },
+  loader: { load: ['tex-svg', '[tex]/color'] },
+  tex: { packages: { '[+]': ['color'] } },
+  svg: {
+    fontCache: 'none'
+  },
+  startup: {
+    typeset: false // Prevent auto-typesetting
+  },
   options: {
     enableAssistiveMml: false
   }
@@ -37,8 +38,9 @@ async function blobToB64(blob: Blob) {
 }
 
 async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRenderOptions) {
-  // newline becomes \\
-  const equation = renderOptions.equation.replace(/\n|\r|\r\n/g, "\\\\");
+  // apply RGB coloring + newline becomes \\
+  const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + renderOptions.equation.replace(/\n|\r|\r\n/g, "\\\\");
+  
   
   const result = await window.MathJax.tex2svgPromise(equation, {
     display: !renderOptions.inline,

@@ -324,6 +324,9 @@ function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRender
   const mathjaxRenderer = Common.getRenderer(Common.rendererIds.MATHJAX);
   let c = 0;
   
+  // Go backwards so that the named ranges for multiple equations in the same paragraph don't get removed
+  equations.reverse();
+  
   for (const equation of equations) {
     const namedRange = DocsApp.getActive().getNamedRangeById(equation.options.rangeId);
     // get the RangeElement for this equation
@@ -377,6 +380,17 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
     };
   }
   
+  // get font color
+  const colorHex = textElement.getForegroundColor(startElement.getStartOffset());
+  // convert to rgb (default to black when colorHex is null - this happens in some weird cases where Docs can't figure out the color)
+  const [r, g, b] = colorHex ? [1, 3, 5].map(i => parseInt(colorHex.slice(i, i + 2), 16)) : [0, 0, 0];
+  
+  // add color info to render options
+  const coloredRenderOptions = {
+    ...renderOptions,
+    r, g, b,
+  };
+  
   // send info to the client for rendering
   if (renderOptions.clientRender) {
     // we don't need URL encoding or double escaping for client renderers
@@ -388,7 +402,7 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
     // save this range for later
     const namedRange = doc.addNamedRange("ale-equation-range", range);
     const clientRenderOptions: AutoLatexCommon.ClientRenderOptions = {
-      ...renderOptions,
+      ...coloredRenderOptions,
       size,
       rangeId: namedRange.getId(),
       equation: clientEquation
@@ -401,16 +415,8 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
       nextStartElement: startElement
     };
   }
-
-  // get font color
-  const colorHex = textElement.getForegroundColor(startElement.getStartOffset());
-  // convert to rgb (default to black when colorHex is null - this happens in some weird cases where Docs can't figure out the color)
-  const [r, g, b] = colorHex ? [1, 3, 5].map(i => parseInt(colorHex.slice(i, i + 2), 16)) : [0, 0, 0];
   
-  let { resp, renderer, worked } = Common.renderEquation(equationOriginal, {
-    ...renderOptions,
-    r, g, b,
-  }); 
+  let { resp, renderer, worked } = Common.renderEquation(equationOriginal, coloredRenderOptions); 
   if (worked > Common.capableRenderers) return {
     status: DocsEquationRenderStatus.AllRenderersFailed
   };
