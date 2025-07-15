@@ -402,7 +402,15 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
     };
   }
 
-  let { resp, renderer, worked } = Common.renderEquation(equationOriginal, renderOptions); 
+  // get font color
+  const colorHex = textElement.getForegroundColor(startElement.getStartOffset());
+  // convert to rgb (default to black when colorHex is null - this happens in some weird cases where Docs can't figure out the color)
+  const [r, g, b] = colorHex ? [1, 3, 5].map(i => parseInt(colorHex.slice(i, i + 2), 16)) : [0, 0, 0];
+  
+  let { resp, renderer, worked } = Common.renderEquation(equationOriginal, {
+    ...renderOptions,
+    r, g, b,
+  }); 
   if (worked > Common.capableRenderers) return {
     status: DocsEquationRenderStatus.AllRenderersFailed
   };
@@ -420,7 +428,7 @@ function placeImage(startElement: GoogleAppsScript.Document.RangeElement, render
   // GET VARIABLES
   const textElement = startElement.getElement().asText();
   const text = textElement.getText();
-  const paragraph = textElement.getParent().asParagraph();
+  const paragraph = textElement.getParent() as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph;
   const childIndex = paragraph.getChildIndex(textElement); //gets index of found text in paragaph
   const textCopy = textElement.asText().copy();
   let endLimit = startElement.getEndOffsetInclusive();
@@ -446,7 +454,7 @@ function placeImage(startElement: GoogleAppsScript.Document.RangeElement, render
   throw new Error("Could not insert image at childindex!");
 }
 
-function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, size:  number, renderer: AutoLatexCommon.Renderer, delim: AutoLatexCommon.Delimiter, textCopy: GoogleAppsScript.Document.Text, resp: GoogleAppsScript.Base.Blob, equationOriginal: string): DocsEquationRenderResult {
+function repairImage(paragraph: GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph, childIndex: number, size:  number, renderer: AutoLatexCommon.Renderer, delim: AutoLatexCommon.Delimiter, textCopy: GoogleAppsScript.Document.Text, resp: GoogleAppsScript.Base.Blob, equationOriginal: string): DocsEquationRenderResult {
   let attemptsToSetImageUrl = 3;
   Common.reportDeltaTime(552); // 3 seconds!! inserting an inline image takes time
   while (attemptsToSetImageUrl > 0) {
@@ -558,7 +566,8 @@ function removeAll(defaultDelimRaw: string) {
         image.removeFromParent();
         continue;
       }
-      image.getParent().asParagraph().insertText(imageIndex, delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
+      const parent = image.getParent() as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph;
+      parent.insertText(imageIndex, delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
       image.removeFromParent();
       counter += 1;
     }
@@ -581,7 +590,7 @@ function editEquations(sizeRaw: string, delimiter: string) {
   if (cursor) {
     // Attempt to insert text at the cursor position. If the insertion returns null, the cursor's
     // containing element doesn't allow insertions, so show the user an error message.
-    const element = cursor.getElement().asParagraph(); //startElement
+    const element = cursor.getElement() as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph; //startElement
 
     if (element) {
       console.log("Valid cursor.");
