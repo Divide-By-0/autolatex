@@ -20,10 +20,12 @@ for (const line of lines) {
     const category = match[3];
     const char = String.fromCodePoint(parseInt(codepointHex, 16));
 
-    if (category === 'mathaccent') {
-      accents[char] = latexCmd;
+    if (category === 'mathaccent' || category === 'mathaccentwide') {
+      if (!accents[char])
+        accents[char] = latexCmd;
     } else {
-      symbols[char] = latexCmd;
+      if (!symbols[char])
+        symbols[char] = latexCmd;
     }
   }
 }
