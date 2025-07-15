@@ -9,6 +9,16 @@
 
 type PageElement = GoogleAppsScript.Slides.Shape | GoogleAppsScript.Slides.TableCell;
 
+interface DerenderData {
+  red: number,
+  green: number,
+  blue: number,
+  origURL: string,
+  size: number,
+  width: number,
+  height: number
+}
+
 const IntegratedApp = {
   getUi: function () {
     return SlidesApp.getUi();
@@ -368,11 +378,9 @@ function getBounds(textElement: PageElement) {
   }
 }
 
-function resize(eqnImage: GoogleAppsScript.Slides.Image, textElement: PageElement, size: number, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment) {
+function resize(eqnImage: GoogleAppsScript.Slides.Image, textElement: PageElement, size: number, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment, bounds: ReturnType<typeof getBounds>) {
   eqnImage.setWidth(((size * eqnImage.getWidth()) / eqnImage.getHeight()) * scale);
   eqnImage.setHeight(size * scale);
-  
-  const bounds = getBounds(textElement);
   
   // try to match the horizontal alignment of the text
   if (horizontalAlignment === SlidesApp.ParagraphAlignment.END)
@@ -440,9 +448,20 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
   var body = doc[slideNum];
 
   // console.log("title alt text: " + renderer[2] + equationOriginal + "#" + delim[6])
+  
+  // This is a relatively expensive call for tables, so we store it in a variable
+  const bounds = getBounds(textElement);
 
-  var obj = [red, green, blue, renderer[2] + equationOriginal + "#" + delim[6], textSize];
-  var json = JSON.stringify(obj);
+  const origURL = renderer[2] + equationOriginal + "#" + delim[6];
+  const derenderData: DerenderData = {
+    red,
+    green,
+    blue,
+    origURL,
+    size: textSize,
+    width: bounds.width,
+    height: bounds.height
+  };
 
   if (isTableCell(textElement)) {
     // if table
@@ -473,7 +492,7 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
 
   var image = body.insertImage(renderer[1]);
 
-  resize(image, textElement, textSize, scale, textHorizontalAlignment, textVerticalAlignment);
+  resize(image, textElement, textSize, scale, textHorizontalAlignment, textVerticalAlignment, bounds);
   
   // remove empty textboxes
   if (
@@ -483,7 +502,7 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
   ) {
     textElement.remove();
   }
-  image.setTitle(json);
+  image.setTitle(JSON.stringify(derenderData));
   return [size, 1];
 }
 
@@ -496,42 +515,72 @@ function removeAll(defaultDelimRaw: string) {
   const defaultDelim = Common.getDelimiters(defaultDelimRaw);
   for (const slide of IntegratedApp.getBody()) {
     for (const image of slide.getImages()) {
-      const positionX = image.getLeft(); // returns horizontal position in points measured from upper-left of the page
-      const positionY = image.getTop(); // returns vertical position
-      const width = image.getWidth();
-      const height = image.getHeight();
-      const [red, green, blue, origURL, size] = JSON.parse(image.getTitle());
-      const colors = [red, green, blue].map((x: string) => Number(x)) as [number, number, number];
-      if (!origURL) continue;
-      image.remove();
-      // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
-      // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
-      const result = Common.derenderEquation(origURL);
-      if (!result) continue;
-      const { origEq, delim: newDelim } = result;
-      const delim = newDelim || defaultDelim;
-
-      if (origEq.length <= 0) {
-        console.log("Empty equation derender");
-        continue;
-      }
-
-      const shape = slide.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
-      const textRange = shape.getText();
-      
-      const textStyle = textRange
-        .insertText(0, delim[0] + origEq + delim[1])
-        .getTextStyle()
-        .setForegroundColor(...colors);
-
-      if (size) {
-        textStyle.setFontSize(size);
-      }
-
-      counter += 1;
+      if (derenderImage(image, defaultDelim, slide) === Common.DerenderResult.Success) counter++;
     }
   }
   return counter;
+}
+
+function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoLatexCommon.Delimiter, slide: GoogleAppsScript.Slides.Page | GoogleAppsScript.Slides.Slide) {
+  const positionX = image.getLeft(); // returns horizontal position in points measured from upper-left of the page
+  // debugLog("Left: " + positionX)
+  const positionY = image.getTop(); // returns vertical position
+  
+  let derenderData: DerenderData | [number, number, number, string, number] = JSON.parse(image.getTitle());
+  
+  if (Array.isArray(derenderData)) { 
+    // backwards-compatibility - we use an object now
+    const [red, green, blue, origURL, size] = derenderData;
+    derenderData = {
+      red,
+      green,
+      blue,
+      origURL,
+      // size may be undefined for older versions
+      size,
+      width: image.getWidth(),
+      height: image.getHeight()
+    };
+  }
+  // deconstruct
+  const { red, green, blue, origURL, size, width, height } = derenderData;
+  
+  // these _should_ be numbers already, but I'm leaving this here in case it's needed for backwards compatibility
+  const colors = [red, green, blue].map((x: string | number) => Number(x)) as [number, number, number];
+
+  image.remove();
+
+  Common.debugLog("image description is: " + origURL);
+
+  if (!origURL) return Common.DerenderResult.NullUrl;
+
+  Common.debugLog("Original URL from image", origURL);
+  const result = Common.derenderEquation(origURL);
+  if (!result) return Common.DerenderResult.InvalidUrl;
+  const { delim: newDelim, origEq } = result;
+  const delim = newDelim || defaultDelim;
+
+  if (origEq.length <= 0) {
+    console.log("Empty equation derender.");
+    return Common.DerenderResult.EmptyEquation;
+  }
+
+  // insert textbox
+  const shape = slide.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
+  const textRange = shape.getText();
+
+  const textStyle = textRange
+    .insertText(0, delim[0] + origEq + delim[1])
+    .getTextStyle()
+    .setForegroundColor(...colors);
+
+  if (size) {
+    textStyle.setFontSize(size);
+  }
+  
+  Common.debugLog("textRange: " + textRange + "type: " + typeof textRange);
+  
+  return Common.DerenderResult.Success;
 }
 
 /**
@@ -541,7 +590,6 @@ function removeAll(defaultDelimRaw: string) {
  * @param {string} sizeRaw     Sidebar-selected size.
  * @public
  */
-
 function editEquations(sizeRaw: string, delimiter: string) {
   const defaultDelim = Common.getDelimiters(delimiter);
   Common.savePrefs(sizeRaw, delimiter);
@@ -557,70 +605,10 @@ function editEquations(sizeRaw: string, delimiter: string) {
   Common.debugLog("selection Type is: " + selectionType);
 
   if (selectionType == SlidesApp.SelectionType.PAGE_ELEMENT) {
-    var image = selection.getPageElementRange().getPageElements()[0].asImage();
+    // if they're selecting an image inside a group, the image is the second element in the selection
+    const image = selection.getPageElementRange().getPageElements().find(el => el.getPageElementType() === SlidesApp.PageElementType.IMAGE)?.asImage();
     if (image) {
-      console.log("valid selection");
-      Common.debugLog(image);
-      const positionX = image.getLeft(); // returns horizontal position in points measured from upper-left of the page
-      // debugLog("Left: " + positionX)
-      const positionY = image.getTop(); // returns vertical position
-      // debugLog("Top: " + positionY)
-      const width = image.getWidth();
-      // debugLog("Width: " + width)
-      const height = image.getHeight();
-      // debugLog("Height: " + height)
-      // var image = element.getChild(position).asInlineImage();
-      // debugLog("Image height: " + image.getHeight());
-      // var origURL = image.getContentUrl();
-      // image.setDescription("https://www.codecogs.com/eqnedit.php?latex=f(t)%3D%5Csum_%7B-%5Cinfty%7D%5E%7B%5Cinfty%7Dc_ne%5E%7Bi%5Cfrac%7B2%5Cpi%20n%7D%7BT%7Dt%7D%3D%5Ccdots%2Bc_%7B-2%7De%5E%7B-i%5Cfrac%7B4%5Cpi%7D%7BT%7Dt%7D%2Bc_%7B-1%7De%5E%7B-i%5Cfrac%7B2%5Cpi%7D%7BT%7Dt%7D%2Bc_0%2Bc_1e%5E%7Bi%5Cfrac%7B2%5Cpi%7D%7BT%7Dt%7D%2Bc_2e%5E%7Bi%5Cfrac%7B4%5Cpi%7D%7BT%7Dt%7D%2B%5Ccdots#0");
-      // for(let i = 0; i < linkEquation.length; i++){
-      //   debugLog("linkEquation has " + linkEquation.length + "number of elements")
-      //   debugLog("elements in link Equation are: " + linkEquation[i])
-      // }
-
-      // image.setDescription('' + linkEquation[0])
-      // debugLog("element in Link Equation is: " + linkEquation[0])
-
-      // Note: size may be undefined if the equation was rendered with an older add-on version
-      const [red, green, blue, origURL, size] = JSON.parse(image.getTitle());
-      const colors = [red, green, blue].map((x: string) => Number(x)) as [number, number, number];
-
-      image.remove();
-
-      Common.debugLog("image description is: " + origURL);
-
-      if (!origURL) return Common.DerenderResult.NullUrl;
-
-      Common.debugLog("Original URL from image", origURL);
-      const result = Common.derenderEquation(origURL);
-      if (!result) return Common.DerenderResult.InvalidUrl;
-      const { delim: newDelim, origEq } = result;
-      const delim = newDelim || defaultDelim;
-
-      if (origEq.length <= 0) {
-        console.log("Empty equation derender.");
-        return Common.DerenderResult.EmptyEquation;
-      }
-
-      // insert textbox
-
-      const shape = currentPage.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
-      const textRange = shape.getText();
-
-      const textStyle = textRange
-        .insertText(0, delim[0] + origEq + delim[1])
-        .getTextStyle()
-        .setForegroundColor(...colors);
-
-      if (size) {
-        textStyle.setFontSize(size);
-      }
-      
-      Common.debugLog("textRange: " + textRange + "type: " + typeof textRange);
-      Common.debugLog(typeof textRange.insertText);
-      // insert original equation into newly created text box
-      // element.getChild(position+1).removeFromParent();
-      return Common.DerenderResult.Success;
+      return derenderImage(image, defaultDelim, currentPage);
     } else {
       return Common.DerenderResult.NonExistentElement;
     }
