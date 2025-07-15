@@ -169,7 +169,27 @@ function getFilenameEncode(equation: string, direction: number) {
 function reEncode(equation: string) {
   equation = getCustomEncode(equation, 0, 1);
   // remove non-ascii characters (but separate diacritics where possible)
-  equation = equation.normalize("NFD").replace(/[\u{0080}-\u{FFFF}]/gu, '');
+  equation = equation.normalize("NFC").replace(/[\u{0080}-\u{FFFF}]/gu, match => {
+    const normalized = match.normalize("NFD").split("");
+    let result = "";
+    let resultEnd = "";
+    
+    for (const char of normalized) {
+      if (char in UNICODE_MATH.symbols) {
+        // include space after command
+        result += UNICODE_MATH.symbols[char] + " ";
+      } else if (char in UNICODE_MATH.accents) {
+        // accent commands go to the beginning
+        result = UNICODE_MATH.accents[char] + "{" + result;
+        resultEnd += "}";
+      } else {
+        // if all else fails, just passthrough the character
+        result += char;
+      }
+    }
+    
+    return result + resultEnd;
+  });
   return getCustomEncode(encodeURIComponent(equation), 0, 0); //escape deprecated
 }
 
