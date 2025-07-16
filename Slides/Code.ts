@@ -7,6 +7,18 @@
 
 /* global Common, SlidesApp */
 
+type PageElement = GoogleAppsScript.Slides.Shape | GoogleAppsScript.Slides.TableCell;
+
+interface DerenderData {
+  red: number,
+  green: number,
+  blue: number,
+  origURL: string,
+  size: number,
+  width: number,
+  height: number
+}
+
 const IntegratedApp = {
   getUi: function () {
     return SlidesApp.getUi();
@@ -78,14 +90,14 @@ function findTextOffsetInSlide(str: string, search: string, offset = 0) {
   return str.substring(offset).indexOf(search) + offset;
 }
 
-function isTable(element: any) {
-  try {
-    element.getCell(0, 0);
-  } catch {
-    return false;
-  }
-  return true;
+function isTable(element: GoogleAppsScript.Slides.Table | GoogleAppsScript.Slides.Shape | GoogleAppsScript.Slides.Group): element is GoogleAppsScript.Slides.Table {
+  return element.getPageElementType() === SlidesApp.PageElementType.TABLE;
 }
+
+function isTableCell(element: PageElement): element is GoogleAppsScript.Slides.TableCell {
+  return "getParentTable" in element;
+}
+
 
 /**
  * Constantly keep replacing latex till all are finished
@@ -118,24 +130,91 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
       Common.debugLog("Slide Num: " + slideNum + " Num of shapes: " + slides[slideNum].getPageElements().length);
       let element = getElementFromIndices(slideNum, elementNum);
       if (element === null) continue;
-      // This reverses the findpos return logic from docs to make it more accurate
-      if (isTable(element)) { // if it's a table
-        let tableElement = element as GoogleAppsScript.Slides.Table;
-        for (let i = 0; i < tableElement.getNumRows(); i++) {
-          for (let j = 0; j < tableElement.getNumColumns(); j++) {
-            const cell = tableElement.getCell(i, j);
-            const parsedEquations = findPos(slideNum, cell, tableElement, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
-            c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
-          }
-        }
-      } else {
-        let shapeElement = element as GoogleAppsScript.Slides.Shape;
-        let parsedEquations = findPos(slideNum, shapeElement, element, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
-        c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
-      }
+      
+      c += renderElement(slideNum, element, delim, quality, size, defaultSize, isInline);
     }
   }
   return Common.encodeFlag(0, c);
+}
+
+/**
+ * Returns the element iterating
+ */
+function getElementFromIndices(slideNum: number, elementNum: number) {
+  const doc = IntegratedApp.getBody();
+  Common.assert(slideNum < doc.length, "slideNum < doc.length");
+  const body = doc[slideNum];
+  const elements = body.getPageElements();
+  // elements = body.getPageElements();
+  Common.assert(elementNum < elements.length, "elementNum (" + elementNum + ") < elements.length (" + elements.length + ")");
+  let element: GoogleAppsScript.Slides.PageElement;
+  if (elementNum < elements.length) {
+    element = elements[elementNum];
+  } else {
+    return null;
+  }
+
+  return castElement(element);
+}
+
+function castElement(element: GoogleAppsScript.Slides.PageElement) {
+  let elementType: GoogleAppsScript.Slides.PageElementType;
+  try {
+    // type = element.getPageElementType();
+    elementType = element.getPageElementType();
+    Common.debugLog("Element Type is:" + elementType + " object ID is:" + element.getObjectId());
+  } catch {
+    Common.debugLog("Not of type shape");
+    return null;
+  }
+  
+  if (elementType === SlidesApp.PageElementType.SHAPE) {
+    // handles alternating footers etc.
+    return element.asShape();
+  } else if (elementType === SlidesApp.PageElementType.TABLE) {
+    return element.asTable();
+  } else if (elementType === SlidesApp.PageElementType.GROUP) {
+    return element.asGroup();
+  }
+  return null;
+}
+
+/**
+ * This reverses the findpos return logic from docs to make it more accurate
+ * @param element Element to search for equations
+ * @returns Count of equations successfully rendered
+ */
+function renderElement(slideNum: number, element: GoogleAppsScript.Slides.Group | GoogleAppsScript.Slides.Table | GoogleAppsScript.Slides.Shape, delim: AutoLatexCommon.Delimiter, quality: number, size: number, defaultSize: number, isInline: boolean) {
+  if ("ungroup" in element) {
+    // recursively process all elements in this group
+    let c = 0;
+    for (const childElement of element.getChildren()) {
+      // returns null if we don't recognize the type
+      const castedPageElement = castElement(childElement);
+      if (castedPageElement) {
+        c += renderElement(slideNum, castedPageElement, delim, quality, size, defaultSize, isInline);
+      }
+    }
+    return c;
+  } else if (isTable(element)) {
+    // table
+    let c = 0;
+    for (let i = 0; i < element.getNumRows(); i++) {
+      for (let j = 0; j < element.getNumColumns(); j++) {
+        const cell = element.getCell(i, j);
+        // ignore merged cells (the head cells of merged cells will still be counted)
+        if (cell.getMergeState() === SlidesApp.CellMergeState.MERGED) continue;
+        
+        let parsedEquations = findPos(slideNum, cell, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+        c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
+      }
+    }
+    return c;
+  } else {
+    // single shape
+    let parsedEquations = findPos(slideNum, element, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+    return parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
+  }
 }
 
 // slideNum and slideObjectNum are integers
@@ -164,7 +243,7 @@ function getRgbColor(textRange: GoogleAppsScript.Slides.TextRange, slideNum: num
   return [red, green, blue];
 }
 
-function unwrapEQ(element: GoogleAppsScript.Slides.Shape | GoogleAppsScript.Slides.TableCell) {
+function unwrapEQ(element: PageElement) {
   let textValue: GoogleAppsScript.Slides.TextRange | null = null;
   // test if it's a text box (table cells work)
   try {
@@ -190,7 +269,7 @@ function unwrapEQ(element: GoogleAppsScript.Slides.Shape | GoogleAppsScript.Slid
 					1 if eqn is "" and 0 if not. Assume we close on 4 consecutive empty ones.
 */
 
-function findPos(slideNum: number, element: GoogleAppsScript.Slides.Shape | GoogleAppsScript.Slides.TableCell, parentElement: GoogleAppsScript.Slides.Shape | GoogleAppsScript.Slides.Table, delim: AutoLatexCommon.Delimiter, quality: number, size: number, defaultSize: number, isInline: boolean) {
+function findPos(slideNum: number, element: PageElement, delim: AutoLatexCommon.Delimiter, quality: number, size: number, defaultSize: number, isInline: boolean) {
   // get the shape (elementNum) on the given slide (slideNum)
   // var element = getElementFromIndices(slideNum, elementNum);
   // debugLog("shape is: " + shape.getPageElementType())
@@ -242,7 +321,7 @@ function findPos(slideNum: number, element: GoogleAppsScript.Slides.Shape | Goog
         continue;
       }
 
-      imagesPlaced.push(placeImage(slideNum, parentElement, elementText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, textColor));
+      imagesPlaced.push(placeImage(slideNum, element, elementText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, textColor));
     }
   }
   return imagesPlaced;
@@ -260,51 +339,64 @@ function getEquation(paragraph: GoogleAppsScript.Slides.TextRange, start: number
   return equationStringEncoded;
 }
 
-function resize(eqnImage: GoogleAppsScript.Slides.Image, textElement: GoogleAppsScript.Slides.Shape | GoogleAppsScript.Slides.Table, size: number, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment) {
-  eqnImage.setWidth(((size * eqnImage.getWidth()) / eqnImage.getHeight()) * scale);
-  eqnImage.setHeight(size * scale);
-  if (horizontalAlignment === SlidesApp.ParagraphAlignment.END) eqnImage.setLeft(textElement.getLeft() + textElement.getWidth() - eqnImage.getWidth()); // subtracting the image width emulates "setRight"
-  else if (horizontalAlignment === SlidesApp.ParagraphAlignment.CENTER) eqnImage.setLeft(textElement.getLeft() + textElement.getWidth() / 2 - eqnImage.getWidth() / 2);
-  else eqnImage.setLeft(textElement.getLeft());
-  if (verticalAlignment === SlidesApp.ContentAlignment.TOP) eqnImage.setTop(textElement.getTop());
-  else if (verticalAlignment === SlidesApp.ContentAlignment.BOTTOM) eqnImage.setTop(textElement.getTop() + textElement.getHeight() - eqnImage.getHeight()); // emulating "setBottom"
-  else eqnImage.setTop(textElement.getTop() + textElement.getHeight() / 2 - eqnImage.getHeight() / 2);
+/**
+ * Get the coordinates of the top-left corner of this element, as well as the width and the height
+ */
+function getBounds(textElement: PageElement) {
+  if (isTableCell(textElement)) {
+    const targetRow = textElement.getRowIndex();
+    const targetCol = textElement.getColumnIndex();
+    const row = textElement.getParentRow();
+    const col = textElement.getParentColumn();
+    const table = textElement.getParentTable();
+    
+    let x = table.getLeft();
+    let y = table.getTop();
+    
+    // iterate through cells before to find position
+    for (let rowIdx = 0; rowIdx < targetRow; rowIdx++) {
+      y += table.getRow(rowIdx).getMinimumHeight();
+    }
+    for (let colIdx = 0; colIdx < targetCol; colIdx++) {
+      x += table.getColumn(colIdx).getWidth();
+    }
+    
+    return {
+      x,
+      y,
+      width: col.getWidth(),
+      height: row.getMinimumHeight()
+    };
+  } else {
+    // simple - just call the respective methods
+    return {
+      x: textElement.getLeft(),
+      y: textElement.getTop(),
+      width: textElement.getWidth(),
+      height: textElement.getHeight()
+    };
+  }
 }
 
-/**
- * Returns the element iterating
- */
-function getElementFromIndices(slideNum: number, elementNum: number) {
-  const doc = IntegratedApp.getBody();
-  Common.assert(slideNum < doc.length, "slideNum < doc.length");
-  const body = doc[slideNum];
-  const elements = body.getPageElements();
-  // elements = body.getPageElements();
-  Common.assert(elementNum < elements.length, "elementNum (" + elementNum + ") < elements.length (" + elements.length + ")");
-  let element: GoogleAppsScript.Slides.PageElement;
-  if (elementNum < elements.length) {
-    element = elements[elementNum];
-  } else {
-    return null;
-  }
+function resize(eqnImage: GoogleAppsScript.Slides.Image, textElement: PageElement, size: number, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment, bounds: ReturnType<typeof getBounds>) {
+  eqnImage.setWidth(((size * eqnImage.getWidth()) / eqnImage.getHeight()) * scale);
+  eqnImage.setHeight(size * scale);
+  
+  // try to match the horizontal alignment of the text
+  if (horizontalAlignment === SlidesApp.ParagraphAlignment.END)
+    eqnImage.setLeft(bounds.x + bounds.width - eqnImage.getWidth()); // subtracting the image width emulates "setRight"
+  else if (horizontalAlignment === SlidesApp.ParagraphAlignment.CENTER)
+    eqnImage.setLeft(bounds.x + bounds.width / 2 - eqnImage.getWidth() / 2);
+  else
+    eqnImage.setLeft(bounds.x);
 
-  let elementType: GoogleAppsScript.Slides.PageElementType;
-  try {
-    // type = element.getPageElementType();
-    elementType = element.getPageElementType();
-    Common.debugLog("Element Type is:" + elementType + " elementNum is:" + elementNum);
-  } catch {
-    Common.debugLog("Not of type shape");
-    return null;
-  }
-
-  if (elementType === SlidesApp.PageElementType.SHAPE) {
-    // handles alternating footers etc.
-    return element.asShape();
-  } else if (elementType === SlidesApp.PageElementType.TABLE) {
-    return element.asTable();
-  }
-  return null;
+  // match the vertical alignment
+  if (verticalAlignment === SlidesApp.ContentAlignment.TOP)
+    eqnImage.setTop(bounds.y);
+  else if (verticalAlignment === SlidesApp.ContentAlignment.BOTTOM)
+    eqnImage.setTop(bounds.y + bounds.height - eqnImage.getHeight()); // emulating "setBottom"
+  else
+    eqnImage.setTop(bounds.y + bounds.height / 2 - eqnImage.getHeight() / 2);
 }
 
 /**
@@ -318,26 +410,24 @@ function getElementFromIndices(slideNum: number, elementNum: number) {
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
 
-function placeImage(slideNum: number, textElement: GoogleAppsScript.Slides.Shape | GoogleAppsScript.Slides.Table, text: GoogleAppsScript.Slides.TextRange, start: number, end: number, quality: number, size: number, defaultSize: number, delim: AutoLatexCommon.Delimiter, isInline: boolean, [red, green, blue]: number[]) {
+function placeImage(slideNum: number, textElement: PageElement, text: GoogleAppsScript.Slides.TextRange, start: number, end: number, quality: number, size: number, defaultSize: number, delim: AutoLatexCommon.Delimiter, isInline: boolean, [red, green, blue]: number[]) {
   Common.debugLog("placeImage- EquationOriginal: " + textElement + ", type: " + typeof textElement);
+  
+  const equationRange = text.getRange(start + 1, end);
 
-  let textSize = text
-    .getRange(start + 1, end)
+  let textSize = equationRange
     .getTextStyle()
     .getFontSize();
+  
   // Gets the horizontal alignment of the equation. If it somehow spans multiple paragraphs, this will return the alignment of the first one
-  const textHorizontalAlignment = textElement.getPageElementType() === SlidesApp.PageElementType.TABLE ?
-    SlidesApp.ParagraphAlignment.START : 
-    text
-      .getRange(start + 1, end)
-      .getParagraphs()[0]
-      .getRange()
-      .getParagraphStyle()
-      .getParagraphAlignment();
+  const textHorizontalAlignment = text
+    .getRange(start + 1, end)
+    .getParagraphs()[0]
+    .getRange()
+    .getParagraphStyle()
+    .getParagraphAlignment();
       
-  const textVerticalAlignment = textElement.getPageElementType() === SlidesApp.PageElementType.TABLE ?
-    SlidesApp.ContentAlignment.MIDDLE :
-    (textElement as GoogleAppsScript.Slides.Shape).getContentAlignment();
+  const textVerticalAlignment = textElement.getContentAlignment();
   // var textSize = text.getTextStyle().getFontSize();
   Common.debugLog("My Text Size is: " + textSize.toString());
   if (textSize == null) {
@@ -358,16 +448,27 @@ function placeImage(slideNum: number, textElement: GoogleAppsScript.Slides.Shape
   var body = doc[slideNum];
 
   // console.log("title alt text: " + renderer[2] + equationOriginal + "#" + delim[6])
+  
+  // This is a relatively expensive call for tables, so we store it in a variable
+  const bounds = getBounds(textElement);
 
-  var obj = [red, green, blue, renderer[2] + equationOriginal + "#" + delim[6], textSize];
-  var json = JSON.stringify(obj);
+  const origURL = renderer[2] + equationOriginal + "#" + delim[6];
+  const derenderData: DerenderData = {
+    red,
+    green,
+    blue,
+    origURL,
+    size: textSize,
+    width: bounds.width,
+    height: bounds.height
+  };
 
-  if (textElement.getPageElementType() ===  SlidesApp.PageElementType.TABLE) {
+  if (isTableCell(textElement)) {
     // if table
     text.clear(start, Math.min(text.getLength(), end + 2));
   } else {
     // else if text box
-    (textElement as GoogleAppsScript.Slides.Shape).getText().clear(start, end + 2);
+    textElement.getText().clear(start, end + 2);
   }
 
   // textElement.setLeft(textElement.getLeft() + image.getWidth() * 1.1);
@@ -391,12 +492,17 @@ function placeImage(slideNum: number, textElement: GoogleAppsScript.Slides.Shape
 
   var image = body.insertImage(renderer[1]);
 
-  resize(image, textElement, textSize, scale, textHorizontalAlignment, textVerticalAlignment);
-  if (textElement.getPageElementType() === SlidesApp.PageElementType.SHAPE &&
-    (<GoogleAppsScript.Slides.Shape>textElement).getShapeType() === SlidesApp.ShapeType.TEXT_BOX &&
-    (<GoogleAppsScript.Slides.Shape>textElement).getText().asRenderedString().length == 1) // else if text box, with no other text
+  resize(image, textElement, textSize, scale, textHorizontalAlignment, textVerticalAlignment, bounds);
+  
+  // remove empty textboxes
+  if (
+    !isTableCell(textElement) &&
+    textElement.getShapeType() === SlidesApp.ShapeType.TEXT_BOX &&
+    textElement.getText().asRenderedString().length == 1
+  ) {
     textElement.remove();
-  image.setTitle(json);
+  }
+  image.setTitle(JSON.stringify(derenderData));
   return [size, 1];
 }
 
@@ -409,42 +515,72 @@ function removeAll(defaultDelimRaw: string) {
   const defaultDelim = Common.getDelimiters(defaultDelimRaw);
   for (const slide of IntegratedApp.getBody()) {
     for (const image of slide.getImages()) {
-      const positionX = image.getLeft(); // returns horizontal position in points measured from upper-left of the page
-      const positionY = image.getTop(); // returns vertical position
-      const width = image.getWidth();
-      const height = image.getHeight();
-      const [red, green, blue, origURL, size] = JSON.parse(image.getTitle());
-      const colors = [red, green, blue].map((x: string) => Number(x)) as [number, number, number];
-      if (!origURL) continue;
-      image.remove();
-      // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
-      // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
-      const result = Common.derenderEquation(origURL);
-      if (!result) continue;
-      const { origEq, delim: newDelim } = result;
-      const delim = newDelim || defaultDelim;
-
-      if (origEq.length <= 0) {
-        console.log("Empty equation derender");
-        continue;
-      }
-
-      const shape = slide.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
-      const textRange = shape.getText();
-      
-      const textStyle = textRange
-        .insertText(0, delim[0] + origEq + delim[1])
-        .getTextStyle()
-        .setForegroundColor(...colors);
-
-      if (size) {
-        textStyle.setFontSize(size);
-      }
-
-      counter += 1;
+      if (derenderImage(image, defaultDelim, slide) === Common.DerenderResult.Success) counter++;
     }
   }
   return counter;
+}
+
+function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoLatexCommon.Delimiter, slide: GoogleAppsScript.Slides.Page | GoogleAppsScript.Slides.Slide) {
+  const positionX = image.getLeft(); // returns horizontal position in points measured from upper-left of the page
+  // debugLog("Left: " + positionX)
+  const positionY = image.getTop(); // returns vertical position
+  
+  let derenderData: DerenderData | [number, number, number, string, number] = JSON.parse(image.getTitle());
+  
+  if (Array.isArray(derenderData)) { 
+    // backwards-compatibility - we use an object now
+    const [red, green, blue, origURL, size] = derenderData;
+    derenderData = {
+      red,
+      green,
+      blue,
+      origURL,
+      // size may be undefined for older versions
+      size,
+      width: image.getWidth(),
+      height: image.getHeight()
+    };
+  }
+  // deconstruct
+  const { red, green, blue, origURL, size, width, height } = derenderData;
+  
+  // these _should_ be numbers already, but I'm leaving this here in case it's needed for backwards compatibility
+  const colors = [red, green, blue].map((x: string | number) => Number(x)) as [number, number, number];
+
+  image.remove();
+
+  Common.debugLog("image description is: " + origURL);
+
+  if (!origURL) return Common.DerenderResult.NullUrl;
+
+  Common.debugLog("Original URL from image", origURL);
+  const result = Common.derenderEquation(origURL);
+  if (!result) return Common.DerenderResult.InvalidUrl;
+  const { delim: newDelim, origEq } = result;
+  const delim = newDelim || defaultDelim;
+
+  if (origEq.length <= 0) {
+    console.log("Empty equation derender.");
+    return Common.DerenderResult.EmptyEquation;
+  }
+
+  // insert textbox
+  const shape = slide.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
+  const textRange = shape.getText();
+
+  const textStyle = textRange
+    .insertText(0, delim[0] + origEq + delim[1])
+    .getTextStyle()
+    .setForegroundColor(...colors);
+
+  if (size) {
+    textStyle.setFontSize(size);
+  }
+  
+  Common.debugLog("textRange: " + textRange + "type: " + typeof textRange);
+  
+  return Common.DerenderResult.Success;
 }
 
 /**
@@ -454,7 +590,6 @@ function removeAll(defaultDelimRaw: string) {
  * @param {string} sizeRaw     Sidebar-selected size.
  * @public
  */
-
 function editEquations(sizeRaw: string, delimiter: string) {
   const defaultDelim = Common.getDelimiters(delimiter);
   Common.savePrefs(sizeRaw, delimiter);
@@ -470,70 +605,10 @@ function editEquations(sizeRaw: string, delimiter: string) {
   Common.debugLog("selection Type is: " + selectionType);
 
   if (selectionType == SlidesApp.SelectionType.PAGE_ELEMENT) {
-    var image = selection.getPageElementRange().getPageElements()[0].asImage();
+    // if they're selecting an image inside a group, the image is the second element in the selection
+    const image = selection.getPageElementRange().getPageElements().find(el => el.getPageElementType() === SlidesApp.PageElementType.IMAGE)?.asImage();
     if (image) {
-      console.log("valid selection");
-      Common.debugLog(image);
-      const positionX = image.getLeft(); // returns horizontal position in points measured from upper-left of the page
-      // debugLog("Left: " + positionX)
-      const positionY = image.getTop(); // returns vertical position
-      // debugLog("Top: " + positionY)
-      const width = image.getWidth();
-      // debugLog("Width: " + width)
-      const height = image.getHeight();
-      // debugLog("Height: " + height)
-      // var image = element.getChild(position).asInlineImage();
-      // debugLog("Image height: " + image.getHeight());
-      // var origURL = image.getContentUrl();
-      // image.setDescription("https://www.codecogs.com/eqnedit.php?latex=f(t)%3D%5Csum_%7B-%5Cinfty%7D%5E%7B%5Cinfty%7Dc_ne%5E%7Bi%5Cfrac%7B2%5Cpi%20n%7D%7BT%7Dt%7D%3D%5Ccdots%2Bc_%7B-2%7De%5E%7B-i%5Cfrac%7B4%5Cpi%7D%7BT%7Dt%7D%2Bc_%7B-1%7De%5E%7B-i%5Cfrac%7B2%5Cpi%7D%7BT%7Dt%7D%2Bc_0%2Bc_1e%5E%7Bi%5Cfrac%7B2%5Cpi%7D%7BT%7Dt%7D%2Bc_2e%5E%7Bi%5Cfrac%7B4%5Cpi%7D%7BT%7Dt%7D%2B%5Ccdots#0");
-      // for(let i = 0; i < linkEquation.length; i++){
-      //   debugLog("linkEquation has " + linkEquation.length + "number of elements")
-      //   debugLog("elements in link Equation are: " + linkEquation[i])
-      // }
-
-      // image.setDescription('' + linkEquation[0])
-      // debugLog("element in Link Equation is: " + linkEquation[0])
-
-      // Note: size may be undefined if the equation was rendered with an older add-on version
-      const [red, green, blue, origURL, size] = JSON.parse(image.getTitle());
-      const colors = [red, green, blue].map((x: string) => Number(x)) as [number, number, number];
-
-      image.remove();
-
-      Common.debugLog("image description is: " + origURL);
-
-      if (!origURL) return Common.DerenderResult.NullUrl;
-
-      Common.debugLog("Original URL from image", origURL);
-      const result = Common.derenderEquation(origURL);
-      if (!result) return Common.DerenderResult.InvalidUrl;
-      const { delim: newDelim, origEq } = result;
-      const delim = newDelim || defaultDelim;
-
-      if (origEq.length <= 0) {
-        console.log("Empty equation derender.");
-        return Common.DerenderResult.EmptyEquation;
-      }
-
-      // insert textbox
-
-      const shape = currentPage.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
-      const textRange = shape.getText();
-
-      const textStyle = textRange
-        .insertText(0, delim[0] + origEq + delim[1])
-        .getTextStyle()
-        .setForegroundColor(...colors);
-
-      if (size) {
-        textStyle.setFontSize(size);
-      }
-      
-      Common.debugLog("textRange: " + textRange + "type: " + typeof textRange);
-      Common.debugLog(typeof textRange.insertText);
-      // insert original equation into newly created text box
-      // element.getChild(position+1).removeFromParent();
-      return Common.DerenderResult.Success;
+      return derenderImage(image, defaultDelim, currentPage);
     } else {
       return Common.DerenderResult.NonExistentElement;
     }
