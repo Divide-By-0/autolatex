@@ -68,7 +68,7 @@ async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRender
   // create a URL for this svg
   const svgString = new XMLSerializer().serializeToString(svg)
     // inject css
-    .replace("<defs>", "<defs>" + styles);
+    .replace("</svg>", styles + "</svg>");
   const svgBlob = new Blob([svgString], {
     type: "image/svg+xml"
   });
