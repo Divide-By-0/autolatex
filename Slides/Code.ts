@@ -139,35 +139,17 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
   const slides = IntegratedApp.getBody();
   const childCount = slides.length;
   for (let slideNum = 0; slideNum < childCount; slideNum++) {
-    for (let elementNum = 0; elementNum < slides[slideNum].getPageElements().length; elementNum++) {
-      Common.debugLog("Slide Num: " + slideNum + " Num of shapes: " + slides[slideNum].getPageElements().length);
-      let element = getElementFromIndices(slideNum, elementNum);
-      if (element === null) continue;
+    const elements = slides[slideNum].getPageElements();
+    Common.debugLog("Slide Num: " + slideNum + " Num of shapes: " + elements.length);
+    for (const element of elements) {
+      const castedElement = castElement(element);
+      // if we don't recognize this element
+      if (castedElement === null) continue;
       
-      c += renderElement(slideNum, element, renderOptions);
+      c += renderElement(slideNum, castedElement, renderOptions);
     }
   }
   return Common.encodeFlag(0, c);
-}
-
-/**
- * Returns the element iterating
- */
-function getElementFromIndices(slideNum: number, elementNum: number) {
-  const doc = IntegratedApp.getBody();
-  Common.assert(slideNum < doc.length, "slideNum < doc.length");
-  const body = doc[slideNum];
-  const elements = body.getPageElements();
-  // elements = body.getPageElements();
-  Common.assert(elementNum < elements.length, "elementNum (" + elementNum + ") < elements.length (" + elements.length + ")");
-  let element: GoogleAppsScript.Slides.PageElement;
-  if (elementNum < elements.length) {
-    element = elements[elementNum];
-  } else {
-    return null;
-  }
-
-  return castElement(element);
 }
 
 function castElement(element: GoogleAppsScript.Slides.PageElement) {
@@ -283,9 +265,6 @@ function unwrapEQ(element: PageElement) {
 */
 
 function findPos(slideNum: number, element: PageElement, renderOptions: AutoLatexCommon.RenderOptions) {
-  // get the shape (elementNum) on the given slide (slideNum)
-  // var element = getElementFromIndices(slideNum, elementNum);
-  // debugLog("shape is: " + shape.getPageElementType())
   let imagesPlaced = [];
   if (!element)
     imagesPlaced.push([0, 0]);
