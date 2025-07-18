@@ -2,7 +2,7 @@ const DEBUG = true; //doing ctrl + m to get key to see errors is still needed; D
 
 /**
  * An array which defines a renderer
- * 
+ *
  * Note: clasp-types is not compatible with type aliases, so this is defined as an interface instead.
  * @public
  */
@@ -14,7 +14,38 @@ interface Renderer {
   4: string;
   5: string;
   6: string;
-};
+}
+
+interface CommonRenderOptions {
+  // The size of the text, whose neg/pos indicated whether the equation is inline or not.
+  size: number;
+  inline: boolean;
+  // color
+  r: number, g: number, b: number;
+  // needed for constructing the derendering string
+  delim: Delimiter;
+}
+
+/**
+ * Options for rendering on the server - these are general settings for all equations
+ *
+ * @public
+ */
+interface RenderOptions extends CommonRenderOptions {
+  // The default/previous size of the text, in case size is null.
+  defaultSize: number;
+  clientRender: boolean;
+}
+
+/**
+* Options/state for rendering on the client - these are settings for a specific equation
+* 
+* @public
+*/
+interface ClientRenderOptions extends CommonRenderOptions {
+  rangeId: string;
+  equation: string;
+}
 
 /**
  * @public
@@ -64,7 +95,17 @@ const capableRenderers = 8;
 /**
  * @public
  */
-const capableDerenderers = 12;
+const capableDerenderers = 13;
+
+/**
+ * Renderer ID constants for retreiving info about specific renderers
+ * @public
+*/
+const rendererIds = {
+  CODECOGS: 1,
+  MATHJAX: 13
+};
+
 //render bug variables
 /**
  * @public
@@ -221,10 +262,10 @@ function deEncode(equation: string) {
  * @param size                   The size of the text, whose neg/pos indicated whether the equation is inline or not.
  */
 
-function getStyle(equationStringEncoded: string, quality: number, renderer: Renderer, isInline: boolean, type: number, red: number, green: number, blue: number) {
+function getStyle(equationStringEncoded: string, renderer: Renderer, type: number, { inline, r: red, g: green, b: blue }: RenderOptions) {
   //ERROR?
   const equation: string[] = [];
-  equationStringEncoded = equationStringEncoded;
+
   reportDeltaTime(307);
   // handle RGB coloring, except on Texrendr
   if (renderer[5] !== "Texrendr") {
@@ -232,7 +273,7 @@ function getStyle(equationStringEncoded: string, quality: number, renderer: Rend
     equationStringEncoded = "%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D" + equationStringEncoded;
   }
 
-  if (isInline) {
+  if (inline) {
     // wrap in renderer inline delimiters
     equationStringEncoded = renderer[3] + "%7B" + equationStringEncoded + renderer[4] + "%7D";
   } else {
@@ -285,8 +326,8 @@ function getKey() {
 /**
  * @public
  */
-function renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number) {
-  var equation = "";
+function renderEquation(equationOriginal: string, renderOptions: RenderOptions) {
+  let equation = "";
   let renderer: Renderer | null = null;
   let resp: GoogleAppsScript.URL_Fetch.HTTPResponse | null = null;
   let failure = 1;
@@ -306,7 +347,7 @@ function renderEquation(equationOriginal: string, quality: number, delim: Delimi
     try {
       renderer = getRenderer(worked);
       rendererType = renderer[5];
-      equation = getStyle(equationOriginal, quality, renderer, isInline, worked, red, green, blue);
+      equation = getStyle(equationOriginal, renderer, worked, renderOptions);
       // console.log(rendererType, "Texrendr", rendererType == "Texrendr")
       if (rendererType == "Texrendr") {
         // console.log("Used texrendr", equation, equation.replace("%5C%5C", "%0D"))
@@ -326,7 +367,7 @@ function renderEquation(equationOriginal: string, quality: number, delim: Delimi
       renderer[1] = renderer[1].split("EQUATION").join(equation);
       renderer[2] = renderer[2].split("FILENAME").join(getFilenameEncode(equation, 0)); // since mutating original object, important each is a new one
       debugLog("Link with equation", renderer[1]);
-      debugLog("Title Alt Text " + renderer[2] + equationOriginal + "#" + delim[6]);
+      debugLog("Title Alt Text " + renderer[2] + equationOriginal + "#" + renderOptions.delim[6]);
       debugLog("Cached equation: " + renderer[2] + renderer[6] + equation);
       reportDeltaTime(453);
       console.log("Fetching ", renderer[1], " and ", renderer[2] + renderer[6] + equation);
@@ -563,9 +604,22 @@ function getRenderer(worked: number): Renderer {
       "Number empire",
       "",
     ];
-  } // to de render possibly very old equations
+  }
+  // to de render MathJax equations
+  else if (worked == 13) {
+    return [
+      13,
+      "about:blank?type=mathjax&equation=",
+      "about:blank?type=mathjax&equation=",
+      "",
+      "",
+      "MathJax",
+      "",
+    ];
+  }
+  // to de render possibly very old equations
   else
-    return [13, "https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION", "https://www.codecogs.com/eqnedit.php?latex=", "%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"];
+    return [14, "https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION", "https://www.codecogs.com/eqnedit.php?latex=", "%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"];
 }
 
 /**

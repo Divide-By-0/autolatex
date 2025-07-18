@@ -7,6 +7,27 @@
 
 var DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
 
+/**
+ * enums should be alphabetical in order to work with clasp-types
+ * @public
+ */
+const enum DocsEquationRenderStatus {
+  AllRenderersFailed,
+  ClientRender,
+  EmptyEquation,
+  NoDocument,
+  NoEndDelimiter,
+  NoStartDelimiter,
+  Success,
+}
+
+interface DocsEquationRenderResult {
+  status: DocsEquationRenderStatus,
+  equationSize?: number,
+  nextStartElement?: GoogleAppsScript.Document.RangeElement,
+  clientRenderOptions?: AutoLatexCommon.ClientRenderOptions
+}
+
 const DocsApp = {
 	getUi: function(){
 		let activeUi = DocumentApp.getUi();
@@ -80,8 +101,7 @@ function getKey() {
  * Constantly keep replacing latex till all are finished
  * @public
  */
-function replaceEquations(sizeRaw: string, delimiter: string) {
-  const quality = 900;
+function replaceEquations(sizeRaw: string, delimiter: string, clientRender: boolean) {
   let size = Common.getSize(sizeRaw);
   let isInline = false;
   if (size < 0) {
@@ -92,7 +112,6 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
   const delim = Common.getDelimiters(delimiter);
   Common.savePrefs(sizeRaw, delimiter);
   let c = 0; //counter
-  let defaultSize = 11;
   let allEmpty = 0;
   Common.reportDeltaTime(146);
   let body: GoogleAppsScript.Document.Document;
@@ -100,33 +119,92 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
     body = DocumentApp.getActiveDocument();
   } catch (error) {
     console.error(error);
-    return Common.encodeFlag(-1, 0);
+    
+    return {
+      lastStatus: DocsEquationRenderStatus.NoDocument,
+      successCount: 0
+    };
   }
+  
+  const baseRenderOptions: AutoLatexCommon.RenderOptions = {
+    size,
+    defaultSize: 11,
+    inline: isInline,
+    delim,
+    
+    clientRender,
+    
+    // TODO: color support for Docs
+    r: 0,
+    g: 0,
+    b: 0
+  };
+  
+  const clientEquations: AutoLatexCommon.ClientRenderOptions[] = [];
 
-  let childCount = body.getBody().getParent().getNumChildren();
+  const childCount = body.getBody().getParent().getNumChildren();
   Common.reportDeltaTime(156);
-  for (var index = 0; index < childCount; index++) {
+  for (let index = 0; index < childCount; index++) {
     let failedStartElemIfIsEmpty = null;
     while (true) {
       // prevFailedStartElemIfIsEmpty is here so when $$$$ fails again and again, it doesn't get stuck there and moves on.
-      let [gotSize, returnedFailedStartElemIfIsEmpty] = findPos(index, delim, quality, size, defaultSize, isInline, failedStartElemIfIsEmpty); //or: "\\\$\\\$", "\\\$\\\$"
-      allEmpty = returnedFailedStartElemIfIsEmpty ? allEmpty + 1 : 0;
-      failedStartElemIfIsEmpty = returnedFailedStartElemIfIsEmpty;
-
+      const {
+        status,
+        equationSize,
+        nextStartElement,
+        clientRenderOptions
+      } = findPos(index, baseRenderOptions, failedStartElemIfIsEmpty); //or: "\\\$\\\$", "\\\$\\\$"
+      
+      if (nextStartElement) failedStartElemIfIsEmpty = nextStartElement;
+      // if we found an actual equation, update the default size
+      if (equationSize) baseRenderOptions.defaultSize = equationSize;
+        
+      // count consecutive empty equations
+      if (status == DocsEquationRenderStatus.EmptyEquation) {
+        allEmpty++;
+      } else {
+        allEmpty = 0;
+      }
+      
       if (allEmpty > 10) break; //Assume we quit on 10 consecutive empty equations.
-
-      if (gotSize == -100000)
-        // means all renderers didn't return/bugged out.
-        return Common.encodeFlag(-2, c); // instead, return pair of number and bool flag in list but whatever
-
-      if (gotSize == 0) break; // finished with renders in this section
-
-      defaultSize = gotSize;
-      c = returnedFailedStartElemIfIsEmpty ? c : c + 1; // # of equations += 1 except empty equations
+      
+      // quit if all renderers failed or if document failed to load (conflicting authorizations)
+      if (status == DocsEquationRenderStatus.AllRenderersFailed || status == DocsEquationRenderStatus.NoDocument) {
+        return {
+          lastStatus: status,
+          successCount: c
+        };
+      }
+      
+      if (status === DocsEquationRenderStatus.ClientRender) {
+        clientEquations.push(clientRenderOptions);
+      }
+      
+      // could not find next equation
+      // move to next section
+      if (status == DocsEquationRenderStatus.NoStartDelimiter || status == DocsEquationRenderStatus.NoEndDelimiter) {
+        break;
+      }
+      
+      if (status != DocsEquationRenderStatus.EmptyEquation) {
+        c++;
+      }
       console.log("Rendered equations: " + c);
     }
   }
-  return Common.encodeFlag(0, c);
+  
+  if (clientRender) {
+    return {
+      lastStatus: DocsEquationRenderStatus.ClientRender,
+      clientEquations,
+      successCount: 0
+    };
+  }
+  
+  return {
+    lastStatus: DocsEquationRenderStatus.Success,
+    successCount: c
+  };
 }
 
 /**
@@ -142,70 +220,88 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
 					1 if eqn is "" and 0 if not. Assume we close on 4 consecutive empty ones.
 */
 
-function findPos(index: number, delim: AutoLatexCommon.Delimiter, quality: number, size: number, defaultSize: number, isInline: boolean, prevFailedStartElemIfIsEmpty = null): [number, GoogleAppsScript.Document.RangeElement | null] {
+function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, prevFailedStartElemIfIsEmpty = null): DocsEquationRenderResult {
   Common.debugLog("Checking document section index # ", index);
   Common.reportDeltaTime(195);
   const docBody = getBodyFromIndex(index);
   if (docBody == null) {
-    return [0, null];
+    return {
+      status: DocsEquationRenderStatus.NoDocument
+    };
   }
-  let startElement = docBody.findText(delim[2]);
+  let startElement = docBody.findText(renderOptions.delim[2]);
   if (prevFailedStartElemIfIsEmpty) {
-    startElement = docBody.findText(delim[2], prevFailedStartElemIfIsEmpty);
+    startElement = docBody.findText(renderOptions.delim[2], prevFailedStartElemIfIsEmpty);
   }
-  if (startElement == null) return [0, null]; //didn't find first delimiter
+  if (startElement == null) {
+    return {
+      status: DocsEquationRenderStatus.NoStartDelimiter
+    };
+  }
   const placeHolderStart = startElement.getStartOffset(); //position of image insertion
 
-  const endElement = docBody.findText(delim[3], startElement);
-  if (endElement == null) return [0, null]; //didn't find end delimiter (maybe make error different?)
+  const endElement = docBody.findText(renderOptions.delim[3], startElement);
+  // could not find the ending delimiter after the start
+  if (endElement == null) {
+    return {
+      status: DocsEquationRenderStatus.NoEndDelimiter
+    };
+  }
   const placeHolderEnd = endElement.getEndOffsetInclusive(); //text between placeHolderStart and placeHolderEnd will be permanently deleted
-  Common.debugLog(delim[2], " single escaped delimiters ", placeHolderEnd - placeHolderStart, " characters long");
+  Common.debugLog(renderOptions.delim[2], " single escaped delimiters ", placeHolderEnd - placeHolderStart, " characters long");
 
   Common.reportDeltaTime(214);
   if (placeHolderEnd - placeHolderStart == 2.0) {
     // empty equation
     console.log("Empty equation! In index " + index + " and offset " + placeHolderStart);
-    return [defaultSize, endElement]; // default behavior of placeImage
+    
+    return {
+      // start from the end element next time to avoid an infinite loop
+      nextStartElement: endElement,
+      status: DocsEquationRenderStatus.EmptyEquation
+    };
   }
+  
+  // build the RangeElement for this equation
+  // we make the assumption that the entire equation is contained within one TextElement
+  const range = DocsApp.getActive().newRange()
+    .addElement(startElement.getElement().asText(), startElement.getStartOffset(), endElement.getEndOffsetInclusive())
+    .build();
 
-  return placeImage(startElement, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline);
+  return findEquationAndPlaceImage(range.getRangeElements()[0], renderOptions);
 }
 
 
-function getEquation(paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, start: number, end: number, delimiters: AutoLatexCommon.Delimiter) {
-  const equationOriginal = [];
+function getEquation(rangeElement: GoogleAppsScript.Document.RangeElement, delimiters: AutoLatexCommon.Delimiter) {
+  const textElement = rangeElement.getElement().asText();
   Common.reportDeltaTime(284);
-  Common.debugLog("See text", paragraph.getChild(childIndex).asText().getText(), paragraph.getChild(childIndex).asText().getText().length);
-  const equation = paragraph
-    .getChild(childIndex)
-    .asText()
+  Common.debugLog("See text", textElement.getText(), textElement.getText().length);
+  const equation = textElement
     .getText()
-    .substring(start + delimiters[4], end - delimiters[4] + 1);
-    Common.debugLog("See equation", equation);
-    const equationStringEncoded = Common.reEncode(equation); //escape deprecated
-  equationOriginal.push(equationStringEncoded);
+    .substring(
+      rangeElement.getStartOffset() + delimiters[4], rangeElement.getEndOffsetInclusive() - delimiters[4] + 1
+    );
+  Common.debugLog("See equation", equation);
+  const equationStringEncoded = Common.reEncode(equation); //escape deprecated
+
   Common.reportDeltaTime(290);
   //console.log("Encoded: " + equationStringEncoded);
   return equationStringEncoded;
 }
 
 //retrieve size from text
-function setSize(size: number, defaultSize: number, paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, start: number) {
+function getSize(size: number, defaultSize: number, rangeElement: GoogleAppsScript.Document.RangeElement) {
+  const textElement = rangeElement.getElement().asText();
+  
   //GET SIZE
   let newSize = size;
   if (size == 0) {
     try {
-      newSize = paragraph
-        .getChild(childIndex)
-        .asText()
-        .editAsText()
-        .getFontSize(start + 3); //Fix later: Change from 3 to 1
+      newSize = textElement
+        .getFontSize(rangeElement.getStartOffset() + 3); //Fix later: Change from 3 to 1
     } catch (err) {
-      newSize = paragraph
-        .getChild(childIndex)
-        .asText()
-        .editAsText()
-        .getFontSize(start + 1); //Fix later: Change from 3 to 1
+      newSize = textElement
+        .getFontSize(rangeElement.getStartOffset() + 1); //Fix later: Change from 3 to 1
     }
     // size = paragraph.getChild(childIndex).editAsText().getFontSize(start+1);//Fix later: Change from 3 to 1
     // console.log("New size is " + size); //Causes: Index (3) must be less than the content length (2).
@@ -216,6 +312,42 @@ function setSize(size: number, defaultSize: number, paragraph: GoogleAppsScript.
   }
   //console.log("Found Size In Doc As " + size);
   return newSize;
+}
+
+/**
+* Given a list of rendered equations, place these onto the page 
+*
+* @param equations The rendered equations
+* @public
+*/
+function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRenderOptions, renderedEquationB64: string }[]) {
+  const mathjaxRenderer = Common.getRenderer(Common.rendererIds.MATHJAX);
+  let c = 0;
+  
+  // Go backwards so that the named ranges for multiple equations in the same paragraph don't get removed
+  equations.reverse();
+  
+  for (const equation of equations) {
+    const namedRange = DocsApp.getActive().getNamedRangeById(equation.options.rangeId);
+    // get the RangeElement for this equation
+    const range = namedRange.getRange().getRangeElements()[0];
+    const equationBlob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
+    
+    // this will never actually return any error results
+    const result = placeImage(range, equationBlob, mathjaxRenderer, equation.options.equation, equation.options.size, equation.options.delim);
+    
+    if (result.status === DocsEquationRenderStatus.Success) c++;
+    
+    namedRange.remove();
+  }
+  
+  return {
+    lastStatus: DocsEquationRenderStatus.Success,
+    successCount: c
+  };
+  
+  // clean up - remove all of our ranges
+  //DocsApp.getActive().getNamedRanges("ale-equation-range").forEach(range => range.remove());
 }
 
 /**
@@ -230,68 +362,105 @@ function setSize(size: number, defaultSize: number, paragraph: GoogleAppsScript.
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
 
-function placeImage(startElement: GoogleAppsScript.Document.RangeElement, start: number, end: number, quality: number, size: number, defaultSize: number, delim: AutoLatexCommon.Delimiter, isInline: boolean): [number, GoogleAppsScript.Document.RangeElement | null] {
+function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.RangeElement,  renderOptions: AutoLatexCommon.RenderOptions): DocsEquationRenderResult {
   Common.reportDeltaTime(411);
   Common.reportDeltaTime(413);
+  // GET VARIABLES
+  const textElement = startElement.getElement().asText();
+  const size = getSize(renderOptions.size, renderOptions.defaultSize, startElement);
+  const equationOriginal = getEquation(startElement, renderOptions.delim);
+
+  if (equationOriginal == "") {
+    console.log("No equation but undetected start and end as ", startElement.getStartOffset(), " ", startElement.getEndOffsetInclusive());
+    
+    return {
+      status: DocsEquationRenderStatus.EmptyEquation,
+      // TODO: this _should_ be impossible - empty equations should be detected in findPos()
+      nextStartElement: startElement
+    };
+  }
+  
+  // get font color
+  const colorHex = textElement.getForegroundColor(startElement.getStartOffset());
+  // convert to rgb (default to black when colorHex is null - this happens in some weird cases where Docs can't figure out the color)
+  const [r, g, b] = colorHex ? [1, 3, 5].map(i => parseInt(colorHex.slice(i, i + 2), 16)) : [0, 0, 0];
+  
+  // add color info to render options
+  const coloredRenderOptions = {
+    ...renderOptions,
+    r, g, b,
+  };
+  
+  // send info to the client for rendering
+  if (renderOptions.clientRender) {
+    // we don't need URL encoding or double escaping for client renderers
+    const clientEquation = decodeURIComponent(equationOriginal).replace(/\\\\/g, "\\");
+    const doc = DocumentApp.getActiveDocument();
+    const range = doc.newRange()
+      .addElement(textElement, startElement.getStartOffset(), startElement.getEndOffsetInclusive())
+      .build();
+    // save this range for later
+    const namedRange = doc.addNamedRange("ale-equation-range", range);
+    const clientRenderOptions: AutoLatexCommon.ClientRenderOptions = {
+      ...coloredRenderOptions,
+      size,
+      rangeId: namedRange.getId(),
+      equation: clientEquation
+    };
+    // make sure we can retrieve this element later
+    return {
+      status: DocsEquationRenderStatus.ClientRender,
+      equationSize: size,
+      clientRenderOptions,
+      nextStartElement: startElement
+    };
+  }
+  
+  let { resp, renderer, worked } = Common.renderEquation(equationOriginal, coloredRenderOptions); 
+  if (worked > Common.capableRenderers) return {
+    status: DocsEquationRenderStatus.AllRenderersFailed
+  };
+  // SAVING FORMATTING
+  Common.reportDeltaTime(511);
+  if (escape(resp.getBlob().getDataAsString()).substring(0, 50) == Common.invalidEquationHashCodecogsFirst50) {
+    renderer = Common.getRenderer(Common.rendererIds.CODECOGS);
+  }
+  Common.reportDeltaTime(517);
+  
+  return placeImage(startElement, resp.getBlob(), renderer, equationOriginal, size, renderOptions.delim);
+}
+  
+function placeImage(startElement: GoogleAppsScript.Document.RangeElement, renderedEquation: GoogleAppsScript.Base.Blob, renderer: AutoLatexCommon.Renderer, equation: string, size: number, delim: AutoLatexCommon.Delimiter) {
   // GET VARIABLES
   const textElement = startElement.getElement().asText();
   const text = textElement.getText();
   const paragraph = textElement.getParent() as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph;
   const childIndex = paragraph.getChildIndex(textElement); //gets index of found text in paragaph
-  size = setSize(size, defaultSize, paragraph, childIndex, start);
-  const equationOriginal = getEquation(paragraph, childIndex, start, end, delim);
-
-  if (equationOriginal == "") {
-    console.log("No equation but undetected start and end as ", start, " ", end);
-    return [defaultSize, startElement];
-  }
-
-  // get font color
-  const colorHex = textElement.getForegroundColor(start);
-  // convert to rgb (default to black when colorHex is null - this happens in some weird cases where Docs can't figure out the color)
-  const [r, g, b] = colorHex ? [1, 3, 5].map(i => parseInt(colorHex.slice(i, i + 2), 16)) : [0, 0, 0];
-
-  let { resp, renderer, rendererType, worked, equation } = Common.renderEquation(equationOriginal, quality, delim, isInline, r, g, b); 
-  if (worked > Common.capableRenderers) return [-100000, null];
-  // SAVING FORMATTING
-  Common.reportDeltaTime(511);
-  if (escape(resp.getBlob().getDataAsString()).substring(0, 50) == Common.invalidEquationHashCodecogsFirst50) {
-    worked = 1; //assumes codecogs is 1
-    renderer = Common.getRenderer(worked);
-    rendererType = renderer[5];
-  }
-  Common.reportDeltaTime(517);
   const textCopy = textElement.asText().copy();
-  let endLimit = end;
+  let endLimit = startElement.getEndOffsetInclusive();
   if (text.length - 1 < endLimit) endLimit = text.length - 1;
   textCopy.asText().editAsText().deleteText(0, endLimit); // the copy only has the stuff after the equation
   Common.reportDeltaTime(522);
-  textElement.editAsText().deleteText(start, text.length - 1); // from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
-  const logoBlob = resp.getBlob();
+  textElement.editAsText().deleteText(startElement.getStartOffset(), text.length - 1); // from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
   Common.reportDeltaTime(526);
+  
+  // try inserting twice
+  for (let tryNum = 1; tryNum <= 2; tryNum++) {
+    try {
+      paragraph.insertInlineImage(childIndex + 1, renderedEquation); // TODO ISSUE: sometimes fails because it times out and yeets
+      return repairImage(paragraph, childIndex, size, renderer, delim, textCopy, renderedEquation, equation);
+    } catch (err) {
+      console.log(`Could not insert image try ${tryNum}`);
+      console.error(err);
+      
+      Utilities.sleep(1000);
+    }
+  }
 
-  try {
-    paragraph.insertInlineImage(childIndex + 1, logoBlob); // TODO ISSUE: sometimes fails because it times out and yeets
-    const returnParams = repairImage(paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
-    return returnParams;
-  } catch (err) {
-    console.log("Could not insert image try 1");
-    console.error(err);
-  }
-  Common.reportDeltaTime(536);
-  try {
-    Utilities.sleep(1000);
-    paragraph.insertInlineImage(childIndex + 1, logoBlob); // TODO ISSUE: sometimes fails because it times out and yeets
-    const returnParams = repairImage(paragraph, childIndex, size, defaultSize, renderer, delim, textCopy, resp, rendererType, equation, equationOriginal);
-    return returnParams;
-  } catch (err) {
-    console.log("Could not insert image try 2 after 1000ms");
-    console.error(err);
-  }
   throw new Error("Could not insert image at childindex!");
 }
 
-function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex: number, size:  number, defaultSize: number, renderer: AutoLatexCommon.Renderer, delim: AutoLatexCommon.Delimiter, textCopy: GoogleAppsScript.Document.Text, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, rendererType: string, equation: string, equationOriginal: string): [number, null] {
+function repairImage(paragraph: GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph, childIndex: number, size:  number, renderer: AutoLatexCommon.Renderer, delim: AutoLatexCommon.Delimiter, textCopy: GoogleAppsScript.Document.Text, resp: GoogleAppsScript.Base.Blob, equationOriginal: string): DocsEquationRenderResult {
   let attemptsToSetImageUrl = 3;
   Common.reportDeltaTime(552); // 3 seconds!! inserting an inline image takes time
   while (attemptsToSetImageUrl > 0) {
@@ -305,7 +474,7 @@ function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex:
     }
   }
   if (attemptsToSetImageUrl < 3) {
-    console.log("At ", attemptsToSetImageUrl, " attemptsToSetImageUrls of failing to get child and link , ", equation);
+    console.log("At ", attemptsToSetImageUrl, " attemptsToSetImageUrls of failing to get child and link , ", equationOriginal);
     if (attemptsToSetImageUrl == 0) {
       throw new Error("Couldn't get equation child!"); // of image immediately after inserting
     }
@@ -320,7 +489,7 @@ function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex:
   //SET PROPERTIES OF IMAGE (Height, Width)
   const oldSize = size; // why use oldsize instead of new size
 
-  if (escape(resp.getBlob().getDataAsString()).substring(0, 50) == Common.invalidEquationHashCodecogsFirst50 || (size > 10 && width == 126 && height == 24)) {
+  if (escape(resp.getDataAsString()).substring(0, 50) == Common.invalidEquationHashCodecogsFirst50 || (size > 10 && width == 126 && height == 24)) {
     size *= 5; // make codecogs errors readable, size constraint just in case some small equation is 126x24 as well
   }
   // console.log(rendererType, rendererType.valueOf(), "Texrendr".valueOf(), rendererType.valueOf() === "Codecogs".valueOf(), rendererType.valueOf() == "Codecogs".valueOf(), rendererType === "Codecogs", rendererType.valueOf() === "Texrendr".valueOf(), rendererType.valueOf() == "Texrendr".valueOf(), rendererType === "Texrendr")
@@ -329,29 +498,35 @@ function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex:
   // if(rendererType.valueOf() === "Texrendr".valueOf())  //Old TexRendr
   // 	size = Math.round(size * height / 174);
   let multiple = size / 100.0;
-  if (rendererType.valueOf() === "Texrendr".valueOf())
+  if (renderer[5] === "Texrendr")
     //TexRendr
     multiple = size / 42.0;
-  else if (rendererType.valueOf() === "Roger's renderer".valueOf())
+  else if (renderer[5] === "Roger's renderer")
     //Rogers renderer
     multiple = size / 200.0;
-  else if (rendererType.valueOf() === "Codecogs".valueOf())
+  else if (renderer[5] === "Codecogs")
     //CodeCogs, other
     multiple = size / 100.0;
-  else if (rendererType.valueOf() === "Sciweavers".valueOf())
+  else if (renderer[5] === "Sciweavers")
     //Scieweavers
     multiple = size / 98.0;
-  else if (rendererType.valueOf() === "Sciweavers_old".valueOf())
+  else if (renderer[5] === "Sciweavers_old")
     //C [75.4, 79.6] on width and height ratio
     multiple = size / 76.0;
+  else if (renderer[5] === "MathJax")
+    // The MathJax renderer returns scaled equations. We scale down by 5 (resolution), and 1.26 is just for consistency with other renderers.
+    // TODO: When MathJax supports changing font, switch to a font that's more similar to CodeCogs
+    multiple = 1.26 / 5;
   //CodeCogs, other
   else multiple = size / 100.0;
 
-  size = Math.round(height * multiple);
   Common.reportDeltaTime(595);
-  Common.sizeImage(DocsApp, paragraph, childIndex + 1, size, Math.round(width * multiple));
-  defaultSize = oldSize;
-  return [defaultSize, null];
+  Common.sizeImage(DocsApp, paragraph, childIndex + 1, Math.round(height * multiple), Math.round(width * multiple));
+  
+  return {
+    status: DocsEquationRenderStatus.Success,
+    equationSize: oldSize
+  };
 }
 
 function getBodyFromIndex(index: number) {
