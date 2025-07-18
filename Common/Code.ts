@@ -17,6 +17,7 @@ interface Renderer {
 }
 
 interface CommonRenderOptions {
+  // The size of the text, whose neg/pos indicated whether the equation is inline or not.
   size: number;
   inline: boolean;
   // color
@@ -31,6 +32,7 @@ interface CommonRenderOptions {
  * @public
  */
 interface RenderOptions extends CommonRenderOptions {
+  // The default/previous size of the text, in case size is null.
   defaultSize: number;
   clientRender: boolean;
 }
