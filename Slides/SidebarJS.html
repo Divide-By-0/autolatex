@@ -1,5 +1,20 @@
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
 <script>
+
+window.MathJax = {
+  loader: { load: ['tex-svg', '[tex]/color'] },
+  tex: { packages: { '[+]': ['color'] } },
+  svg: {
+    fontCache: 'none'
+  },
+  startup: {
+    typeset: false // Prevent auto-typesetting
+  },
+  options: {
+    enableAssistiveMml: false
+  }
+};
+
 /* global google, $ */
 /// <reference path="../types/docs-types/index.d.ts" />
 /// <reference path="../types/common-types/index.d.ts" />
@@ -29,15 +44,15 @@ function runDotAnimation() {
     }, 300);
 }
 function getCurrentSettings() {
-    var sizeRaw = $('#size :selected').val();
-    var delimiter = $('#delimit :selected').val();
-    return { sizeRaw: sizeRaw, delimiter: delimiter };
+    const sizeRaw = $('#size :selected').val();
+    const delimiter = $('#delimit :selected').val();
+    return { sizeRaw, delimiter };
 }
 //$('donate_button').on("click",function(e){e.preventDefault;}); // for paypal to disable sidebar disappearing
 // Close the dropdown menu if the user clicks outside of it
 window.onclick = function (event) {
     if (!event.target.matches('.dropbtn')) {
-        document.querySelectorAll(".dropdown-content.show").forEach(function (openDropdown) { return openDropdown.classList.remove('show'); });
+        document.querySelectorAll(".dropdown-content.show").forEach(openDropdown => openDropdown.classList.remove('show'));
     }
 };
 $("#advanced").click(function (event) {
@@ -68,16 +83,16 @@ function insertText() {
     this.disabled = true;
     $('#error').remove();
     $("#loading").html("Status: Loading");
-    var runDots = runDotAnimation();
-    var _a = getCurrentSettings(), sizeRaw = _a.sizeRaw, delimiter = _a.delimiter;
+    const runDots = runDotAnimation();
+    const { sizeRaw, delimiter } = getCurrentSettings();
     google.script.run
         .withSuccessHandler(function (returnSuccess, element) {
         $("#loading").html('');
         clearInterval(runDots);
         element.disabled = false;
         console.log(returnSuccess);
-        var flag = 0;
-        var renderCount = 1;
+        let flag = 0;
+        let renderCount = 1;
         if (returnSuccess < -1) {
             flag = -2;
             renderCount = -2 - returnSuccess;
@@ -119,8 +134,8 @@ function editText() {
     this.disabled = true;
     $('#error').remove();
     $("#loading").html("Status: Loading");
-    var runDots = runDotAnimation();
-    var _a = getCurrentSettings(), sizeRaw = _a.sizeRaw, delimiter = _a.delimiter;
+    const runDots = runDotAnimation();
+    const { sizeRaw, delimiter } = getCurrentSettings();
     google.script.run
         .withSuccessHandler(function (returnSuccess, element) {
         $("#loading").html('');
@@ -166,8 +181,8 @@ function undoAll() {
     $("#loading").html("Status: Loading");
     //var div = $('<div id="clickmsg" class="text">' + 'Ctrl + q detected' + '</div>');
     //$('#button-bar').after(div);
-    var runDots = runDotAnimation();
-    var delimiter = getCurrentSettings().delimiter;
+    const runDots = runDotAnimation();
+    const { delimiter } = getCurrentSettings();
     google.script.run
         .withSuccessHandler(function (returnSuccess, element) {
         $("#loading").html('');
@@ -216,12 +231,12 @@ $(document).keydown(function (e) {
         $("#loading").html("Status: Loading");
         //var div = $('<div id="clickmsg" class="text">' + 'Ctrl + q detected' + '</div>');
         //$('#button-bar').after(div);
-        var runDots_1 = runDotAnimation();
-        var delimiter = getCurrentSettings().delimiter;
+        const runDots = runDotAnimation();
+        const { delimiter } = getCurrentSettings();
         google.script.run
             .withSuccessHandler(function (returnSuccess) {
             $("#loading").html('');
-            clearInterval(runDots_1);
+            clearInterval(runDots);
             $("#loading").html("Status: " + 0 + " equations de-rendered.");
             if (returnSuccess < 0) {
                 $("#loading").html("Status: " + "No" + " equations de-rendered.");
@@ -236,7 +251,7 @@ $(document).keydown(function (e) {
         })
             .withFailureHandler(function () {
             $("#loading").html('');
-            clearInterval(runDots_1);
+            clearInterval(runDots);
             showError("Please select image.", "Status: Error, please select image.");
         })
             .removeAll(delimiter);
@@ -255,3 +270,4 @@ function showError(msg1, msg2) {
     $('#loading').html(msg2);
 }
 </script>
+<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>

@@ -4,20 +4,6 @@
 /// <reference path="../types/common-types/index.d.ts" />
 /// <reference lib="dom" />
 
-window.MathJax = {
-  loader: { load: ['tex-svg', '[tex]/color'] },
-  tex: { packages: { '[+]': ['color'] } },
-  svg: {
-    fontCache: 'none'
-  },
-  startup: {
-    typeset: false // Prevent auto-typesetting
-  },
-  options: {
-    enableAssistiveMml: false
-  }
-};
-
 // animation timeout ID
 let runDots = -1;
 
