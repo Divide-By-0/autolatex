@@ -35,7 +35,7 @@ declare namespace AutoLatexCommon {
         /**
          * Given string of size, return integer value.
          */
-        getSize(sizeRaw: string): (0 | -1 | 24 | 12);
+        getSize(sizeRaw: string): number;
 
         /**
          * Retrives the equation from the paragraph, encodes it, and returns it.
