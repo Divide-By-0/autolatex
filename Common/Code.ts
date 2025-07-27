@@ -622,6 +622,7 @@ function debugLog(...strings: any[]) {
  */
 
 function getSize(sizeRaw: string) {
+  // handle custom sizes
   if (!isNaN(Number(sizeRaw))) {
     const parsed = Number(sizeRaw);
     if (parsed > 0) {
