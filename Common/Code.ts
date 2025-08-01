@@ -36,6 +36,8 @@ interface IntegratedApp {
   getBody(): GoogleAppsScript.Document.Body | GoogleAppsScript.Slides.Slide[];
   getActive(): GoogleAppsScript.Document.Document | GoogleAppsScript.Slides.Presentation;
   getPageWidth(): number;
+  // Docs and Slides have different characters for representing a shift-enter
+  newlineCharacter: string;
 }
 
 /**
@@ -128,13 +130,13 @@ function assert(value: boolean, command = "unspecified") {
 }
 
 //encode function that gets Missed. Google Docs characters stuff
-function getCustomEncode(equation: string, direction: number, time: number) {
+function getCustomEncode(equation: string, direction: number, time: number, app: IntegratedApp) {
   // there are two sublists because they happen at differeent times (on encode or decoded string).
   // In addition, the second set is one way due to typing errors/unsupported characters.
   // Replace the first array just for the accompanying link. 	%C2%AD is better than %A0
-  // Note newlines are also %0A or %0D or %0D%0A
+  // Slides and Docs have different characters for representing a shift-enter
   const toFind = [
-    ["#", "+", "%0D", "%0D", "%0D"],
+    ["#", "+", app.newlineCharacter, app.newlineCharacter, app.newlineCharacter],
     ["‘", "’", "”", "“", "−", "≥", "≤", "‐", "—"],
   ];
   const toReplace = [
@@ -166,8 +168,8 @@ function getFilenameEncode(equation: string, direction: number) {
  * Retrives the equation from the paragraph, encodes it, and returns it.
  * @public
  */
-function reEncode(equation: string) {
-  equation = getCustomEncode(equation, 0, 1);
+function reEncode(equation: string, app: IntegratedApp) {
+  equation = getCustomEncode(equation, 0, 1, app);
   // remove non-ascii characters (but separate diacritics where possible)
   equation = equation.normalize("NFC").replace(/[\u{0080}-\u{FFFF}]/gu, match => {
     const normalized = match.normalize("NFD").split("");
@@ -190,25 +192,22 @@ function reEncode(equation: string) {
     
     return result + resultEnd;
   });
-  return getCustomEncode(encodeURIComponent(equation), 0, 0); //escape deprecated
+  return getCustomEncode(encodeURIComponent(equation), 0, 0, app); //escape deprecated
 }
 
 /**
  * returns the deencoded equation as a string.
  */
-function deEncode(equation: string) {
+function deEncode(equation: string, app: IntegratedApp) {
   reportDeltaTime(269);
-  debugLog(equation);
-  debugLog(getCustomEncode(getFilenameEncode(equation, 1), 1, 0));
-  debugLog(decodeURIComponent(getCustomEncode(getFilenameEncode(equation, 1), 1, 0)));
-
+  debugLog("Equation to derender", equation);
+  // First decode pass - handles newlines, #, and +
+  const decoded = decodeURIComponent(getCustomEncode(getFilenameEncode(equation, 1), 1, 0, app));
+  debugLog("First decode pass", decoded);
   reportDeltaTime(274);
-  const equationStringDecoded = getCustomEncode(
-    decodeURIComponent(getCustomEncode(getFilenameEncode(equation, 1), 1, 0)), //escape deprecated
-    1,
-    1
-  );
-  debugLog("Decoded with replacing: " + equationStringDecoded);
+  // Second pass - handles quotes and other characters
+  const equationStringDecoded = getCustomEncode(decoded, 1, 1, app);
+  debugLog("Second decode pass", + equationStringDecoded);
   return equationStringDecoded;
 }
 
@@ -652,7 +651,7 @@ function getSize(sizeRaw: string) {
 /**
  * @public
  */
-function derenderEquation(origURL: string) {
+function derenderEquation(origURL: string, app: IntegratedApp) {
   let worked = 1;
   let found = 0;
   let renderer: string[] = [];
@@ -681,7 +680,7 @@ function derenderEquation(origURL: string) {
     origURL = origURL.slice(0, -2);
     delim = getDelimiters(getNumDelimiters(delimtype));
   }
-  const origEq = deEncode(origURL);
+  const origEq = deEncode(origURL, app);
   debugLog("Undid: " + origEq);
 
   return {

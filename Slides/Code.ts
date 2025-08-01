@@ -31,8 +31,10 @@ const IntegratedApp = {
   },
   getPageWidth: function () {
     return SlidesApp.getActivePresentation().getPageWidth();
-  }
-};
+  },
+  // Shift-enter in slides produces \x0B, or \v
+  newlineCharacter: "%0B"
+} satisfies AutoLatexCommon.IntegratedApp;
 
 
 /** //8.03 - De-Render, Inline, Advanced Delimiters > Fixed Inline Not Appearing
@@ -334,7 +336,7 @@ function getEquation(paragraph: GoogleAppsScript.Slides.TextRange, start: number
   Common.debugLog("getEquation- " + equation.length);
   Common.debugLog("checkForEquation- " + checkForEquation.length);
 
-  var equationStringEncoded = Common.reEncode(equation); //escape deprecated
+  var equationStringEncoded = Common.reEncode(equation, IntegratedApp); //escape deprecated
   equationOriginal.push(equationStringEncoded);
   return equationStringEncoded;
 }
@@ -555,7 +557,7 @@ function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoL
   if (!origURL) return Common.DerenderResult.NullUrl;
 
   Common.debugLog("Original URL from image", origURL);
-  const result = Common.derenderEquation(origURL);
+  const result = Common.derenderEquation(origURL, IntegratedApp);
   if (!result) return Common.DerenderResult.InvalidUrl;
   const { delim: newDelim, origEq } = result;
   const delim = newDelim || defaultDelim;
