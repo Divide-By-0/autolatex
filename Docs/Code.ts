@@ -346,8 +346,6 @@ function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex:
   else if (rendererType.valueOf() === "Sciweavers_old".valueOf())
     //C [75.4, 79.6] on width and height ratio
     multiple = size / 76.0;
-  //CodeCogs, other
-  else multiple = size / 100.0;
 
   size = Math.round(height * multiple);
   Common.reportDeltaTime(595);

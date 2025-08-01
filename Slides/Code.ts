@@ -380,15 +380,19 @@ function getBounds(textElement: PageElement) {
   }
 }
 
-function resize(eqnImage: GoogleAppsScript.Slides.Image, textElement: PageElement, size: number, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment, bounds: ReturnType<typeof getBounds>) {
-  eqnImage.setWidth(((size * eqnImage.getWidth()) / eqnImage.getHeight()) * scale);
-  eqnImage.setHeight(size * scale);
+function resize(eqnImage: GoogleAppsScript.Slides.Image, textElement: PageElement, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment, bounds: ReturnType<typeof getBounds>) {
+  const width = eqnImage.getWidth() * scale;
+  const height = eqnImage.getHeight() * scale;
+  
+  eqnImage.setWidth(width);
+  eqnImage.setHeight(height);
   
   // try to match the horizontal alignment of the text
   if (horizontalAlignment === SlidesApp.ParagraphAlignment.END)
-    eqnImage.setLeft(bounds.x + bounds.width - eqnImage.getWidth()); // subtracting the image width emulates "setRight"
+    // subtracting the image width emulates "setRight"
+    eqnImage.setLeft(bounds.x + bounds.width - width); 
   else if (horizontalAlignment === SlidesApp.ParagraphAlignment.CENTER)
-    eqnImage.setLeft(bounds.x + bounds.width / 2 - eqnImage.getWidth() / 2);
+    eqnImage.setLeft(bounds.x + bounds.width / 2 - width / 2);
   else
     eqnImage.setLeft(bounds.x);
 
@@ -396,9 +400,9 @@ function resize(eqnImage: GoogleAppsScript.Slides.Image, textElement: PageElemen
   if (verticalAlignment === SlidesApp.ContentAlignment.TOP)
     eqnImage.setTop(bounds.y);
   else if (verticalAlignment === SlidesApp.ContentAlignment.BOTTOM)
-    eqnImage.setTop(bounds.y + bounds.height - eqnImage.getHeight()); // emulating "setBottom"
+    eqnImage.setTop(bounds.y + bounds.height - height); // emulating "setBottom"
   else
-    eqnImage.setTop(bounds.y + bounds.height / 2 - eqnImage.getHeight() / 2);
+    eqnImage.setTop(bounds.y + bounds.height / 2 - height / 2);
 }
 
 /**
@@ -417,9 +421,20 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
   
   const equationRange = text.getRange(start + 1, end);
 
-  let textSize = equationRange
-    .getTextStyle()
-    .getFontSize();
+  // if the user selected automatic (or inline), use the size of the text
+  if (size === 0) {
+    const textSize = equationRange
+      .getTextStyle()
+      .getFontSize();
+    if (textSize === null || textSize <= 0) {
+      // size of the previous element
+      size = defaultSize;
+    } else {
+      size = textSize;
+    }
+  }
+  Common.debugLog("My Text Size is: ", size);
+  
   
   // Gets the horizontal alignment of the equation. If it somehow spans multiple paragraphs, this will return the alignment of the first one
   const textHorizontalAlignment = text
@@ -430,11 +445,6 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
     .getParagraphAlignment();
       
   const textVerticalAlignment = textElement.getContentAlignment();
-  // var textSize = text.getTextStyle().getFontSize();
-  Common.debugLog("My Text Size is: " + textSize.toString());
-  if (textSize == null) {
-    textSize = defaultSize;
-  }
 
   const equationOriginal = getEquation(text, start, end, delim);
   Common.debugLog("placeImage- EquationOriginal: " + equationOriginal);
@@ -460,7 +470,7 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
     green,
     blue,
     origURL,
-    size: textSize,
+    size,
     width: bounds.width,
     height: bounds.height
   };
@@ -475,7 +485,7 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
 
   // textElement.setLeft(textElement.getLeft() + image.getWidth() * 1.1);
 
-  // CodeCogs, other: (2 / 100.0) * (125 / 3)
+  // CodeCogs, other
   let scale = (1 / 100.0);
   if (rendererType.valueOf() === "Texrendr".valueOf())
     //TexRendr
@@ -490,11 +500,11 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
     //C [75.4, 79.6] on width and height ratio
     scale = (1 / 76.0) ;
 
-  scale *= (125 * 2 / 3);
+  scale *= size;
 
   var image = body.insertImage(renderer[1]);
 
-  resize(image, textElement, textSize, scale, textHorizontalAlignment, textVerticalAlignment, bounds);
+  resize(image, textElement, scale, textHorizontalAlignment, textVerticalAlignment, bounds);
   
   // remove empty textboxes
   if (
