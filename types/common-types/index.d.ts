@@ -14,7 +14,7 @@ declare namespace AutoLatexCommon {
 
         debugLog(...strings: any[]): void;
 
-        derenderEquation(origURL: string): {delim: Delimiter, origEq: string};
+        derenderEquation(origURL: string, app: IntegratedApp): {delim: Delimiter, origEq: string};
 
         encodeFlag(flag: number, renderCount: number): number;
 
@@ -40,7 +40,7 @@ declare namespace AutoLatexCommon {
         /**
          * Retrives the equation from the paragraph, encodes it, and returns it.
          */
-        reEncode(equation: string): string;
+        reEncode(equation: string, app: IntegratedApp): string;
 
         renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number): {equation: string, renderer: Renderer, rendererType: string, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, worked: number};
 
@@ -80,6 +80,8 @@ declare namespace AutoLatexCommon {
     }
 
     export interface IntegratedApp {
+
+        newlineCharacter: string;
 
         getActive(): (GoogleAppsScript.Document.Document | GoogleAppsScript.Slides.Presentation);
 
