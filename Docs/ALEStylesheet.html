@@ -95,4 +95,15 @@
     visibility: hidden;
     position: absolute;
   }
+  .size-container {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+  
+  .size-container > input {
+    /* allows input height to stretch */
+    height: unset;
+    flex-grow: 1;
+  }
 </style>

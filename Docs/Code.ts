@@ -44,8 +44,10 @@ const DocsApp = {
 	getPageWidth: function() {
 		let activeWidth = DocumentApp.getActiveDocument().getBody().getPageWidth();
 		return activeWidth;
-	}
-};
+	},
+	// A \n in Docs represents a paragraph break, while a \r (\x0D) represents a break within a paragraph
+	newlineCharacter: "%0D"
+} satisfies AutoLatexCommon.IntegratedApp;
 
 
 /** //8.03 - De-Render, Inline, Advanced Delimiters > Fixed Inline Not Appearing
@@ -282,8 +284,7 @@ function getEquation(rangeElement: GoogleAppsScript.Document.RangeElement, delim
       rangeElement.getStartOffset() + delimiters[4], rangeElement.getEndOffsetInclusive() - delimiters[4] + 1
     );
   Common.debugLog("See equation", equation);
-  const equationStringEncoded = Common.reEncode(equation); //escape deprecated
-
+  const equationStringEncoded = Common.reEncode(equation, DocsApp); //escape deprecated
   Common.reportDeltaTime(290);
   //console.log("Encoded: " + equationStringEncoded);
   return equationStringEncoded;
@@ -517,8 +518,6 @@ function repairImage(paragraph: GoogleAppsScript.Document.ListItem | GoogleAppsS
     // The MathJax renderer returns scaled equations. We scale down by 5 (resolution), and 1.26 is just for consistency with other renderers.
     // TODO: When MathJax supports changing font, switch to a font that's more similar to CodeCogs
     multiple = 1.26 / 5;
-  //CodeCogs, other
-  else multiple = size / 100.0;
 
   Common.reportDeltaTime(595);
   Common.sizeImage(DocsApp, paragraph, childIndex + 1, Math.round(height * multiple), Math.round(width * multiple));
@@ -562,7 +561,7 @@ function removeAll(defaultDelimRaw: string) {
       }
       // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
       // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
-      const result = Common.derenderEquation(origURL);
+      const result = Common.derenderEquation(origURL, DocsApp);
       if (!result) continue;
       const { origEq, delim: newDelim } = result;
       const delim = newDelim || defaultDelim;
@@ -614,7 +613,7 @@ function editEquations(sizeRaw: string, delimiter: string) {
         return Common.DerenderResult.NullUrl;
       }
       Common.debugLog("Original URL from image", origURL);
-      const result = Common.derenderEquation(origURL);
+      const result = Common.derenderEquation(origURL, DocsApp);
       if (!result) return Common.DerenderResult.InvalidUrl;
       const { delim: newDelim, origEq } = result;
       const delim = newDelim || defaultDelim;

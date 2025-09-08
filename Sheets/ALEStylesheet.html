@@ -84,8 +84,16 @@
         margin: 0 5px 0 0; /* Alternatively: padding: 0 5px; */
         width:240px;
     }
-
+    
+    .size-container {
+        display: flex;
+        align-items: stretch;
+        gap: 0.5rem;
+    }
+    
+    .size-container > input {
+        /* allows input height to stretch */
+        height: unset;
+        flex-grow: 1;
+    }
 </style>
-
-
-

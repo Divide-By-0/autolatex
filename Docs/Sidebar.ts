@@ -98,6 +98,13 @@ $('document').ready(function(){
       $('#edit-text').click(editText);
       $('#undo-all').click(undoAll);
       $('#renderList').click(showRenderDropdown);
+      $('#size').change(function(){
+        if ($('#size :selected').val() === 'custom') {
+          $('#custom-size').show();
+        } else {
+          $('#custom-size').hide();
+        }
+      });
   });
 });
 
@@ -115,7 +122,10 @@ function runDotAnimation() {
 }
 
 function getCurrentSettings() {
-  const sizeRaw = $('#size :selected').val() as string;
+  let sizeRaw = $('#size :selected').val() as string;
+  if (sizeRaw === 'custom') {
+    sizeRaw = ($('#custom-size').val() as string) || '';
+  }
   const delimiter = $('#delimit :selected').val() as string;
   return {sizeRaw, delimiter};
 }
@@ -146,7 +156,14 @@ function loadPreferences(choicePrefs: {size: string, delim: string}) {
   $('#insert-text').prop("disabled", true);
   $('#edit-text').prop("disabled", true);
   $('#undo-all').prop("disabled", true);
-  $('#size').val(choicePrefs.size);
+  const savedSize = choicePrefs.size;
+  if (savedSize && !isNaN(parseInt(savedSize))) {
+    $('#size').val('custom');
+    $('#custom-size').val(savedSize).show();
+  } else {
+    $('#size').val(savedSize);
+    $('#custom-size').hide();
+  }
   $('#delimit').val(choicePrefs.delim);
   $('#insert-text').prop("disabled", false);
   $('#edit-text').prop("disabled", false);
