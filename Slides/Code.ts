@@ -105,7 +105,7 @@ function isTableCell(element: PageElement): element is GoogleAppsScript.Slides.T
  * Constantly keep replacing latex till all are finished
  * @public
  */
-function replaceEquations(sizeRaw: string, delimiter: string) {
+function replaceEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const quality = 900;
   let size = Common.getSize(sizeRaw);
   let isInline = false;
@@ -115,7 +115,7 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
   }
   Common.reportDeltaTime(140);
   const delim = Common.getDelimiters(delimiter);
-  Common.savePrefs(sizeRaw, delimiter);
+  Common.savePrefs(sizeRaw, delimiter, renderer);
   let c = 0; //counter
   const defaultSize = 11;
   Common.reportDeltaTime(146);
@@ -590,9 +590,9 @@ function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoL
  * @param {string} sizeRaw     Sidebar-selected size.
  * @public
  */
-function editEquations(sizeRaw: string, delimiter: string) {
+function editEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const defaultDelim = Common.getDelimiters(delimiter);
-  Common.savePrefs(sizeRaw, delimiter);
+  Common.savePrefs(sizeRaw, delimiter, renderer);
   // var cursor = IntegratedApp.getActive().getCursor(); // * no cursor for slides => replace with highlighted textbox
   //* 1. check if selected element is image
   //* 2. get position of element

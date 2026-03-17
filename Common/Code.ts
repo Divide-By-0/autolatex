@@ -121,6 +121,69 @@ const invalidEquationHashTexrendrFirst50_2 = "GIF89a%01%00%01%00%uFFFD%00%00%uFF
 const invalidEquationHashTexrendrFirst50_3 = "GIF89ai%0A%uFFFD%01%uFFFD%00%00%uFFFD%uFFFD%uFFFD%"; // this is the No Expression Supplied error. Ignored for now.
 const invalidEquationHashTexrendrFirst50_4 = "%7FELF%01%01%01%00%00%00%00%00%00%00%00%00%02%00%0";
 const invalidEquationHashSciweaversFirst50 = "%0D%0A%09%3C%21DOCTYPE%20html%20PUBLIC%20%22-//W3C";
+const defaultRendererPreference = "auto";
+let activeRendererPreference: string | null = null;
+
+function normalizeRendererPreference(renderer: string | null | undefined) {
+  switch ((renderer || "").toLowerCase()) {
+    case "codecogs":
+      return "codecogs";
+    case "mathjax":
+      return "mathjax";
+    case "texrendr":
+      return "texrendr";
+    case "sciweavers":
+      return "sciweavers";
+    default:
+      return defaultRendererPreference;
+  }
+}
+
+function getPreferredRendererFamily(rendererPreference: string) {
+  switch (normalizeRendererPreference(rendererPreference)) {
+    case "codecogs":
+      return "Codecogs";
+    case "texrendr":
+      return "Texrendr";
+    case "sciweavers":
+      return "Sciweavers";
+    default:
+      return "";
+  }
+}
+
+function getPreferredRenderer() {
+  if (activeRendererPreference !== null) {
+    return activeRendererPreference;
+  }
+  activeRendererPreference = normalizeRendererPreference(PropertiesService.getUserProperties().getProperty("renderer"));
+  return activeRendererPreference;
+}
+
+function getRendererOrder() {
+  const preferredFamily = getPreferredRendererFamily(getPreferredRenderer());
+  const defaultOrder: number[] = [];
+  const prioritizedOrder: number[] = [];
+  const fallbackOrder: number[] = [];
+
+  for (let worked = 1; worked <= capableRenderers; ++worked) {
+    defaultOrder.push(worked);
+  }
+
+  if (!preferredFamily) {
+    return defaultOrder;
+  }
+
+  for (const worked of defaultOrder) {
+    if (getRenderer(worked)[5] === preferredFamily) {
+      prioritizedOrder.push(worked);
+    } else {
+      fallbackOrder.push(worked);
+    }
+  }
+
+  return prioritizedOrder.concat(fallbackOrder);
+}
 
 /**
  * @public
@@ -294,10 +357,13 @@ function getStyle(equationStringEncoded: string, renderer: Renderer, type: numbe
 /**
  * @public
  */
-function savePrefs(size: string, delim: string) {
+function savePrefs(size: string, delim: string, renderer: string = defaultRendererPreference) {
   const userProperties = PropertiesService.getUserProperties();
+  const normalizedRenderer = normalizeRendererPreference(renderer);
+  activeRendererPreference = normalizedRenderer;
   userProperties.setProperty("size", size);
   userProperties.setProperty("delim", delim);
+  userProperties.setProperty("renderer", normalizedRenderer);
   // userProperties.setProperty('defaultSize', size);
 }
 
@@ -309,8 +375,10 @@ function getPrefs() {
   const savedPrefs = {
     size: userProperties.getProperty("size"),
     delim: userProperties.getProperty("delim"),
+    renderer: normalizeRendererPreference(userProperties.getProperty("renderer")),
   };
-  debugLog("Got prefs size:" + savedPrefs.size);
+  activeRendererPreference = savedPrefs.renderer;
+  debugLog("Got prefs size:" + savedPrefs.size + " renderer:" + savedPrefs.renderer);
   return savedPrefs;
 }
 
@@ -332,7 +400,7 @@ function renderEquation(equationOriginal: string, renderOptions: RenderOptions) 
   let failure = 1;
   let rendererType = "";
   let deltaTime: number;
-  let worked = 1;
+  let worked = capableRenderers + 1;
 
   let failedCodecogs = 0;
   let failedTexrendr = 0;
@@ -340,8 +408,8 @@ function renderEquation(equationOriginal: string, renderOptions: RenderOptions) 
   // if only failed codecogs, probably weird evening bug from 10/15/19
   // if failed codecogs and texrendr, probably shitty equation and the codecogs error is more descriptive so show it
 
-  // note the last few renderers might be legacy, so ignored
-  for (; worked <= capableRenderers; ++worked) {
+  for (const rendererIndex of getRendererOrder()) {
+    worked = rendererIndex;
     //[3,"https://latex.codecogs.com/png.latex?","http://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]
     try {
       renderer = getRenderer(worked);
@@ -441,6 +509,10 @@ function renderEquation(equationOriginal: string, renderOptions: RenderOptions) 
       }
     }
     if (failure == 0) break;
+  }
+
+  if (failure != 0) {
+    worked = capableRenderers + 1;
   }
 
   return {
@@ -639,9 +711,6 @@ function getDelimiters(delimiters: string): Delimiter {
   if (delimiters == "$") {
     return ["$", "$", "[^\\\\]\\$", "[^\\\\]\\$", 1, 0, 2];
   } //(^|[^\\$])\$(?!\$) //(?:^|[^\\\\\\])\\\$ //[^\\\\]\\\$
-  if (delimiters == "(") {
-    return ["\\(", "\\)", "\\\\\\(", "\\\\\\)", 2, 1, 3];
-  }
   return ["\\[", "\\]", "\\\\\\[", "\\\\\\]", 2, 1, 1];
 }
 
@@ -655,9 +724,6 @@ function getNumDelimiters(delimiters: string | number) {
   }
   if (delimiters == "2") {
     return "$";
-  }
-  if (delimiters == "3") {
-    return "(";
   }
   return "$$";
 }

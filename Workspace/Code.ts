@@ -23,6 +23,13 @@ function generateWorkspaceHomepage(status: string, error: string | null = null) 
     ["$$ ... $$", "$$"],
     ["\\[ ... \\]", "\["]
   ];
+  const renderers = [
+    ["Automatic", "auto"],
+    ["Codecogs", "codecogs"],
+    ["Texrendr", "texrendr"],
+    ["Sciweavers", "sciweavers"]
+  ];
+  const savedRenderer = renderers.some(([, value]) => value === prefs.renderer) ? prefs.renderer : "auto";
 
   const sizeSelect = CardService.newSelectionInput()
     .setType(CardService.SelectionInputType.DROPDOWN)
@@ -32,17 +39,24 @@ function generateWorkspaceHomepage(status: string, error: string | null = null) 
   const delimSelect = CardService.newSelectionInput()
     .setType(CardService.SelectionInputType.DROPDOWN)
     .setTitle("Select Delimiter Style:")
-    .setFieldName("delimit")
+    .setFieldName("delimit");
+
+  const rendererSelect = CardService.newSelectionInput()
+    .setType(CardService.SelectionInputType.DROPDOWN)
+    .setTitle("Preferred Renderer:")
+    .setFieldName("renderer");
 
   for (const size of sizes) sizeSelect.addItem(size[0], size[1], size[1] === (prefs.size || "smart"));
   for (const delim of delims) delimSelect.addItem(delim[0], delim[1], delim[1] === (prefs.delim || "$$"));
+  for (const renderer of renderers) rendererSelect.addItem(renderer[0], renderer[1], renderer[1] === savedRenderer);
 
   const settingsSection = CardService.newCardSection()
     .setHeader("Settings")
     .setCollapsible(true)
     .setNumUncollapsibleWidgets(1)
     .addWidget(sizeSelect)
-    .addWidget(delimSelect);
+    .addWidget(delimSelect)
+    .addWidget(rendererSelect);
 
   const renderButton = CardService.newTextButton()
     .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
@@ -106,11 +120,15 @@ function generateWorkspaceHomepage(status: string, error: string | null = null) 
 function onWorkspaceAddonClick(e: GoogleAppsScript.Addons.EventObject) {
   const selectedSize = e.commonEventObject.formInputs.size.stringInputs.value[0];
   const selectedDelimit = e.commonEventObject.formInputs.delimit.stringInputs.value[0];
+  const selectedRenderer = e.commonEventObject.formInputs.renderer
+    ? e.commonEventObject.formInputs.renderer.stringInputs.value[0]
+    : "auto";
+  Common.savePrefs(selectedSize, selectedDelimit, selectedRenderer);
   let statusText: string;
   let error: string | null = null;
   switch(e.commonEventObject.parameters.action) {
     case "render": {
-      const result = e.docs ? replaceEquations(selectedSize, selectedDelimit) : replaceEquationsSheets(selectedSize, selectedDelimit);
+      const result = e.docs ? replaceEquations(selectedSize, selectedDelimit, selectedRenderer) : replaceEquationsSheets(selectedSize, selectedDelimit, selectedRenderer);
       let errorType = 0;
       let renderCount = result;
       if (result < -1) {
@@ -131,7 +149,7 @@ function onWorkspaceAddonClick(e: GoogleAppsScript.Addons.EventObject) {
       break; 
     } case "derender": {
       // TODO: Different messages for sheets
-      const result = e.docs ? editEquations(selectedSize, selectedDelimit) : derenderEquationSheets(selectedSize, selectedDelimit);
+      const result = e.docs ? editEquations(selectedSize, selectedDelimit, selectedRenderer) : derenderEquationSheets(selectedSize, selectedDelimit, selectedRenderer);
       switch (result) {
         case Common.DerenderResult.InvalidUrl:
           statusText = "Error, please ensure link is still on equation.";

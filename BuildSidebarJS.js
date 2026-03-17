@@ -43,7 +43,7 @@ async function buildSidebarJS() {
   
   const sidebarJS = fs.readFileSync("Sidebar.js", "utf8");
   const sidebarHTML = fs.readFileSync("Sidebar.html", "utf8");
-  const includeMathJax = sidebarHTML.includes("input-use-mathjax");
+  const includeMathJax = sidebarHTML.includes("data-mathjax-enabled");
 
   const wrapped = wrapJS(sidebarJS, includeMathJax);
 

@@ -103,7 +103,9 @@ function getKey() {
  * Constantly keep replacing latex till all are finished
  * @public
  */
-function replaceEquations(sizeRaw: string, delimiter: string, clientRender: boolean) {
+function replaceEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
+  const quality = 900;
+  const clientRender = renderer === "mathjax";
   let size = Common.getSize(sizeRaw);
   let isInline = false;
   if (size < 0) {
@@ -112,7 +114,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, clientRender: bool
   }
   Common.reportDeltaTime(140);
   const delim = Common.getDelimiters(delimiter);
-  Common.savePrefs(sizeRaw, delimiter);
+  Common.savePrefs(sizeRaw, delimiter, renderer);
   let c = 0; //counter
   let allEmpty = 0;
   Common.reportDeltaTime(146);
@@ -602,9 +604,9 @@ function removeAll(defaultDelimRaw: string) {
  * @public
  */
 
-function editEquations(sizeRaw: string, delimiter: string) {
+function editEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const defaultDelim = Common.getDelimiters(delimiter);
-  Common.savePrefs(sizeRaw, delimiter);
+  Common.savePrefs(sizeRaw, delimiter, renderer);
   const cursor = DocumentApp.getActiveDocument().getCursor();
   if (cursor) {
     // Attempt to insert text at the cursor position. If the insertion returns null, the cursor's

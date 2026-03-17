@@ -25,7 +25,7 @@ declare namespace AutoLatexCommon {
 
         getKey(): string;
 
-        getPrefs(): {delim: string, size: string};
+        getPrefs(): {delim: string, renderer: string, size: string};
 
         /**
          * NOTE: one indexed. if codecogsSlow is 1, switch order of texrendr and codecogs
@@ -46,7 +46,7 @@ declare namespace AutoLatexCommon {
 
         reportDeltaTime(line?: number, forcePrint?: string): number;
 
-        savePrefs(size: string, delim: string): void;
+        savePrefs(size: string, delim: string, renderer?: string): void;
 
         /**
          * Given the locations of the delimiters, run code to get font size, get equation, remove equation, encode/style equation, insert/style image.

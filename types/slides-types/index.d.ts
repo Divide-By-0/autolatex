@@ -10,7 +10,7 @@ declare namespace google {
 
             withUserObject(object: any): Runner;
 
-            editEquations(sizeRaw: string, delimiter: string): void //reference;
+            editEquations(sizeRaw: string, delimiter: string, renderer: string): void //reference;
 
             getKey(): void //intrinsic;
 
@@ -18,7 +18,7 @@ declare namespace google {
 
             removeAll(defaultDelimRaw: string): void //intrinsic;
 
-            replaceEquations(sizeRaw: string, delimiter: string): void //intrinsic;
+            replaceEquations(sizeRaw: string, delimiter: string, renderer: string): void //intrinsic;
 
         }
 
@@ -27,4 +27,3 @@ declare namespace google {
     }
 
 }
-

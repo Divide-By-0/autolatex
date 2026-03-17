@@ -157,7 +157,8 @@ function getCurrentSettings() {
     sizeRaw = ($('#custom-size').val() as string) || '';
   }
   const delimiter = $('#delimit :selected').val() as string;
-  return {sizeRaw, delimiter};
+  const renderer = $('#renderer :selected').val() as string;
+  return {sizeRaw, delimiter, renderer};
 }
 
 //$('donate_button').on("click",function(e){e.preventDefault;}); // for paypal to disable sidebar disappearing
@@ -182,7 +183,7 @@ $("#advanced").click(function(event){//.live({click:
   });
 });
 
-function loadPreferences(choicePrefs: {size: string, delim: string}) {
+function loadPreferences(choicePrefs: {size: string, delim: string, renderer: string}) {
   $('#insert-text').prop("disabled", true);
   $('#edit-text').prop("disabled", true);
   $('#undo-all').prop("disabled", true);
@@ -195,6 +196,8 @@ function loadPreferences(choicePrefs: {size: string, delim: string}) {
     $('#custom-size').hide();
   }
   $('#delimit').val(choicePrefs.delim);
+  const savedRenderer = ["auto", "codecogs", "mathjax", "texrendr", "sciweavers"].includes(choicePrefs.renderer) ? choicePrefs.renderer : "auto";
+  $('#renderer').val(savedRenderer);
   $('#insert-text').prop("disabled", false);
   $('#edit-text').prop("disabled", false);
   $('#undo-all').prop("disabled", false);
@@ -251,13 +254,13 @@ function insertText(){
   $('#error').remove();
   $("#loading").html("Status: Loading");
   runDots = runDotAnimation();
-  const {sizeRaw, delimiter} = getCurrentSettings();
+  const {sizeRaw, delimiter, renderer} = getCurrentSettings();
 
   google.script.run
     .withSuccessHandler(successHandler)
     .withFailureHandler(errorHandler)
     .withUserObject(this)
-    .replaceEquations(sizeRaw, delimiter, document.querySelector<HTMLInputElement>("#input-use-mathjax").checked);
+    .replaceEquations(sizeRaw, delimiter, renderer);
 }
     
     
@@ -267,7 +270,7 @@ function editText(){
   $("#loading").html("Status: Loading");
   
   runDots = runDotAnimation();
-  const {sizeRaw, delimiter} = getCurrentSettings();
+  const {sizeRaw, delimiter, renderer} = getCurrentSettings();
   google.script.run
     .withSuccessHandler(
       function(returnSuccess: AutoLatexCommon.DerenderResult, element) {
@@ -308,7 +311,7 @@ function editText(){
         element.disabled = false;
       })
     .withUserObject(this)
-    .editEquations(sizeRaw, delimiter);
+    .editEquations(sizeRaw, delimiter, renderer);
 }
 
     

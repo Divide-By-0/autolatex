@@ -21,13 +21,13 @@ const SheetsApp = {
  * Constantly keep replacing latex till all are finished
  * @public
  */
-function replaceEquationsSheets(sizeRaw: string, delimiter: string) {
+function replaceEquationsSheets(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const quality = 900;
   const size = Common.getSize(sizeRaw);
   const isInline = size < 0;
   Common.reportDeltaTime(140);
   const delim = Common.getDelimiters(delimiter);
-  Common.savePrefs(sizeRaw, delimiter);
+  Common.savePrefs(sizeRaw, delimiter, renderer);
   const regex = `${delim[2]}(.*)${delim[3]}`;
   // Search for all of the equations within the sheet, and iterate over all of them
   const textFinder = SheetsApp.getActive().createTextFinder(regex)
@@ -125,9 +125,9 @@ function isCellImage(value: any): value is GoogleAppsScript.Spreadsheet.CellImag
  * @public
  */
 
-function derenderEquationSheets(sizeRaw: string, delimiter: string) {
+function derenderEquationSheets(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const defaultDelim = Common.getDelimiters(delimiter);
-  Common.savePrefs(sizeRaw, delimiter);
+  Common.savePrefs(sizeRaw, delimiter, renderer);
   const cell = SheetsApp.getBody().getCurrentCell();
   if (cell) {
     const val = cell.getValue();
