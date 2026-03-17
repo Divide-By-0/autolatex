@@ -1,6 +1,7 @@
 /* global google, $ */
 
-/// <reference path="../types/docs-types/index.d.ts" />
+/// <reference types="jquery" />
+/// <reference path="../types/slides-types/index.d.ts" />
 /// <reference path="../types/common-types/index.d.ts" />
 /// <reference lib="dom" />
 

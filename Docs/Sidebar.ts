@@ -1,8 +1,20 @@
 /* global google, $ */
 
+/// <reference types="jquery" />
 /// <reference path="../types/docs-types/index.d.ts" />
 /// <reference path="../types/common-types/index.d.ts" />
 /// <reference lib="dom" />
+
+interface MathJaxApi {
+  tex2svgPromise(equation: string, options: { display: boolean, em: number }): Promise<Element>;
+  svgStylesheet(): Element;
+}
+
+interface Window {
+  MathJax: MathJaxApi;
+}
+
+declare const MathJax: MathJaxApi;
 
 // animation timeout ID
 let runDots = -1;
@@ -27,15 +39,21 @@ async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRender
   // apply RGB coloring + newline becomes \\
   const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + renderOptions.equation.replace(/\n|\r|\r\n/g, "\\\\");
   
-  
+  if (!window.MathJax || typeof window.MathJax.tex2svgPromise !== "function") {
+    throw new Error("MathJax is still loading. Please try again in a moment.");
+  }
+
   const result = await window.MathJax.tex2svgPromise(equation, {
     display: !renderOptions.inline,
     em: renderOptions.size
   });
   const svg: SVGSVGElement = result.querySelector("svg");
+  if (!svg) {
+    throw new Error("MathJax did not return an SVG element.");
+  }
   
   // calculate width and height by rendering this svg with the specified font size
-  svg.classList.add("mathjax-equation-hidden-render")
+  svg.classList.add("mathjax-equation-hidden-render");
   svg.style.fontSize = `${renderOptions.size}px`;
   document.body.appendChild(svg);
   
@@ -61,8 +79,13 @@ async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRender
   
   const svgUrl = URL.createObjectURL(svgBlob);
   
-  const canvas = new OffscreenCanvas(width, height);
+  const canvas = typeof OffscreenCanvas !== "undefined"
+    ? new OffscreenCanvas(width, height)
+    : Object.assign(document.createElement("canvas"), { width, height });
   const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Could not initialize a 2D canvas for MathJax rendering.");
+  }
   
   try {
     // load this svg on an image
@@ -77,14 +100,21 @@ async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRender
     // draw onto canvas
     ctx.drawImage(svgImage, 0, 0);
     
-    const pngBlob = await canvas.convertToBlob({
-      type: "image/png"
-    });
+    const pngBlob = "convertToBlob" in canvas
+      ? await canvas.convertToBlob({ type: "image/png" })
+      : await new Promise<Blob>((resolve, reject) => {
+          (canvas as HTMLCanvasElement).toBlob(blob => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error("Could not convert MathJax canvas to a PNG blob."));
+            }
+          }, "image/png");
+        });
     return pngBlob;
   } finally {
     URL.revokeObjectURL(svgUrl);
   }
-  // TODO: error handling
 }
 
 /**
@@ -179,14 +209,16 @@ function makeStatusText(successCount: number) {
 function successHandler({ lastStatus, successCount, clientEquations }: { lastStatus: google.script.DocsEquationRenderStatus, successCount: number, clientEquations?: AutoLatexCommon.ClientRenderOptions[] }, element: HTMLButtonElement) {
   if (lastStatus === google.script.DocsEquationRenderStatus.ClientRender) {
     // we're not done yet - these equations need to be rendered on the client
-    Promise.all(clientEquations.map(async c => ({ options: c, renderedEquationB64: await renderMathJaxEquation(c).then(b => blobToB64(b)) })))
+    const equationsToRender = clientEquations || [];
+    Promise.all(equationsToRender.map(async c => ({ options: c, renderedEquationB64: await renderMathJaxEquation(c).then(b => blobToB64(b)) })))
       .then(rendered => {
         google.script.run
           .withSuccessHandler(successHandler)
           .withFailureHandler(errorHandler)
           .withUserObject(element)
           .clientRenderComplete(rendered);
-      });
+      })
+      .catch(err => errorHandler(err, element));
   } else {
     $("#loading").html('');
     clearInterval(runDots);

@@ -156,7 +156,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, clientRender: bool
         nextStartElement,
         clientRenderOptions
       } = findPos(index, baseRenderOptions, failedStartElemIfIsEmpty); //or: "\\\$\\\$", "\\\$\\\$"
-      
+
       if (nextStartElement) failedStartElemIfIsEmpty = nextStartElement;
       // if we found an actual equation, update the default size
       if (equationSize) baseRenderOptions.defaultSize = equationSize;
@@ -329,17 +329,31 @@ function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRender
   equations.reverse();
   
   for (const equation of equations) {
-    const namedRange = DocsApp.getActive().getNamedRangeById(equation.options.rangeId);
-    // get the RangeElement for this equation
-    const range = namedRange.getRange().getRangeElements()[0];
-    const equationBlob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
-    
-    // this will never actually return any error results
-    const result = placeImage(range, equationBlob, mathjaxRenderer, equation.options.equation, equation.options.size, equation.options.delim);
-    
-    if (result.status === DocsEquationRenderStatus.Success) c++;
-    
-    namedRange.remove();
+    let namedRange: GoogleAppsScript.Document.NamedRange | null = null;
+    try {
+      namedRange = DocsApp.getActive().getNamedRangeById(equation.options.rangeId);
+      if (!namedRange) {
+        console.warn("MathJax client render range disappeared before completion:", equation.options.rangeId);
+        continue;
+      }
+
+      const rangeElements = namedRange.getRange().getRangeElements();
+      if (rangeElements.length === 0) {
+        console.warn("MathJax client render range is empty:", equation.options.rangeId);
+        continue;
+      }
+
+      const equationBlob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
+      const result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equation, equation.options.size, equation.options.delim);
+
+      if (result.status === DocsEquationRenderStatus.Success) {
+        c++;
+      }
+    } catch (error) {
+      console.error("MathJax client render completion failed.", error);
+    } finally {
+      namedRange?.remove();
+    }
   }
   
   return {
