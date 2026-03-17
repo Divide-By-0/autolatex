@@ -119,6 +119,19 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
   let c = 0; //counter
   const defaultSize = 11;
   Common.reportDeltaTime(146);
+  
+  // base render options common to all equations rendered
+  const renderOptions: AutoLatexCommon.RenderOptions = {
+    r: 0, g: 0, b: 0,
+    delim,
+    defaultSize,
+    size,
+    inline: isInline,
+    // not yet supported for Slides
+    clientRender: false
+  };
+  
+  // this can error if there are ungranted permissions
   try {
     IntegratedApp.getActive();
   } catch (error) {
@@ -128,35 +141,17 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
   const slides = IntegratedApp.getBody();
   const childCount = slides.length;
   for (let slideNum = 0; slideNum < childCount; slideNum++) {
-    for (let elementNum = 0; elementNum < slides[slideNum].getPageElements().length; elementNum++) {
-      Common.debugLog("Slide Num: " + slideNum + " Num of shapes: " + slides[slideNum].getPageElements().length);
-      let element = getElementFromIndices(slideNum, elementNum);
-      if (element === null) continue;
+    const elements = slides[slideNum].getPageElements();
+    Common.debugLog("Slide Num: " + slideNum + " Num of shapes: " + elements.length);
+    for (const element of elements) {
+      const castedElement = castElement(element);
+      // if we don't recognize this element
+      if (castedElement === null) continue;
       
-      c += renderElement(slideNum, element, delim, quality, size, defaultSize, isInline);
+      c += renderElement(slideNum, castedElement, renderOptions);
     }
   }
   return Common.encodeFlag(0, c);
-}
-
-/**
- * Returns the element iterating
- */
-function getElementFromIndices(slideNum: number, elementNum: number) {
-  const doc = IntegratedApp.getBody();
-  Common.assert(slideNum < doc.length, "slideNum < doc.length");
-  const body = doc[slideNum];
-  const elements = body.getPageElements();
-  // elements = body.getPageElements();
-  Common.assert(elementNum < elements.length, "elementNum (" + elementNum + ") < elements.length (" + elements.length + ")");
-  let element: GoogleAppsScript.Slides.PageElement;
-  if (elementNum < elements.length) {
-    element = elements[elementNum];
-  } else {
-    return null;
-  }
-
-  return castElement(element);
 }
 
 function castElement(element: GoogleAppsScript.Slides.PageElement) {
@@ -186,7 +181,7 @@ function castElement(element: GoogleAppsScript.Slides.PageElement) {
  * @param element Element to search for equations
  * @returns Count of equations successfully rendered
  */
-function renderElement(slideNum: number, element: GoogleAppsScript.Slides.Group | GoogleAppsScript.Slides.Table | GoogleAppsScript.Slides.Shape, delim: AutoLatexCommon.Delimiter, quality: number, size: number, defaultSize: number, isInline: boolean) {
+function renderElement(slideNum: number, element: GoogleAppsScript.Slides.Group | GoogleAppsScript.Slides.Table | GoogleAppsScript.Slides.Shape, renderOptions: AutoLatexCommon.RenderOptions) {
   if ("ungroup" in element) {
     // recursively process all elements in this group
     let c = 0;
@@ -194,7 +189,7 @@ function renderElement(slideNum: number, element: GoogleAppsScript.Slides.Group 
       // returns null if we don't recognize the type
       const castedPageElement = castElement(childElement);
       if (castedPageElement) {
-        c += renderElement(slideNum, castedPageElement, delim, quality, size, defaultSize, isInline);
+        c += renderElement(slideNum, castedPageElement, renderOptions);
       }
     }
     return c;
@@ -207,14 +202,14 @@ function renderElement(slideNum: number, element: GoogleAppsScript.Slides.Group 
         // ignore merged cells (the head cells of merged cells will still be counted)
         if (cell.getMergeState() === SlidesApp.CellMergeState.MERGED) continue;
         
-        let parsedEquations = findPos(slideNum, cell, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+        let parsedEquations = findPos(slideNum, cell, renderOptions); //or: "\\\$\\\$", "\\\$\\\$"
         c += parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
       }
     }
     return c;
   } else {
     // single shape
-    let parsedEquations = findPos(slideNum, element, delim, quality, size, defaultSize, isInline); //or: "\\\$\\\$", "\\\$\\\$"
+    let parsedEquations = findPos(slideNum, element, renderOptions); //or: "\\\$\\\$", "\\\$\\\$"
     return parsedEquations.filter(([, imagesPlaced]) => imagesPlaced).length;
   }
 }
@@ -271,10 +266,7 @@ function unwrapEQ(element: PageElement) {
 					1 if eqn is "" and 0 if not. Assume we close on 4 consecutive empty ones.
 */
 
-function findPos(slideNum: number, element: PageElement, delim: AutoLatexCommon.Delimiter, quality: number, size: number, defaultSize: number, isInline: boolean) {
-  // get the shape (elementNum) on the given slide (slideNum)
-  // var element = getElementFromIndices(slideNum, elementNum);
-  // debugLog("shape is: " + shape.getPageElementType())
+function findPos(slideNum: number, element: PageElement, renderOptions: AutoLatexCommon.RenderOptions) {
   let imagesPlaced = [];
   if (!element)
     imagesPlaced.push([0, 0]);
@@ -288,7 +280,7 @@ function findPos(slideNum: number, element: PageElement, delim: AutoLatexCommon.
         continue;
       }
       // debugLog("Looking for delimiter :" + delim[2] + " in text");
-      const checkForDelimiter = elementText.find(delim[2]); // TextRange[]
+      const checkForDelimiter = elementText.find(renderOptions.delim[2]); // TextRange[]
 
       if (checkForDelimiter == null) {
         imagesPlaced.push([0, 0]); // didn't find first delimiter
@@ -296,7 +288,7 @@ function findPos(slideNum: number, element: PageElement, delim: AutoLatexCommon.
       }
 
       // start position of image
-      const placeHolderStart = findTextOffsetInSlide(elementText.asRenderedString(), delim[0], 0);
+      const placeHolderStart = findTextOffsetInSlide(elementText.asRenderedString(), renderOptions.delim[0], 0);
 
       if (placeHolderStart === -1) {
         imagesPlaced.push([0, 0]); // didn't find first delimiter
@@ -306,7 +298,7 @@ function findPos(slideNum: number, element: PageElement, delim: AutoLatexCommon.
       const offset = 2 + placeHolderStart;
 
       // end position till of image
-      const placeHolderEnd = findTextOffsetInSlide(elementText.asRenderedString(), delim[1], offset);
+      const placeHolderEnd = findTextOffsetInSlide(elementText.asRenderedString(), renderOptions.delim[1], offset);
 
       Common.debugLog("Start and End of equation: " + placeHolderStart + " " + placeHolderEnd);
       // debugLog("Isolating Equation Textrange: " + element.getText().getRange(placeHolderStart, placeHolderEnd).asRenderedString());
@@ -314,31 +306,40 @@ function findPos(slideNum: number, element: PageElement, delim: AutoLatexCommon.
       const textColor = getRgbColor(element.getText().getRange(placeHolderStart + 1, placeHolderEnd), slideNum);
 
       Common.debugLog(`RGB: ${textColor.join()}`);
+      
+      // include the ending delimiter as well
+      const endOffset = Math.min(elementText.getLength(), placeHolderEnd + renderOptions.delim[4]);
+      const equationRange = elementText.getRange(placeHolderStart, endOffset);
 
-      if (placeHolderEnd - placeHolderStart == 2.0) {
+      if (placeHolderEnd - placeHolderStart === renderOptions.delim[4]) {
         // empty equation
         Common.debugLog("Empty equation!");
-        elementText.clear(placeHolderStart, Math.min(elementText.getLength(), placeHolderEnd + 2));
-        imagesPlaced.push([defaultSize, 0]); // default behavior of placeImage
+        equationRange.clear();
+        imagesPlaced.push([renderOptions.defaultSize, 0]); // default behavior of placeImage
         continue;
       }
 
-      imagesPlaced.push(placeImage(slideNum, element, elementText, placeHolderStart, placeHolderEnd, quality, size, defaultSize, delim, isInline, textColor));
+      imagesPlaced.push(placeImage(slideNum, element, equationRange, {
+        // add color to renderOptions
+        ...renderOptions,
+        r: textColor[0],
+        g: textColor[1],
+        b: textColor[2]
+      }));
     }
   }
   return imagesPlaced;
 }
 
-function getEquation(paragraph: GoogleAppsScript.Slides.TextRange, start: number, end: number, delimiters: AutoLatexCommon.Delimiter) {
-  var equationOriginal = [];
-  var equation = paragraph.asRenderedString().substring(start + delimiters[4], end - delimiters[4] + 2);
-  var checkForEquation = paragraph.asRenderedString();
+function getEquation(textRange: GoogleAppsScript.Slides.TextRange, delimiters: AutoLatexCommon.Delimiter) {
+  // remove delimiters from range
+  const equation = textRange.asRenderedString().substring(delimiters[4], textRange.getLength() - delimiters[4]);
+  const checkForEquation = textRange.asRenderedString();
   Common.debugLog("getEquation- " + equation.length);
   Common.debugLog("checkForEquation- " + checkForEquation.length);
 
-  var equationStringEncoded = Common.reEncode(equation, IntegratedApp); //escape deprecated
-  equationOriginal.push(equationStringEncoded);
-  return equationStringEncoded;
+  // encode/escape equation
+  return Common.reEncode(equation, IntegratedApp);
 }
 
 /**
@@ -380,7 +381,7 @@ function getBounds(textElement: PageElement) {
   }
 }
 
-function resize(eqnImage: GoogleAppsScript.Slides.Image, textElement: PageElement, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment, bounds: ReturnType<typeof getBounds>) {
+function resize(eqnImage: GoogleAppsScript.Slides.Image, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment, bounds: ReturnType<typeof getBounds>) {
   const width = eqnImage.getWidth() * scale;
   const height = eqnImage.getHeight() * scale;
   
@@ -407,19 +408,13 @@ function resize(eqnImage: GoogleAppsScript.Slides.Image, textElement: PageElemen
 
 /**
  * Given the locations of the delimiters, run code to get font size, get equation, remove equation, encode/style equation, insert/style image.
- *
- * @param {integer} start        The offset in the childIndex where the equation start-delimiter starts.
- * @param {integer} end          The offset in the childIndex where the equation end-delimiter starts.
- * @param {integer} quality      The dpi quality to be rendered in (default 900).
- * @param {integer} size         The size of the text, whose neg/pos indicated whether the equation is inline or not.
- * @param {integer} defaultSize  The default/previous size of the text, in case size is null.
- * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
-
-function placeImage(slideNum: number, textElement: PageElement, text: GoogleAppsScript.Slides.TextRange, start: number, end: number, quality: number, size: number, defaultSize: number, delim: AutoLatexCommon.Delimiter, isInline: boolean, [red, green, blue]: number[]) {
+function placeImage(slideNum: number, textElement: PageElement, text: GoogleAppsScript.Slides.TextRange, renderOptions: AutoLatexCommon.RenderOptions) {
   Common.debugLog("placeImage- EquationOriginal: " + textElement + ", type: " + typeof textElement);
   
-  const equationRange = text.getRange(start + 1, end);
+  const equationRange = text.getRange(1, text.getLength());
+
+  let size = renderOptions.size;
 
   // if the user selected automatic (or inline), use the size of the text
   if (size === 0) {
@@ -428,7 +423,7 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
       .getFontSize();
     if (textSize === null || textSize <= 0) {
       // size of the previous element
-      size = defaultSize;
+      size = renderOptions.defaultSize;
     } else {
       size = textSize;
     }
@@ -437,8 +432,7 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
   
   
   // Gets the horizontal alignment of the equation. If it somehow spans multiple paragraphs, this will return the alignment of the first one
-  const textHorizontalAlignment = text
-    .getRange(start + 1, end)
+  const textHorizontalAlignment = equationRange
     .getParagraphs()[0]
     .getRange()
     .getParagraphStyle()
@@ -446,15 +440,15 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
       
   const textVerticalAlignment = textElement.getContentAlignment();
 
-  const equationOriginal = getEquation(text, start, end, delim);
+  const equationOriginal = getEquation(text, renderOptions.delim);
   Common.debugLog("placeImage- EquationOriginal: " + equationOriginal);
 
   if (equationOriginal == "") {
-    console.log("No equation but undetected start and end as ", start, " ", end);
-    return [defaultSize, 1];
+    console.log("No equation but undetected start and end as ", text.getStartIndex(), " ", text.getEndIndex());
+    return [renderOptions.defaultSize, 1];
   }
 
-  const { renderer, rendererType, worked } = Common.renderEquation(equationOriginal, quality, delim, isInline, red, green, blue); 
+  const { renderer, rendererType, worked } = Common.renderEquation(equationOriginal, renderOptions); 
   if (worked > Common.capableRenderers) return -100000;
   var doc = IntegratedApp.getBody();
   var body = doc[slideNum];
@@ -464,24 +458,18 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
   // This is a relatively expensive call for tables, so we store it in a variable
   const bounds = getBounds(textElement);
 
-  const origURL = renderer[2] + equationOriginal + "#" + delim[6];
+  const origURL = renderer[2] + equationOriginal + "#" + renderOptions.delim[6];
   const derenderData: DerenderData = {
-    red,
-    green,
-    blue,
+    red: renderOptions.r,
+    green: renderOptions.g,
+    blue: renderOptions.b,
     origURL,
     size,
     width: bounds.width,
     height: bounds.height
   };
-
-  if (isTableCell(textElement)) {
-    // if table
-    text.clear(start, Math.min(text.getLength(), end + 2));
-  } else {
-    // else if text box
-    textElement.getText().clear(start, end + 2);
-  }
+  
+  text.clear();
 
   // textElement.setLeft(textElement.getLeft() + image.getWidth() * 1.1);
 
@@ -504,18 +492,18 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
 
   var image = body.insertImage(renderer[1]);
 
-  resize(image, textElement, scale, textHorizontalAlignment, textVerticalAlignment, bounds);
+  resize(image, scale, textHorizontalAlignment, textVerticalAlignment, bounds);
   
   // remove empty textboxes
   if (
     !isTableCell(textElement) &&
     textElement.getShapeType() === SlidesApp.ShapeType.TEXT_BOX &&
-    textElement.getText().asRenderedString().length == 1
+    textElement.getText().asRenderedString().length <= 1
   ) {
     textElement.remove();
   }
   image.setTitle(JSON.stringify(derenderData));
-  return [size, 1];
+  return [renderOptions.size, 1];
 }
 
 /**

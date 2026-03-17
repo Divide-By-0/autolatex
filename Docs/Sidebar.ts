@@ -1,8 +1,121 @@
 /* global google, $ */
 
+/// <reference types="jquery" />
 /// <reference path="../types/docs-types/index.d.ts" />
 /// <reference path="../types/common-types/index.d.ts" />
 /// <reference lib="dom" />
+
+interface MathJaxApi {
+  tex2svgPromise(equation: string, options: { display: boolean, em: number }): Promise<Element>;
+  svgStylesheet(): Element;
+}
+
+interface Window {
+  MathJax: MathJaxApi;
+}
+
+declare const MathJax: MathJaxApi;
+
+// animation timeout ID
+let runDots = -1;
+
+/**
+* Convert a Blob to a base64 string for transmission to the server
+* 
+* @param blob the blob to convert
+* @returns 
+*/
+async function blobToB64(blob: Blob) {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = err => reject(err);
+    reader.readAsDataURL(blob);
+  });
+  return dataUrl.substring(dataUrl.indexOf(",") + 1); // strip dataurl header
+}
+
+async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRenderOptions) {
+  // apply RGB coloring + newline becomes \\
+  const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + renderOptions.equation.replace(/\n|\r|\r\n/g, "\\\\");
+  
+  if (!window.MathJax || typeof window.MathJax.tex2svgPromise !== "function") {
+    throw new Error("MathJax is still loading. Please try again in a moment.");
+  }
+
+  const result = await window.MathJax.tex2svgPromise(equation, {
+    display: !renderOptions.inline,
+    em: renderOptions.size
+  });
+  const svg: SVGSVGElement = result.querySelector("svg");
+  if (!svg) {
+    throw new Error("MathJax did not return an SVG element.");
+  }
+  
+  // calculate width and height by rendering this svg with the specified font size
+  svg.classList.add("mathjax-equation-hidden-render");
+  svg.style.fontSize = `${renderOptions.size}px`;
+  document.body.appendChild(svg);
+  
+  // scale up by 5
+  const width = svg.clientWidth * 5;
+  const height = svg.clientHeight * 5;
+  
+  svg.remove();
+  
+  // set width/height explicitly on the svg
+  svg.setAttribute("width", `${width}px`);
+  svg.setAttribute("height", `${height}px`);
+  
+  const styles = MathJax.svgStylesheet().outerHTML;
+  
+  // create a URL for this svg
+  const svgString = new XMLSerializer().serializeToString(svg)
+    // inject css
+    .replace("</svg>", styles + "</svg>");
+  const svgBlob = new Blob([svgString], {
+    type: "image/svg+xml"
+  });
+  
+  const svgUrl = URL.createObjectURL(svgBlob);
+  
+  const canvas = typeof OffscreenCanvas !== "undefined"
+    ? new OffscreenCanvas(width, height)
+    : Object.assign(document.createElement("canvas"), { width, height });
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Could not initialize a 2D canvas for MathJax rendering.");
+  }
+  
+  try {
+    // load this svg on an image
+    const svgImage = new Image(width, height);
+    svgImage.src = svgUrl;
+    // wait for load
+    await new Promise<void>((resolve, reject) => {
+      svgImage.onload = () => resolve();
+      svgImage.onerror = err => reject(err);
+    });
+    
+    // draw onto canvas
+    ctx.drawImage(svgImage, 0, 0);
+    
+    const pngBlob = "convertToBlob" in canvas
+      ? await canvas.convertToBlob({ type: "image/png" })
+      : await new Promise<Blob>((resolve, reject) => {
+          (canvas as HTMLCanvasElement).toBlob(blob => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error("Could not convert MathJax canvas to a PNG blob."));
+            }
+          }, "image/png");
+        });
+    return pngBlob;
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}
 
 /**
  * On document load, assign click handlers to each button. Added document.ready.
@@ -86,61 +199,65 @@ function loadPreferences(choicePrefs: {size: string, delim: string}) {
   $('#edit-text').prop("disabled", false);
   $('#undo-all').prop("disabled", false);
 }
+
+function makeStatusText(successCount: number) {
+  if (successCount == 0) return "Status: No equations rendered";
+  else if (successCount == 1) return "Status: 1 equation rendered";
+  else return `Status: ${successCount} equations rendered`;
+}
+
+function successHandler({ lastStatus, successCount, clientEquations }: { lastStatus: google.script.DocsEquationRenderStatus, successCount: number, clientEquations?: AutoLatexCommon.ClientRenderOptions[] }, element: HTMLButtonElement) {
+  if (lastStatus === google.script.DocsEquationRenderStatus.ClientRender) {
+    // we're not done yet - these equations need to be rendered on the client
+    const equationsToRender = clientEquations || [];
+    Promise.all(equationsToRender.map(async c => ({ options: c, renderedEquationB64: await renderMathJaxEquation(c).then(b => blobToB64(b)) })))
+      .then(rendered => {
+        google.script.run
+          .withSuccessHandler(successHandler)
+          .withFailureHandler(errorHandler)
+          .withUserObject(element)
+          .clientRenderComplete(rendered);
+      })
+      .catch(err => errorHandler(err, element));
+  } else {
+    $("#loading").html('');
+    clearInterval(runDots);
+    element.disabled = false;
+    
+    const statusText = makeStatusText(successCount);
+    
+    if (lastStatus === google.script.DocsEquationRenderStatus.NoDocument)
+      showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", statusText);
+    else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount > 0)
+      showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used.", statusText);
+    else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount === 0)
+      showError("Sorry, likely (temporarily) unavailable commands (i.e. align, &) were used or the equation was too long.", statusText);
+    else {
+      $("#loading").html(statusText);
+    }
+  }
+}
+
+function errorHandler(msg, element) {
+  $("#loading").html('');
+  clearInterval(runDots);
+  console.error("Error console errored!", msg, element)
+  showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts.", "Status: Error, please reload.");
+  element.disabled = false;
+}
   
 function insertText(){ 
   this.disabled = true;
   $('#error').remove();
   $("#loading").html("Status: Loading");
-  const runDots = runDotAnimation();
+  runDots = runDotAnimation();
   const {sizeRaw, delimiter} = getCurrentSettings();
 
   google.script.run
-    .withSuccessHandler(
-      function(returnSuccess: number, element) {
-        $("#loading").html('');
-        clearInterval(runDots);
-        element.disabled = false;
-        console.log(returnSuccess);
-        let flag = 0;
-        let renderCount = 1;
-        if(returnSuccess < -1){
-          flag = -2;
-          renderCount = -2 - returnSuccess;
-        }
-        else if(returnSuccess == -1){
-          flag = -1;
-          renderCount = 0;
-        }
-        else{
-          flag = 0;
-          renderCount = returnSuccess;
-        }
-        // var flag = returnSuccess.flag
-        // var renderCount = returnSuccess.renderCount
-        if(flag == -1)
-          showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", "Status: " + renderCount +  " equations replaced");
-        else if(flag == -2 && renderCount > 0)
-          showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used.", "Status: " + renderCount +  " equations replaced");
-        else if(flag == -2 && renderCount == 0)
-          showError("Sorry, likely (temporarily) unavailable commands (i.e. align, &) were used or the equation was too long.", 
-                    "Status: " + "no" +  " equations replaced");
-        else if(flag == 0 && renderCount == 0)
-          $("#loading").html("Status: " + "No"          + " equations rendered");
-        else if(flag == 0 && renderCount == 1)
-          $("#loading").html("Status: " + renderCount + " equation rendered" );
-        else
-          $("#loading").html("Status: " + renderCount + " equations rendered");
-      })
-    .withFailureHandler(
-      function(msg, element) {
-        $("#loading").html('');
-        clearInterval(runDots);
-        console.error("Error console errored!", msg, element)
-        showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts.", "Status: Error, please reload.");
-        element.disabled = false;
-      })
+    .withSuccessHandler(successHandler)
+    .withFailureHandler(errorHandler)
     .withUserObject(this)
-    .replaceEquations(sizeRaw, delimiter);
+    .replaceEquations(sizeRaw, delimiter, document.querySelector<HTMLInputElement>("#input-use-mathjax").checked);
 }
     
     
@@ -149,7 +266,7 @@ function editText(){
   $('#error').remove();
   $("#loading").html("Status: Loading");
   
-  const runDots = runDotAnimation();
+  runDots = runDotAnimation();
   const {sizeRaw, delimiter} = getCurrentSettings();
   google.script.run
     .withSuccessHandler(
@@ -202,7 +319,7 @@ function undoAll(){
   //var div = $('<div id="clickmsg" class="text">' + 'Ctrl + q detected' + '</div>');
   //$('#button-bar').after(div);
   
-  const runDots = runDotAnimation();
+  runDots = runDotAnimation();
   const {delimiter} = getCurrentSettings();
   google.script.run
   .withSuccessHandler(
@@ -261,7 +378,7 @@ $(document).keydown(function(e){
     //var div = $('<div id="clickmsg" class="text">' + 'Ctrl + q detected' + '</div>');
     //$('#button-bar').after(div);
     
-    const runDots = runDotAnimation();
+    runDots = runDotAnimation();
     const {delimiter} = getCurrentSettings();
     google.script.run
     .withSuccessHandler(
