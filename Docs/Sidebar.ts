@@ -449,7 +449,7 @@ function errorHandler(msg, element, actionId: number) {
   restoreIdleSidebarControls();
   console.error("Error console errored!", msg, element);
   reportMathJaxClientError("sidebar.errorHandler", msg);
-  showError("<strong>Also ensure you clicked 'Select all' on the permissions screen. If not, try uninstalling and reinstalling the add-on to redo permissions.</strong> Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts.", "Status: Error, please reload.");
+  showError("<strong>Ensure you clicked 'Select all' on the permissions screen. If not, try uninstalling and reinstalling the add-on to redo permissions.</strong> Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts.", "Status: Error, please reload.");
 }
   
 function insertText(){ 
