@@ -21,6 +21,7 @@ let runDots = -1;
 const reportedMathJaxErrors = new Set<string>();
 let isMathJaxRenderChaining = false;
 let mathJaxRenderedCount = 0;
+let activeSidebarActionId = 0;
 
 function normalizeError(error: unknown) {
   if (error instanceof Error) {
@@ -65,6 +66,22 @@ function resetMathJaxRenderProgress() {
   mathJaxRenderedCount = 0;
 }
 
+function beginSidebarAction() {
+  activeSidebarActionId += 1;
+  if (runDots !== -1) {
+    clearInterval(runDots);
+    runDots = -1;
+  }
+  $('#error').remove();
+  $("#loading").html("Status: Loading");
+  runDots = runDotAnimation();
+  return activeSidebarActionId;
+}
+
+function isStaleSidebarAction(actionId: number) {
+  return actionId !== activeSidebarActionId;
+}
+
 function reportMathJaxClientError(context: string, error: unknown, extra: Record<string, unknown> = {}) {
   if (!shouldLogMathJaxErrors()) {
     return;
@@ -91,11 +108,14 @@ function reportMathJaxClientError(context: string, error: unknown, extra: Record
     .logMathJaxClientError(JSON.stringify(payload));
 }
 
-function requestNextMathJaxBatch(element: HTMLButtonElement) {
+function requestNextMathJaxBatch(element: HTMLButtonElement, actionId: number) {
+  if (isStaleSidebarAction(actionId)) {
+    return;
+  }
   const { sizeRaw, delimiter, renderer } = getCurrentSettings();
   google.script.run
-    .withSuccessHandler(successHandler)
-    .withFailureHandler(errorHandler)
+    .withSuccessHandler((result, userObject) => successHandler(result, userObject, actionId))
+    .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
     .withUserObject(element)
     .replaceEquations(sizeRaw, delimiter, renderer);
 }
@@ -304,28 +324,34 @@ function makeStatusText(successCount: number) {
   else return `Status: ${successCount} equations rendered`;
 }
 
-function successHandler({ lastStatus, successCount, clientEquations }: { lastStatus: google.script.DocsEquationRenderStatus, successCount: number, clientEquations?: AutoLatexCommon.ClientRenderOptions[] }, element: HTMLButtonElement) {
+function successHandler({ lastStatus, successCount, clientEquations }: { lastStatus: google.script.DocsEquationRenderStatus, successCount: number, clientEquations?: AutoLatexCommon.ClientRenderOptions[] }, element: HTMLButtonElement, actionId: number) {
+  if (isStaleSidebarAction(actionId)) {
+    return;
+  }
   if (lastStatus === google.script.DocsEquationRenderStatus.ClientRender) {
     // we're not done yet - these equations need to be rendered on the client
     const equationsToRender = clientEquations || [];
     Promise.all(equationsToRender.map(async c => ({ options: c, renderedEquationB64: await renderMathJaxEquation(c).then(b => blobToB64(b)) })))
       .then(rendered => {
+        if (isStaleSidebarAction(actionId)) {
+          return;
+        }
         google.script.run
-          .withSuccessHandler(successHandler)
-          .withFailureHandler(errorHandler)
+          .withSuccessHandler((result, userObject) => successHandler(result, userObject, actionId))
+          .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
           .withUserObject(element)
           .clientRenderComplete(rendered);
       })
       .catch(err => {
         reportMathJaxClientError("clientRenderBatch", err, { equationCount: equationsToRender.length });
-        errorHandler(err, element);
+        errorHandler(err, element, actionId);
       });
   } else {
     const roundSuccessCount = successCount;
     if (isMathJaxRenderChaining) {
       mathJaxRenderedCount += roundSuccessCount;
       if (lastStatus === google.script.DocsEquationRenderStatus.Success && roundSuccessCount > 0) {
-        requestNextMathJaxBatch(element);
+        requestNextMathJaxBatch(element, actionId);
         return;
       }
       successCount = mathJaxRenderedCount;
@@ -334,6 +360,7 @@ function successHandler({ lastStatus, successCount, clientEquations }: { lastSta
 
     $("#loading").html('');
     clearInterval(runDots);
+    runDots = -1;
     element.disabled = false;
     
     const statusText = makeStatusText(successCount);
@@ -350,10 +377,14 @@ function successHandler({ lastStatus, successCount, clientEquations }: { lastSta
   }
 }
 
-function errorHandler(msg, element) {
+function errorHandler(msg, element, actionId: number) {
+  if (isStaleSidebarAction(actionId)) {
+    return;
+  }
   resetMathJaxRenderProgress();
   $("#loading").html('');
   clearInterval(runDots);
+  runDots = -1;
   console.error("Error console errored!", msg, element);
   reportMathJaxClientError("sidebar.errorHandler", msg);
   showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts. Also ensure you clicked 'Select all' on the permissions screen - if not, try uninstalling and reinstalling the add-on to redo permissions.", "Status: Error, please reload.");
@@ -361,10 +392,8 @@ function errorHandler(msg, element) {
 }
   
 function insertText(){ 
+  const actionId = beginSidebarAction();
   this.disabled = true;
-  $('#error').remove();
-  $("#loading").html("Status: Loading");
-  runDots = runDotAnimation();
   const {sizeRaw, delimiter, renderer} = getCurrentSettings();
   if (renderer === "mathjax") {
     isMathJaxRenderChaining = true;
@@ -374,25 +403,27 @@ function insertText(){
   }
 
   google.script.run
-    .withSuccessHandler(successHandler)
-    .withFailureHandler(errorHandler)
+    .withSuccessHandler((result, userObject) => successHandler(result, userObject, actionId))
+    .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
     .withUserObject(this)
     .replaceEquations(sizeRaw, delimiter, renderer);
 }
     
     
 function editText(){
+  const actionId = beginSidebarAction();
+  resetMathJaxRenderProgress();
   this.disabled = true;
-  $('#error').remove();
-  $("#loading").html("Status: Loading");
-  
-  runDots = runDotAnimation();
   const {sizeRaw, delimiter, renderer} = getCurrentSettings();
   google.script.run
     .withSuccessHandler(
       function(returnSuccess: AutoLatexCommon.DerenderResult, element) {
+        if (isStaleSidebarAction(actionId)) {
+          return;
+        }
         $("#loading").html('');
         clearInterval(runDots);
+        runDots = -1;
         element.disabled = false;
         $("#loading").html("Status: " + "1"             + " equation replaced.");
         if(returnSuccess < 0)
@@ -422,8 +453,12 @@ function editText(){
       })
     .withFailureHandler(
       function(msg, element) {
+        if (isStaleSidebarAction(actionId)) {
+          return;
+        }
         $("#loading").html('');
         clearInterval(runDots);
+        runDots = -1;
         showError("Please ensure cursor is immediately before the equation to be derendered.", "Status: Error, please move cursor before equation.");
         element.disabled = false;
       })
@@ -433,19 +468,21 @@ function editText(){
 
     
 function undoAll(){
+  const actionId = beginSidebarAction();
+  resetMathJaxRenderProgress();
   this.disabled = true;
-  $('#error').remove();
-  $("#loading").html("Status: Loading");
   //var div = $('<div id="clickmsg" class="text">' + 'Ctrl + q detected' + '</div>');
   //$('#button-bar').after(div);
-  
-  runDots = runDotAnimation();
   const {delimiter} = getCurrentSettings();
   google.script.run
   .withSuccessHandler(
     function(returnSuccess: number, element) {
+      if (isStaleSidebarAction(actionId)) {
+        return;
+      }
       $("#loading").html('');
       clearInterval(runDots);
+      runDots = -1;
       element.disabled = false;
       $("#loading").html("Status: " + 0 + " equations de-rendered.");
       if(returnSuccess < 0){
@@ -461,8 +498,12 @@ function undoAll(){
     })
   .withFailureHandler(
     function(msg, element) {
+      if (isStaleSidebarAction(actionId)) {
+        return;
+      }
       $("#loading").html('');
       clearInterval(runDots);
+      runDots = -1;
       showError("Please ensure cursor is inside document.", "Status: Error, please move cursor into document.");
       element.disabled = false;
     })
