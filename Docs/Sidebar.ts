@@ -449,7 +449,7 @@ function errorHandler(msg, element, actionId: number) {
   restoreIdleSidebarControls();
   console.error("Error console errored!", msg, element);
   reportMathJaxClientError("sidebar.errorHandler", msg);
-  showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts. Also ensure you clicked 'Select all' on the permissions screen - if not, try uninstalling and reinstalling the add-on to redo permissions.", "Status: Error, please reload.");
+  showError("<strong>Also ensure you clicked 'Select all' on the permissions screen. If not, try uninstalling and reinstalling the add-on to redo permissions.</strong> Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts.", "Status: Error, please reload.");
 }
   
 function insertText(){ 
@@ -634,8 +634,9 @@ $(document).keydown(function(e){
  * @param msg2 The error message to display.
  */
 function showError(msg1: any, msg2: any) {//CHANGE TO OTHER DIV WHEN PUBLISHING
-  //var div = $('<div id="error" class="error">' + msg + '</div>');
-  var div = $('<div id="error" class="error">' + msg1  + '</div>');
+  //var div = $('<div id="error" class="ale-error">' + msg + '</div>');
+  $('#error').remove();
+  var div = $('<div id="error" class="ale-error">' + msg1  + '</div>');
   $('#loading').after(div);
   $('#loading').html(msg2);
 }
