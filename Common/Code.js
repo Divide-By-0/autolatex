@@ -655,6 +655,9 @@ function getDelimiters(delimiters) {
     if (delimiters == "$") {
         return ["$", "$", "[^\\\\]\\$", "[^\\\\]\\$", 1, 0, 2];
     } //(^|[^\\$])\$(?!\$) //(?:^|[^\\\\\\])\\\$ //[^\\\\]\\\$
+    if (delimiters == "(") {
+        return ["\\(", "\\)", "\\\\\\(", "\\\\\\)", 2, 1, 3];
+    }
     return ["\\[", "\\]", "\\\\\\[", "\\\\\\]", 2, 1, 1];
 }
 function getNumDelimiters(delimiters) {
@@ -667,6 +670,9 @@ function getNumDelimiters(delimiters) {
     }
     if (delimiters == "2") {
         return "$";
+    }
+    if (delimiters == "3") {
+        return "(";
     }
     return "$$";
 }

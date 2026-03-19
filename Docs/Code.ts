@@ -193,8 +193,6 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     b: 0
   };
   
-  const clientEquations: AutoLatexCommon.ClientRenderOptions[] = [];
-
   const childCount = body.getBody().getParent().getNumChildren();
   Common.reportDeltaTime(156);
   for (let index = 0; index < childCount; index++) {
@@ -229,8 +227,13 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
         };
       }
       
-      if (status === DocsEquationRenderStatus.ClientRender) {
-        clientEquations.push(clientRenderOptions);
+      if (status === DocsEquationRenderStatus.ClientRender && clientRenderOptions) {
+        console.log("MathJax queued next equation for client rendering.");
+        return {
+          lastStatus: DocsEquationRenderStatus.ClientRender,
+          clientEquations: [clientRenderOptions],
+          successCount: 0
+        };
       }
       
       // could not find next equation
@@ -244,15 +247,6 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
       }
       console.log("Rendered equations: " + c);
     }
-  }
-  
-  if (clientRender) {
-    console.log("MathJax equations queued for client rendering:", clientEquations.length);
-    return {
-      lastStatus: DocsEquationRenderStatus.ClientRender,
-      clientEquations,
-      successCount: 0
-    };
   }
   
   return {

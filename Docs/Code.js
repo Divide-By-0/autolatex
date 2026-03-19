@@ -153,7 +153,6 @@ function replaceEquations(sizeRaw, delimiter, renderer) {
         g: 0,
         b: 0
     };
-    var clientEquations = [];
     var childCount = body.getBody().getParent().getNumChildren();
     Common.reportDeltaTime(156);
     for (var index = 0; index < childCount; index++) {
@@ -182,8 +181,13 @@ function replaceEquations(sizeRaw, delimiter, renderer) {
                     successCount: c
                 };
             }
-            if (status_1 === 1 /* DocsEquationRenderStatus.ClientRender */) {
-                clientEquations.push(clientRenderOptions);
+            if (status_1 === 1 /* DocsEquationRenderStatus.ClientRender */ && clientRenderOptions) {
+                console.log("MathJax queued next equation for client rendering.");
+                return {
+                    lastStatus: 1 /* DocsEquationRenderStatus.ClientRender */,
+                    clientEquations: [clientRenderOptions],
+                    successCount: 0
+                };
             }
             // could not find next equation
             // move to next section
@@ -195,14 +199,6 @@ function replaceEquations(sizeRaw, delimiter, renderer) {
             }
             console.log("Rendered equations: " + c);
         }
-    }
-    if (clientRender) {
-        console.log("MathJax equations queued for client rendering:", clientEquations.length);
-        return {
-            lastStatus: 1 /* DocsEquationRenderStatus.ClientRender */,
-            clientEquations: clientEquations,
-            successCount: 0
-        };
     }
     return {
         lastStatus: 6 /* DocsEquationRenderStatus.Success */,

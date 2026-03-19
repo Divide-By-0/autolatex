@@ -19,6 +19,8 @@ declare const MathJax: MathJaxApi;
 // animation timeout ID
 let runDots = -1;
 const reportedMathJaxErrors = new Set<string>();
+let isMathJaxRenderChaining = false;
+let mathJaxRenderedCount = 0;
 
 function normalizeError(error: unknown) {
   if (error instanceof Error) {
@@ -58,6 +60,11 @@ function shouldLogMathJaxErrors() {
   }
 }
 
+function resetMathJaxRenderProgress() {
+  isMathJaxRenderChaining = false;
+  mathJaxRenderedCount = 0;
+}
+
 function reportMathJaxClientError(context: string, error: unknown, extra: Record<string, unknown> = {}) {
   if (!shouldLogMathJaxErrors()) {
     return;
@@ -82,6 +89,15 @@ function reportMathJaxClientError(context: string, error: unknown, extra: Record
   google.script.run
     .withFailureHandler(logError => console.error("Failed to report MathJax client error.", logError))
     .logMathJaxClientError(JSON.stringify(payload));
+}
+
+function requestNextMathJaxBatch(element: HTMLButtonElement) {
+  const { sizeRaw, delimiter, renderer } = getCurrentSettings();
+  google.script.run
+    .withSuccessHandler(successHandler)
+    .withFailureHandler(errorHandler)
+    .withUserObject(element)
+    .replaceEquations(sizeRaw, delimiter, renderer);
 }
 
 window.addEventListener("error", event => {
@@ -305,6 +321,17 @@ function successHandler({ lastStatus, successCount, clientEquations }: { lastSta
         errorHandler(err, element);
       });
   } else {
+    const roundSuccessCount = successCount;
+    if (isMathJaxRenderChaining) {
+      mathJaxRenderedCount += roundSuccessCount;
+      if (lastStatus === google.script.DocsEquationRenderStatus.Success && roundSuccessCount > 0) {
+        requestNextMathJaxBatch(element);
+        return;
+      }
+      successCount = mathJaxRenderedCount;
+      resetMathJaxRenderProgress();
+    }
+
     $("#loading").html('');
     clearInterval(runDots);
     element.disabled = false;
@@ -324,6 +351,7 @@ function successHandler({ lastStatus, successCount, clientEquations }: { lastSta
 }
 
 function errorHandler(msg, element) {
+  resetMathJaxRenderProgress();
   $("#loading").html('');
   clearInterval(runDots);
   console.error("Error console errored!", msg, element);
@@ -338,6 +366,12 @@ function insertText(){
   $("#loading").html("Status: Loading");
   runDots = runDotAnimation();
   const {sizeRaw, delimiter, renderer} = getCurrentSettings();
+  if (renderer === "mathjax") {
+    isMathJaxRenderChaining = true;
+    mathJaxRenderedCount = 0;
+  } else {
+    resetMathJaxRenderProgress();
+  }
 
   google.script.run
     .withSuccessHandler(successHandler)
