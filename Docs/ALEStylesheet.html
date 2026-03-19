@@ -106,4 +106,36 @@
     height: unset;
     flex-grow: 1;
   }
+
+  .sidebar-content {
+    padding-bottom: 72px;
+  }
+
+  .donate-inline {
+    justify-content: center;
+    display: none;
+    margin-top: 10px;
+  }
+
+  .donate-inline.visible {
+    display: flex;
+  }
+
+  .donate-pinned {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 8px;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+  }
+
+  .donate-pinned.hidden {
+    display: none;
+  }
+
+  .donate-pinned a {
+    pointer-events: auto;
+  }
 </style>

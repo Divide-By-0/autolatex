@@ -24,6 +24,7 @@ let mathJaxRenderedCount = 0;
 let activeSidebarActionId = 0;
 const RENDER_BUTTON_LABEL = "Render Equations";
 const STOP_RENDER_BUTTON_LABEL = "Stop Rendering";
+const DONATE_CLICKED_STORAGE_KEY = "ale-docs-donate-clicked";
 
 function normalizeError(error: unknown) {
   if (error instanceof Error) {
@@ -119,6 +120,29 @@ function beginSidebarAction() {
 
 function isStaleSidebarAction(actionId: number) {
   return actionId !== activeSidebarActionId;
+}
+
+function hasClickedDonateButton() {
+  try {
+    return window.localStorage.getItem(DONATE_CLICKED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function persistDonateButtonClicked() {
+  try {
+    window.localStorage.setItem(DONATE_CLICKED_STORAGE_KEY, "true");
+  } catch {
+    // ignore storage issues and keep current-session UI state
+  }
+  syncDonateButtonPlacement();
+}
+
+function syncDonateButtonPlacement() {
+  const showInline = hasClickedDonateButton();
+  $('#donate-inline').toggleClass('visible', showInline);
+  $('#donate-pinned').toggleClass('hidden', showInline);
 }
 
 function reportMathJaxClientError(context: string, error: unknown, extra: Record<string, unknown> = {}) {
@@ -278,6 +302,9 @@ $('document').ready(function(){
   $(function() {
       google.script.run.withSuccessHandler(loadPreferences)
           .withFailureHandler(showError).getPrefs();
+      syncDonateButtonPlacement();
+      $('#donate-inline-link').click(persistDonateButtonClicked);
+      $('#donate-pinned-link').click(persistDonateButtonClicked);
       $('#insert-text').click(insertText);
       $('#edit-text').click(editText);
       $('#undo-all').click(undoAll);
