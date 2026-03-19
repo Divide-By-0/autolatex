@@ -22,6 +22,8 @@ const reportedMathJaxErrors = new Set<string>();
 let isMathJaxRenderChaining = false;
 let mathJaxRenderedCount = 0;
 let activeSidebarActionId = 0;
+const RENDER_BUTTON_LABEL = "Render Equations";
+const STOP_RENDER_BUTTON_LABEL = "Stop Rendering";
 
 function normalizeError(error: unknown) {
   if (error instanceof Error) {
@@ -66,12 +68,49 @@ function resetMathJaxRenderProgress() {
   mathJaxRenderedCount = 0;
 }
 
-function beginSidebarAction() {
-  activeSidebarActionId += 1;
+function stopLoadingAnimation() {
   if (runDots !== -1) {
     clearInterval(runDots);
     runDots = -1;
   }
+}
+
+function setRenderButtonState(isStopping: boolean) {
+  $('#insert-text')
+    .text(isStopping ? STOP_RENDER_BUTTON_LABEL : RENDER_BUTTON_LABEL)
+    .prop("disabled", false);
+}
+
+function enableSidebarButtons() {
+  $('#insert-text').prop("disabled", false);
+  $('#edit-text').prop("disabled", false);
+  $('#undo-all').prop("disabled", false);
+}
+
+function restoreIdleSidebarControls() {
+  stopLoadingAnimation();
+  enableSidebarButtons();
+  setRenderButtonState(false);
+}
+
+function cancelActiveMathJaxRender(showStatus = true) {
+  if (!isMathJaxRenderChaining) {
+    return false;
+  }
+  activeSidebarActionId += 1;
+  resetMathJaxRenderProgress();
+  restoreIdleSidebarControls();
+  if (showStatus) {
+    $('#error').remove();
+    $("#loading").html("Status: Rendering stopped.");
+  }
+  return true;
+}
+
+function beginSidebarAction() {
+  activeSidebarActionId += 1;
+  stopLoadingAnimation();
+  enableSidebarButtons();
   $('#error').remove();
   $("#loading").html("Status: Loading");
   runDots = runDotAnimation();
@@ -313,9 +352,8 @@ function loadPreferences(choicePrefs: {size: string, delim: string, renderer: st
   $('#delimit').val(choicePrefs.delim);
   const savedRenderer = ["auto", "codecogs", "mathjax", "texrendr", "sciweavers"].includes(choicePrefs.renderer) ? choicePrefs.renderer : "auto";
   $('#renderer').val(savedRenderer);
-  $('#insert-text').prop("disabled", false);
-  $('#edit-text').prop("disabled", false);
-  $('#undo-all').prop("disabled", false);
+  enableSidebarButtons();
+  setRenderButtonState(false);
 }
 
 function makeStatusText(successCount: number) {
@@ -359,9 +397,7 @@ function successHandler({ lastStatus, successCount, clientEquations }: { lastSta
     }
 
     $("#loading").html('');
-    clearInterval(runDots);
-    runDots = -1;
-    element.disabled = false;
+    restoreIdleSidebarControls();
     
     const statusText = makeStatusText(successCount);
     
@@ -383,23 +419,25 @@ function errorHandler(msg, element, actionId: number) {
   }
   resetMathJaxRenderProgress();
   $("#loading").html('');
-  clearInterval(runDots);
-  runDots = -1;
+  restoreIdleSidebarControls();
   console.error("Error console errored!", msg, element);
   reportMathJaxClientError("sidebar.errorHandler", msg);
   showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts. Also ensure you clicked 'Select all' on the permissions screen - if not, try uninstalling and reinstalling the add-on to redo permissions.", "Status: Error, please reload.");
-  element.disabled = false;
 }
   
 function insertText(){ 
+  if (cancelActiveMathJaxRender()) {
+    return;
+  }
   const actionId = beginSidebarAction();
-  this.disabled = true;
   const {sizeRaw, delimiter, renderer} = getCurrentSettings();
   if (renderer === "mathjax") {
     isMathJaxRenderChaining = true;
     mathJaxRenderedCount = 0;
+    setRenderButtonState(true);
   } else {
     resetMathJaxRenderProgress();
+    this.disabled = true;
   }
 
   google.script.run
@@ -411,6 +449,7 @@ function insertText(){
     
     
 function editText(){
+  cancelActiveMathJaxRender(false);
   const actionId = beginSidebarAction();
   resetMathJaxRenderProgress();
   this.disabled = true;
@@ -422,9 +461,7 @@ function editText(){
           return;
         }
         $("#loading").html('');
-        clearInterval(runDots);
-        runDots = -1;
-        element.disabled = false;
+        restoreIdleSidebarControls();
         $("#loading").html("Status: " + "1"             + " equation replaced.");
         if(returnSuccess < 0)
           $("#loading").html("Status: " + "No"          + " equations replaced.");
@@ -457,10 +494,8 @@ function editText(){
           return;
         }
         $("#loading").html('');
-        clearInterval(runDots);
-        runDots = -1;
+        restoreIdleSidebarControls();
         showError("Please ensure cursor is immediately before the equation to be derendered.", "Status: Error, please move cursor before equation.");
-        element.disabled = false;
       })
     .withUserObject(this)
     .editEquations(sizeRaw, delimiter, renderer);
@@ -468,6 +503,7 @@ function editText(){
 
     
 function undoAll(){
+  cancelActiveMathJaxRender(false);
   const actionId = beginSidebarAction();
   resetMathJaxRenderProgress();
   this.disabled = true;
@@ -481,9 +517,7 @@ function undoAll(){
         return;
       }
       $("#loading").html('');
-      clearInterval(runDots);
-      runDots = -1;
-      element.disabled = false;
+      restoreIdleSidebarControls();
       $("#loading").html("Status: " + 0 + " equations de-rendered.");
       if(returnSuccess < 0){
         $("#loading").html("Status: " + "No"          + " equations de-rendered.");
@@ -502,10 +536,8 @@ function undoAll(){
         return;
       }
       $("#loading").html('');
-      clearInterval(runDots);
-      runDots = -1;
+      restoreIdleSidebarControls();
       showError("Please ensure cursor is inside document.", "Status: Error, please move cursor into document.");
-      element.disabled = false;
     })
   .withUserObject(this)
   .removeAll(delimiter);
