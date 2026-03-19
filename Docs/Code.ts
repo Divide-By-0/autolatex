@@ -255,6 +255,59 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
   };
 }
 
+function hasEscapedSingleDollar(text: string, offset: number) {
+  let slashCount = 0;
+  for (let index = offset - 1; index >= 0 && text.charAt(index) === "\\"; index--) {
+    slashCount++;
+  }
+  return slashCount % 2 === 1;
+}
+
+function isSingleDollarDelimiter(rangeElement: GoogleAppsScript.Document.RangeElement) {
+  const text = rangeElement.getElement().asText().getText();
+  const offset = rangeElement.getStartOffset();
+
+  if (offset < 0 || text.charAt(offset) !== "$") {
+    return false;
+  }
+
+  if (hasEscapedSingleDollar(text, offset)) {
+    return false;
+  }
+
+  if (offset > 0 && text.charAt(offset - 1) === "$") {
+    return false;
+  }
+
+  if (offset + 1 < text.length && text.charAt(offset + 1) === "$") {
+    return false;
+  }
+
+  return true;
+}
+
+function findNextDelimiter(
+  docBody: GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection | GoogleAppsScript.Document.FooterSection,
+  renderOptions: AutoLatexCommon.RenderOptions,
+  fromRange: GoogleAppsScript.Document.RangeElement | null = null
+) {
+  if (renderOptions.delim[6] !== 2) {
+    return fromRange == null
+      ? docBody.findText(renderOptions.delim[2])
+      : docBody.findText(renderOptions.delim[2], fromRange);
+  }
+
+  let candidate = fromRange == null ? docBody.findText("\\$") : docBody.findText("\\$", fromRange);
+  while (candidate != null) {
+    if (isSingleDollarDelimiter(candidate)) {
+      return candidate;
+    }
+    candidate = docBody.findText("\\$", candidate);
+  }
+
+  return null;
+}
+
 /**
  * Get position of insertion then place the image there.
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order. E.g. ["\\[", "\\]", "\\\\\\[", "\\\\\\]", 2, 1, 1]
@@ -277,10 +330,7 @@ function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, pr
       status: DocsEquationRenderStatus.NoDocument
     };
   }
-  let startElement = docBody.findText(renderOptions.delim[2]);
-  if (prevFailedStartElemIfIsEmpty) {
-    startElement = docBody.findText(renderOptions.delim[2], prevFailedStartElemIfIsEmpty);
-  }
+  const startElement = findNextDelimiter(docBody, renderOptions, prevFailedStartElemIfIsEmpty);
   if (startElement == null) {
     return {
       status: DocsEquationRenderStatus.NoStartDelimiter
@@ -288,7 +338,7 @@ function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, pr
   }
   const placeHolderStart = startElement.getStartOffset(); //position of image insertion
 
-  const endElement = docBody.findText(renderOptions.delim[3], startElement);
+  const endElement = findNextDelimiter(docBody, renderOptions, startElement);
   // could not find the ending delimiter after the start
   if (endElement == null) {
     return {
