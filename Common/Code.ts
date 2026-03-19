@@ -117,6 +117,9 @@ const rendererIds = {
   MATHJAX: 13
 };
 
+const MATHJAX_VIEWER_URL = "https://saxarona.github.io/mathjax-viewer/?input=";
+const LEGACY_MATHJAX_LINK_URL = "about:blank?type=mathjax&equation=";
+
 //render bug variables
 /**
  * @public
@@ -760,8 +763,8 @@ function getRenderer(worked: number): Renderer {
   else if (worked == 13) {
     return [
       13,
-      "about:blank?type=mathjax&equation=",
-      "about:blank?type=mathjax&equation=",
+      MATHJAX_VIEWER_URL,
+      MATHJAX_VIEWER_URL,
       "",
       "",
       "MathJax",
@@ -864,6 +867,9 @@ function derenderEquation(origURL: string, app: IntegratedApp) {
   for (; worked <= capableDerenderers; ++worked) {
     //[3,"https://latex.codecogs.com/png.latex?","http://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]
     renderer = getRenderer(worked)[2].split("FILENAME"); //list of possibly more than one string
+    if (worked === rendererIds.MATHJAX) {
+      renderer.push(LEGACY_MATHJAX_LINK_URL);
+    }
     for (let I = 0; I < renderer.length; ++I) {
       if (origURL.indexOf(renderer[I]) > -1) {
         debugLog("Changing: " + origURL + " by removing " + renderer[I]);
