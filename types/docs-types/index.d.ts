@@ -10,15 +10,40 @@ declare namespace google {
 
             withUserObject(object: any): Runner;
 
-            editEquations(sizeRaw: string, delimiter: string): void //reference;
+            clientRenderComplete(equations: {options: AutoLatexCommon.ClientRenderOptions, renderedEquationB64: string}[]): void //intrinsic;
+
+            editEquations(sizeRaw: string, delimiter: string, renderer: string): void //reference;
 
             getKey(): void //intrinsic;
+
+            logMathJaxClientError(payloadJson: string): void //intrinsic;
 
             getPrefs(): void //reflection;
 
             removeAll(defaultDelimRaw: string): void //intrinsic;
 
-            replaceEquations(sizeRaw: string, delimiter: string): void //intrinsic;
+            replaceEquations(sizeRaw: string, delimiter: string, renderer: string): void //union;
+
+        }
+
+        /**
+         * enums should be alphabetical in order to work with clasp-types
+         */
+        export const enum DocsEquationRenderStatus {
+
+            AllRenderersFailed,
+
+            ClientRender,
+
+            EmptyEquation,
+
+            NoDocument,
+
+            NoEndDelimiter,
+
+            NoStartDelimiter,
+
+            Success,
 
         }
 
@@ -27,4 +52,3 @@ declare namespace google {
     }
 
 }
-

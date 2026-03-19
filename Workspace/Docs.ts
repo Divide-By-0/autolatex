@@ -30,7 +30,7 @@ const DocsApp = {
  * Constantly keep replacing latex till all are finished
  * @public
  */
-function replaceEquations(sizeRaw: string, delimiter: string) {
+function replaceEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const quality = 900;
   let size = Common.getSize(sizeRaw);
   let isInline = false;
@@ -40,7 +40,7 @@ function replaceEquations(sizeRaw: string, delimiter: string) {
   }
   Common.reportDeltaTime(140);
   const delim = Common.getDelimiters(delimiter);
-  Common.savePrefs(sizeRaw, delimiter);
+  Common.savePrefs(sizeRaw, delimiter, renderer);
   let c = 0; //counter
   let defaultSize = 11;
   let allEmpty = 0;
@@ -359,9 +359,9 @@ function removeAll(defaultDelimRaw: string) {
  * @public
  */
 
-function editEquations(sizeRaw: string, delimiter: string) {
+function editEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const defaultDelim = Common.getDelimiters(delimiter);
-  Common.savePrefs(sizeRaw, delimiter);
+  Common.savePrefs(sizeRaw, delimiter, renderer);
   const cursor = DocumentApp.getActiveDocument().getCursor();
   if (cursor) {
     // Attempt to insert text at the cursor position. If the insertion returns null, the cursor's

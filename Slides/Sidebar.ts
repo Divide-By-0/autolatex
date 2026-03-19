@@ -1,6 +1,7 @@
 /* global google, $ */
 
-/// <reference path="../types/docs-types/index.d.ts" />
+/// <reference types="jquery" />
+/// <reference path="../types/slides-types/index.d.ts" />
 /// <reference path="../types/common-types/index.d.ts" />
 /// <reference lib="dom" />
 
@@ -44,7 +45,8 @@ function getCurrentSettings() {
     sizeRaw = ($('#custom-size').val() as string) || '';
   }
   const delimiter = $('#delimit :selected').val() as string;
-  return {sizeRaw, delimiter};
+  const renderer = $('#renderer :selected').val() as string;
+  return {sizeRaw, delimiter, renderer};
 }
 
 //$('donate_button').on("click",function(e){e.preventDefault;}); // for paypal to disable sidebar disappearing
@@ -69,7 +71,7 @@ $("#advanced").click(function(event){//.live({click:
   });
 });
 
-function loadPreferences(choicePrefs: {size: string, delim: string}) {
+function loadPreferences(choicePrefs: {size: string, delim: string, renderer: string}) {
   $('#insert-text').prop("disabled", true);
   $('#edit-text').prop("disabled", true);
   $('#undo-all').prop("disabled", true);
@@ -82,6 +84,8 @@ function loadPreferences(choicePrefs: {size: string, delim: string}) {
     $('#custom-size').hide();
   }
   $('#delimit').val(choicePrefs.delim);
+  const savedRenderer = ["auto", "codecogs", "texrendr", "sciweavers"].includes(choicePrefs.renderer) ? choicePrefs.renderer : "auto";
+  $('#renderer').val(savedRenderer);
   $('#insert-text').prop("disabled", false);
   $('#edit-text').prop("disabled", false);
   $('#undo-all').prop("disabled", false);
@@ -93,7 +97,7 @@ function insertText(){
   $('#error').remove();
   $("#loading").html("Status: Loading");
   const runDots = runDotAnimation();
-  const {sizeRaw, delimiter} = getCurrentSettings();
+  const {sizeRaw, delimiter, renderer} = getCurrentSettings();
 
   google.script.run
     .withSuccessHandler(
@@ -138,9 +142,9 @@ function insertText(){
         console.error("Error console errored!", msg, element)
         showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page.", "Status: Error, please reload.");
         element.disabled = false;
-      })
+    })
     .withUserObject(this)
-    .replaceEquations(sizeRaw, delimiter);
+    .replaceEquations(sizeRaw, delimiter, renderer);
 }
     
     
@@ -150,7 +154,7 @@ function editText(){
   $("#loading").html("Status: Loading");
   
   const runDots = runDotAnimation();
-  const {sizeRaw, delimiter} = getCurrentSettings();
+  const {sizeRaw, delimiter, renderer} = getCurrentSettings();
   google.script.run
     .withSuccessHandler(
       function(returnSuccess, element) {
@@ -189,9 +193,9 @@ function editText(){
         clearInterval(runDots);
         showError("Please select equation image to be derendered.", "Status: Error, please select equation to be derendered.");
         element.disabled = false;
-      })
+    })
     .withUserObject(this)
-    .editEquations(sizeRaw, delimiter);
+    .editEquations(sizeRaw, delimiter, renderer);
 }
 
     

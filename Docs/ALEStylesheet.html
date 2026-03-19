@@ -91,6 +91,10 @@
     width: 248px;
   }
   
+  .mathjax-equation-hidden-render {
+    visibility: hidden;
+    position: absolute;
+  }
   .size-container {
     display: flex;
     align-items: stretch;
@@ -101,5 +105,40 @@
     /* allows input height to stretch */
     height: unset;
     flex-grow: 1;
+  }
+
+  .sidebar-content {
+    padding-bottom: 112px;
+  }
+
+  .donate-inline {
+    justify-content: center;
+    display: none;
+    margin-top: 10px;
+  }
+
+  .donate-inline.visible {
+    display: flex;
+  }
+
+  .donate-pinned {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 8px;
+    display: flex;
+    justify-content: center;
+    padding: 12px 0 10px;
+    background: white;
+    box-shadow: 0 -8px 16px rgba(255, 255, 255, 0.96);
+    pointer-events: none;
+  }
+
+  .donate-pinned.hidden {
+    display: none;
+  }
+
+  .donate-pinned a {
+    pointer-events: auto;
   }
 </style>

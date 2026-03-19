@@ -1,8 +1,299 @@
 /* global google, $ */
 
+/// <reference types="jquery" />
 /// <reference path="../types/docs-types/index.d.ts" />
 /// <reference path="../types/common-types/index.d.ts" />
 /// <reference lib="dom" />
+
+interface MathJaxApi {
+  tex2svgPromise(equation: string, options: { display: boolean, em: number }): Promise<Element>;
+  svgStylesheet(): Element;
+}
+
+interface Window {
+  MathJax: MathJaxApi;
+}
+
+declare const MathJax: MathJaxApi;
+
+// animation timeout ID
+let runDots = -1;
+const reportedMathJaxErrors = new Set<string>();
+let isMathJaxRenderChaining = false;
+let mathJaxRenderedCount = 0;
+let activeSidebarActionId = 0;
+const RENDER_BUTTON_LABEL = "Render Equations";
+const STOP_RENDER_BUTTON_LABEL = "Stop Rendering";
+const DONATE_CLICKED_STORAGE_KEY = "ale-docs-donate-clicked";
+
+function normalizeError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      name: error.name,
+      stack: error.stack || "",
+    };
+  }
+  if (typeof error === "string") {
+    return {
+      message: error,
+      name: "Error",
+      stack: "",
+    };
+  }
+  try {
+    return {
+      message: JSON.stringify(error),
+      name: "UnknownError",
+      stack: "",
+    };
+  } catch {
+    return {
+      message: String(error),
+      name: "UnknownError",
+      stack: "",
+    };
+  }
+}
+
+function shouldLogMathJaxErrors() {
+  try {
+    return getCurrentSettings().renderer === "mathjax";
+  } catch {
+    return false;
+  }
+}
+
+function resetMathJaxRenderProgress() {
+  isMathJaxRenderChaining = false;
+  mathJaxRenderedCount = 0;
+}
+
+function stopLoadingAnimation() {
+  if (runDots !== -1) {
+    clearInterval(runDots);
+    runDots = -1;
+  }
+}
+
+function setRenderButtonState(isStopping: boolean) {
+  $('#insert-text')
+    .text(isStopping ? STOP_RENDER_BUTTON_LABEL : RENDER_BUTTON_LABEL)
+    .prop("disabled", false);
+}
+
+function enableSidebarButtons() {
+  $('#insert-text').prop("disabled", false);
+  $('#edit-text').prop("disabled", false);
+  $('#undo-all').prop("disabled", false);
+}
+
+function restoreIdleSidebarControls() {
+  stopLoadingAnimation();
+  enableSidebarButtons();
+  setRenderButtonState(false);
+}
+
+function cancelActiveMathJaxRender(showStatus = true) {
+  if (!isMathJaxRenderChaining) {
+    return false;
+  }
+  activeSidebarActionId += 1;
+  resetMathJaxRenderProgress();
+  restoreIdleSidebarControls();
+  if (showStatus) {
+    $('#error').remove();
+    $("#loading").html("Status: Rendering stopped.");
+  }
+  return true;
+}
+
+function beginSidebarAction() {
+  activeSidebarActionId += 1;
+  stopLoadingAnimation();
+  enableSidebarButtons();
+  $('#error').remove();
+  $("#loading").html("Status: Loading");
+  runDots = runDotAnimation();
+  return activeSidebarActionId;
+}
+
+function isStaleSidebarAction(actionId: number) {
+  return actionId !== activeSidebarActionId;
+}
+
+function hasClickedDonateButton() {
+  try {
+    return window.localStorage.getItem(DONATE_CLICKED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function persistDonateButtonClicked() {
+  try {
+    window.localStorage.setItem(DONATE_CLICKED_STORAGE_KEY, "true");
+  } catch {
+    // ignore storage issues and keep current-session UI state
+  }
+  syncDonateButtonPlacement();
+}
+
+function syncDonateButtonPlacement() {
+  const showInline = hasClickedDonateButton();
+  $('#donate-inline').toggleClass('visible', showInline);
+  $('#donate-pinned').toggleClass('hidden', showInline);
+}
+
+function reportMathJaxClientError(context: string, error: unknown, extra: Record<string, unknown> = {}) {
+  if (!shouldLogMathJaxErrors()) {
+    return;
+  }
+
+  const normalizedError = normalizeError(error);
+  const dedupeKey = `${context}:${normalizedError.message}`;
+  if (reportedMathJaxErrors.has(dedupeKey)) {
+    return;
+  }
+  reportedMathJaxErrors.add(dedupeKey);
+
+  const payload = {
+    context,
+    error: normalizedError,
+    extra,
+    href: window.location.href,
+    userAgent: navigator.userAgent,
+    timestamp: new Date().toISOString(),
+  };
+
+  google.script.run
+    .withFailureHandler(logError => console.error("Failed to report MathJax client error.", logError))
+    .logMathJaxClientError(JSON.stringify(payload));
+}
+
+function requestNextMathJaxBatch(element: HTMLButtonElement, actionId: number) {
+  if (isStaleSidebarAction(actionId)) {
+    return;
+  }
+  const { sizeRaw, delimiter, renderer } = getCurrentSettings();
+  google.script.run
+    .withSuccessHandler((result, userObject) => successHandler(result, userObject, actionId))
+    .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
+    .withUserObject(element)
+    .replaceEquations(sizeRaw, delimiter, renderer);
+}
+
+window.addEventListener("error", event => {
+  if (event.error || shouldLogMathJaxErrors()) {
+    reportMathJaxClientError("window.error", event.error || event.message, {
+      filename: event.filename,
+      lineno: event.lineno,
+      colno: event.colno,
+    });
+  }
+});
+
+window.addEventListener("unhandledrejection", event => {
+  reportMathJaxClientError("window.unhandledrejection", event.reason);
+});
+
+/**
+* Convert a Blob to a base64 string for transmission to the server
+* 
+* @param blob the blob to convert
+* @returns 
+*/
+async function blobToB64(blob: Blob) {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = err => reject(err);
+    reader.readAsDataURL(blob);
+  });
+  return dataUrl.substring(dataUrl.indexOf(",") + 1); // strip dataurl header
+}
+
+async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRenderOptions) {
+  // apply RGB coloring + newline becomes \\
+  const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + renderOptions.equation.replace(/\n|\r|\r\n/g, "\\\\");
+  
+  if (!window.MathJax || typeof window.MathJax.tex2svgPromise !== "function") {
+    throw new Error("MathJax is still loading. Please try again in a moment.");
+  }
+
+  const result = await window.MathJax.tex2svgPromise(equation, {
+    display: !renderOptions.inline,
+    em: renderOptions.size
+  });
+  const svg: SVGSVGElement = result.querySelector("svg");
+  if (!svg) {
+    throw new Error("MathJax did not return an SVG element.");
+  }
+  
+  // calculate width and height by rendering this svg with the specified font size
+  svg.classList.add("mathjax-equation-hidden-render");
+  svg.style.fontSize = `${renderOptions.size}px`;
+  document.body.appendChild(svg);
+  
+  // scale up by 5
+  const width = svg.clientWidth * 5;
+  const height = svg.clientHeight * 5;
+  
+  svg.remove();
+  
+  // set width/height explicitly on the svg
+  svg.setAttribute("width", `${width}px`);
+  svg.setAttribute("height", `${height}px`);
+  
+  const styles = MathJax.svgStylesheet().outerHTML;
+  
+  // create a URL for this svg
+  const svgString = new XMLSerializer().serializeToString(svg)
+    // inject css
+    .replace("</svg>", styles + "</svg>");
+  const svgBlob = new Blob([svgString], {
+    type: "image/svg+xml"
+  });
+  
+  const svgUrl = URL.createObjectURL(svgBlob);
+  
+  const canvas = typeof OffscreenCanvas !== "undefined"
+    ? new OffscreenCanvas(width, height)
+    : Object.assign(document.createElement("canvas"), { width, height });
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Could not initialize a 2D canvas for MathJax rendering.");
+  }
+  
+  try {
+    // load this svg on an image
+    const svgImage = new Image(width, height);
+    svgImage.src = svgUrl;
+    // wait for load
+    await new Promise<void>((resolve, reject) => {
+      svgImage.onload = () => resolve();
+      svgImage.onerror = err => reject(err);
+    });
+    
+    // draw onto canvas
+    ctx.drawImage(svgImage, 0, 0);
+    
+    const pngBlob = "convertToBlob" in canvas
+      ? await canvas.convertToBlob({ type: "image/png" })
+      : await new Promise<Blob>((resolve, reject) => {
+          (canvas as HTMLCanvasElement).toBlob(blob => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error("Could not convert MathJax canvas to a PNG blob."));
+            }
+          }, "image/png");
+        });
+    return pngBlob;
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}
 
 /**
  * On document load, assign click handlers to each button. Added document.ready.
@@ -11,6 +302,9 @@ $('document').ready(function(){
   $(function() {
       google.script.run.withSuccessHandler(loadPreferences)
           .withFailureHandler(showError).getPrefs();
+      syncDonateButtonPlacement();
+      $('#donate-inline-link').click(persistDonateButtonClicked);
+      $('#donate-pinned-link').click(persistDonateButtonClicked);
       $('#insert-text').click(insertText);
       $('#edit-text').click(editText);
       $('#undo-all').click(undoAll);
@@ -44,7 +338,8 @@ function getCurrentSettings() {
     sizeRaw = ($('#custom-size').val() as string) || '';
   }
   const delimiter = $('#delimit :selected').val() as string;
-  return {sizeRaw, delimiter};
+  const renderer = $('#renderer :selected').val() as string;
+  return {sizeRaw, delimiter, renderer};
 }
 
 //$('donate_button').on("click",function(e){e.preventDefault;}); // for paypal to disable sidebar disappearing
@@ -69,7 +364,7 @@ $("#advanced").click(function(event){//.live({click:
   });
 });
 
-function loadPreferences(choicePrefs: {size: string, delim: string}) {
+function loadPreferences(choicePrefs: {size: string, delim: string, renderer: string}) {
   $('#insert-text').prop("disabled", true);
   $('#edit-text').prop("disabled", true);
   $('#undo-all').prop("disabled", true);
@@ -82,81 +377,118 @@ function loadPreferences(choicePrefs: {size: string, delim: string}) {
     $('#custom-size').hide();
   }
   $('#delimit').val(choicePrefs.delim);
-  $('#insert-text').prop("disabled", false);
-  $('#edit-text').prop("disabled", false);
-  $('#undo-all').prop("disabled", false);
+  const savedRenderer = ["auto", "codecogs", "mathjax", "texrendr", "sciweavers"].includes(choicePrefs.renderer) ? choicePrefs.renderer : "auto";
+  $('#renderer').val(savedRenderer);
+  enableSidebarButtons();
+  setRenderButtonState(false);
+}
+
+function makeStatusText(successCount: number) {
+  if (successCount == 0) return "Status: No equations rendered";
+  else if (successCount == 1) return "Status: 1 equation rendered";
+  else return `Status: ${successCount} equations rendered`;
+}
+
+function successHandler({ lastStatus, successCount, clientEquations }: { lastStatus: google.script.DocsEquationRenderStatus, successCount: number, clientEquations?: AutoLatexCommon.ClientRenderOptions[] }, element: HTMLButtonElement, actionId: number) {
+  if (isStaleSidebarAction(actionId)) {
+    return;
+  }
+  if (lastStatus === google.script.DocsEquationRenderStatus.ClientRender) {
+    // we're not done yet - these equations need to be rendered on the client
+    const equationsToRender = clientEquations || [];
+    Promise.all(equationsToRender.map(async c => ({ options: c, renderedEquationB64: await renderMathJaxEquation(c).then(b => blobToB64(b)) })))
+      .then(rendered => {
+        if (isStaleSidebarAction(actionId)) {
+          return;
+        }
+        google.script.run
+          .withSuccessHandler((result, userObject) => successHandler(result, userObject, actionId))
+          .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
+          .withUserObject(element)
+          .clientRenderComplete(rendered);
+      })
+      .catch(err => {
+        reportMathJaxClientError("clientRenderBatch", err, { equationCount: equationsToRender.length });
+        errorHandler(err, element, actionId);
+      });
+  } else {
+    const roundSuccessCount = successCount;
+    if (isMathJaxRenderChaining) {
+      mathJaxRenderedCount += roundSuccessCount;
+      if (lastStatus === google.script.DocsEquationRenderStatus.Success && roundSuccessCount > 0) {
+        requestNextMathJaxBatch(element, actionId);
+        return;
+      }
+      successCount = mathJaxRenderedCount;
+      resetMathJaxRenderProgress();
+    }
+
+    $("#loading").html('');
+    restoreIdleSidebarControls();
+    
+    const statusText = makeStatusText(successCount);
+    
+    if (lastStatus === google.script.DocsEquationRenderStatus.NoDocument)
+      showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", statusText);
+    else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount > 0)
+      showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used.", statusText);
+    else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount === 0)
+      showError("Sorry, likely (temporarily) unavailable commands (i.e. align, &) were used or the equation was too long.", statusText);
+    else {
+      $("#loading").html(statusText);
+    }
+  }
+}
+
+function errorHandler(msg, element, actionId: number) {
+  if (isStaleSidebarAction(actionId)) {
+    return;
+  }
+  resetMathJaxRenderProgress();
+  $("#loading").html('');
+  restoreIdleSidebarControls();
+  console.error("Error console errored!", msg, element);
+  reportMathJaxClientError("sidebar.errorHandler", msg);
+  showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts. Also ensure you clicked 'Select all' on the permissions screen - if not, try uninstalling and reinstalling the add-on to redo permissions.", "Status: Error, please reload.");
 }
   
 function insertText(){ 
-  this.disabled = true;
-  $('#error').remove();
-  $("#loading").html("Status: Loading");
-  const runDots = runDotAnimation();
-  const {sizeRaw, delimiter} = getCurrentSettings();
+  if (cancelActiveMathJaxRender()) {
+    return;
+  }
+  const actionId = beginSidebarAction();
+  const {sizeRaw, delimiter, renderer} = getCurrentSettings();
+  if (renderer === "mathjax") {
+    isMathJaxRenderChaining = true;
+    mathJaxRenderedCount = 0;
+    setRenderButtonState(true);
+  } else {
+    resetMathJaxRenderProgress();
+    this.disabled = true;
+  }
 
   google.script.run
-    .withSuccessHandler(
-      function(returnSuccess: number, element) {
-        $("#loading").html('');
-        clearInterval(runDots);
-        element.disabled = false;
-        console.log(returnSuccess);
-        let flag = 0;
-        let renderCount = 1;
-        if(returnSuccess < -1){
-          flag = -2;
-          renderCount = -2 - returnSuccess;
-        }
-        else if(returnSuccess == -1){
-          flag = -1;
-          renderCount = 0;
-        }
-        else{
-          flag = 0;
-          renderCount = returnSuccess;
-        }
-        // var flag = returnSuccess.flag
-        // var renderCount = returnSuccess.renderCount
-        if(flag == -1)
-          showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", "Status: " + renderCount +  " equations replaced");
-        else if(flag == -2 && renderCount > 0)
-          showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used.", "Status: " + renderCount +  " equations replaced");
-        else if(flag == -2 && renderCount == 0)
-          showError("Sorry, likely (temporarily) unavailable commands (i.e. align, &) were used or the equation was too long.", 
-                    "Status: " + "no" +  " equations replaced");
-        else if(flag == 0 && renderCount == 0)
-          $("#loading").html("Status: " + "No"          + " equations rendered");
-        else if(flag == 0 && renderCount == 1)
-          $("#loading").html("Status: " + renderCount + " equation rendered" );
-        else
-          $("#loading").html("Status: " + renderCount + " equations rendered");
-      })
-    .withFailureHandler(
-      function(msg, element) {
-        $("#loading").html('');
-        clearInterval(runDots);
-        console.error("Error console errored!", msg, element)
-        showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts.", "Status: Error, please reload.");
-        element.disabled = false;
-      })
+    .withSuccessHandler((result, userObject) => successHandler(result, userObject, actionId))
+    .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
     .withUserObject(this)
-    .replaceEquations(sizeRaw, delimiter);
+    .replaceEquations(sizeRaw, delimiter, renderer);
 }
     
     
 function editText(){
+  cancelActiveMathJaxRender(false);
+  const actionId = beginSidebarAction();
+  resetMathJaxRenderProgress();
   this.disabled = true;
-  $('#error').remove();
-  $("#loading").html("Status: Loading");
-  
-  const runDots = runDotAnimation();
-  const {sizeRaw, delimiter} = getCurrentSettings();
+  const {sizeRaw, delimiter, renderer} = getCurrentSettings();
   google.script.run
     .withSuccessHandler(
       function(returnSuccess: AutoLatexCommon.DerenderResult, element) {
+        if (isStaleSidebarAction(actionId)) {
+          return;
+        }
         $("#loading").html('');
-        clearInterval(runDots);
-        element.disabled = false;
+        restoreIdleSidebarControls();
         $("#loading").html("Status: " + "1"             + " equation replaced.");
         if(returnSuccess < 0)
           $("#loading").html("Status: " + "No"          + " equations replaced.");
@@ -185,31 +517,34 @@ function editText(){
       })
     .withFailureHandler(
       function(msg, element) {
+        if (isStaleSidebarAction(actionId)) {
+          return;
+        }
         $("#loading").html('');
-        clearInterval(runDots);
+        restoreIdleSidebarControls();
         showError("Please ensure cursor is immediately before the equation to be derendered.", "Status: Error, please move cursor before equation.");
-        element.disabled = false;
       })
     .withUserObject(this)
-    .editEquations(sizeRaw, delimiter);
+    .editEquations(sizeRaw, delimiter, renderer);
 }
 
     
 function undoAll(){
+  cancelActiveMathJaxRender(false);
+  const actionId = beginSidebarAction();
+  resetMathJaxRenderProgress();
   this.disabled = true;
-  $('#error').remove();
-  $("#loading").html("Status: Loading");
   //var div = $('<div id="clickmsg" class="text">' + 'Ctrl + q detected' + '</div>');
   //$('#button-bar').after(div);
-  
-  const runDots = runDotAnimation();
   const {delimiter} = getCurrentSettings();
   google.script.run
   .withSuccessHandler(
     function(returnSuccess: number, element) {
+      if (isStaleSidebarAction(actionId)) {
+        return;
+      }
       $("#loading").html('');
-      clearInterval(runDots);
-      element.disabled = false;
+      restoreIdleSidebarControls();
       $("#loading").html("Status: " + 0 + " equations de-rendered.");
       if(returnSuccess < 0){
         $("#loading").html("Status: " + "No"          + " equations de-rendered.");
@@ -224,10 +559,12 @@ function undoAll(){
     })
   .withFailureHandler(
     function(msg, element) {
+      if (isStaleSidebarAction(actionId)) {
+        return;
+      }
       $("#loading").html('');
-      clearInterval(runDots);
+      restoreIdleSidebarControls();
       showError("Please ensure cursor is inside document.", "Status: Error, please move cursor into document.");
-      element.disabled = false;
     })
   .withUserObject(this)
   .removeAll(delimiter);
@@ -261,7 +598,7 @@ $(document).keydown(function(e){
     //var div = $('<div id="clickmsg" class="text">' + 'Ctrl + q detected' + '</div>');
     //$('#button-bar').after(div);
     
-    const runDots = runDotAnimation();
+    runDots = runDotAnimation();
     const {delimiter} = getCurrentSettings();
     google.script.run
     .withSuccessHandler(

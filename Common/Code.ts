@@ -2,7 +2,7 @@ const DEBUG = true; //doing ctrl + m to get key to see errors is still needed; D
 
 /**
  * An array which defines a renderer
- * 
+ *
  * Note: clasp-types is not compatible with type aliases, so this is defined as an interface instead.
  * @public
  */
@@ -14,7 +14,48 @@ interface Renderer {
   4: string;
   5: string;
   6: string;
-};
+}
+
+interface CommonRenderOptions {
+  // The size of the text, whose neg/pos indicated whether the equation is inline or not.
+  size: number;
+  inline: boolean;
+  // color
+  r: number, g: number, b: number;
+  // needed for constructing the derendering string
+  delim: Delimiter;
+}
+
+/**
+ * Options for rendering on the server - these are general settings for all equations
+ *
+ * @public
+ */
+interface RenderOptions extends CommonRenderOptions {
+  // The default/previous size of the text, in case size is null.
+  defaultSize: number;
+  clientRender: boolean;
+}
+
+interface LegacyRenderArgs {
+  quality: number;
+  delim: Delimiter;
+  isInline: boolean;
+  red: number;
+  green: number;
+  blue: number;
+}
+
+/**
+* Options/state for rendering on the client - these are settings for a specific equation
+* 
+* @public
+*/
+interface ClientRenderOptions extends CommonRenderOptions {
+  rangeId: string;
+  equation: string;
+  equationLinkEncoded: string;
+}
 
 /**
  * @public
@@ -66,7 +107,19 @@ const capableRenderers = 8;
 /**
  * @public
  */
-const capableDerenderers = 12;
+const capableDerenderers = 13;
+
+/**
+ * Renderer ID constants for retreiving info about specific renderers
+ * @public
+*/
+const rendererIds = {
+  CODECOGS: 1,
+  MATHJAX: 13
+};
+
+const MATHJAX_VIEWER_URL = "https://saxarona.github.io/mathjax-viewer/?input=";
+
 //render bug variables
 /**
  * @public
@@ -80,6 +133,123 @@ const invalidEquationHashTexrendrFirst50_2 = "GIF89a%01%00%01%00%uFFFD%00%00%uFF
 const invalidEquationHashTexrendrFirst50_3 = "GIF89ai%0A%uFFFD%01%uFFFD%00%00%uFFFD%uFFFD%uFFFD%"; // this is the No Expression Supplied error. Ignored for now.
 const invalidEquationHashTexrendrFirst50_4 = "%7FELF%01%01%01%00%00%00%00%00%00%00%00%00%02%00%0";
 const invalidEquationHashSciweaversFirst50 = "%0D%0A%09%3C%21DOCTYPE%20html%20PUBLIC%20%22-//W3C";
+const defaultRendererPreference = "auto";
+let activeRendererPreference: string | null = null;
+
+function normalizeRendererPreference(renderer: string | null | undefined) {
+  switch ((renderer || "").toLowerCase()) {
+    case "codecogs":
+      return "codecogs";
+    case "mathjax":
+      return "mathjax";
+    case "texrendr":
+      return "texrendr";
+    case "sciweavers":
+      return "sciweavers";
+    default:
+      return defaultRendererPreference;
+  }
+}
+
+function getPreferredRendererFamily(rendererPreference: string) {
+  switch (normalizeRendererPreference(rendererPreference)) {
+    case "codecogs":
+      return "Codecogs";
+    case "texrendr":
+      return "Texrendr";
+    case "sciweavers":
+      return "Sciweavers";
+    default:
+      return "";
+  }
+}
+
+function getPreferredRenderer() {
+  if (activeRendererPreference !== null) {
+    return activeRendererPreference;
+  }
+  activeRendererPreference = normalizeRendererPreference(PropertiesService.getUserProperties().getProperty("renderer"));
+  return activeRendererPreference;
+}
+
+function normalizeColorChannel(value: number | undefined) {
+  if (typeof value !== "number" || !isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function isRenderOptions(value: RenderOptions | number): value is RenderOptions {
+  return typeof value === "object" && value !== null && "delim" in value;
+}
+
+function getDefaultRenderOptions(delim: Delimiter): RenderOptions {
+  return {
+    size: 0,
+    defaultSize: 11,
+    inline: false,
+    delim,
+    clientRender: false,
+    r: 0,
+    g: 0,
+    b: 0,
+  };
+}
+
+function normalizeRenderEquationArgs(
+  renderOptionsOrQuality: RenderOptions | number,
+  legacyDelim?: Delimiter,
+  legacyInline?: boolean,
+  legacyRed?: number,
+  legacyGreen?: number,
+  legacyBlue?: number
+) {
+  if (!isRenderOptions(renderOptionsOrQuality)) {
+    const fallbackDelim = legacyDelim || getDelimiters("$$");
+    return {
+      ...getDefaultRenderOptions(fallbackDelim),
+      inline: Boolean(legacyInline),
+      r: normalizeColorChannel(legacyRed),
+      g: normalizeColorChannel(legacyGreen),
+      b: normalizeColorChannel(legacyBlue),
+    };
+  }
+
+  const fallbackDelim = renderOptionsOrQuality.delim || getDelimiters("$$");
+  return {
+    ...getDefaultRenderOptions(fallbackDelim),
+    ...renderOptionsOrQuality,
+    delim: fallbackDelim,
+    r: normalizeColorChannel(renderOptionsOrQuality.r),
+    g: normalizeColorChannel(renderOptionsOrQuality.g),
+    b: normalizeColorChannel(renderOptionsOrQuality.b),
+  };
+}
+
+function getRendererOrder() {
+  const preferredFamily = getPreferredRendererFamily(getPreferredRenderer());
+  const defaultOrder: number[] = [];
+  const prioritizedOrder: number[] = [];
+  const fallbackOrder: number[] = [];
+
+  for (let worked = 1; worked <= capableRenderers; ++worked) {
+    defaultOrder.push(worked);
+  }
+
+  if (!preferredFamily) {
+    return defaultOrder;
+  }
+
+  for (const worked of defaultOrder) {
+    if (getRenderer(worked)[5] === preferredFamily) {
+      prioritizedOrder.push(worked);
+    } else {
+      fallbackOrder.push(worked);
+    }
+  }
+
+  return prioritizedOrder.concat(fallbackOrder);
+}
 
 /**
  * @public
@@ -220,10 +390,10 @@ function deEncode(equation: string, app: IntegratedApp) {
  * @param size                   The size of the text, whose neg/pos indicated whether the equation is inline or not.
  */
 
-function getStyle(equationStringEncoded: string, quality: number, renderer: Renderer, isInline: boolean, type: number, red: number, green: number, blue: number) {
+function getStyle(equationStringEncoded: string, renderer: Renderer, type: number, { inline, r: red, g: green, b: blue }: RenderOptions) {
   //ERROR?
   const equation: string[] = [];
-  equationStringEncoded = equationStringEncoded;
+
   reportDeltaTime(307);
   // handle RGB coloring, except on Texrendr
   if (renderer[5] !== "Texrendr") {
@@ -231,7 +401,7 @@ function getStyle(equationStringEncoded: string, quality: number, renderer: Rend
     equationStringEncoded = "%5Ccolor%5BRGB%5D%7B" + red + "%2C" + green + "%2C" + blue + "%7D" + equationStringEncoded;
   }
 
-  if (isInline) {
+  if (inline) {
     // wrap in renderer inline delimiters
     equationStringEncoded = renderer[3] + "%7B" + equationStringEncoded + renderer[4] + "%7D";
   } else {
@@ -253,10 +423,13 @@ function getStyle(equationStringEncoded: string, quality: number, renderer: Rend
 /**
  * @public
  */
-function savePrefs(size: string, delim: string) {
+function savePrefs(size: string, delim: string, renderer: string = defaultRendererPreference) {
   const userProperties = PropertiesService.getUserProperties();
+  const normalizedRenderer = normalizeRendererPreference(renderer);
+  activeRendererPreference = normalizedRenderer;
   userProperties.setProperty("size", size);
   userProperties.setProperty("delim", delim);
+  userProperties.setProperty("renderer", normalizedRenderer);
   // userProperties.setProperty('defaultSize', size);
 }
 
@@ -268,8 +441,10 @@ function getPrefs() {
   const savedPrefs = {
     size: userProperties.getProperty("size"),
     delim: userProperties.getProperty("delim"),
+    renderer: normalizeRendererPreference(userProperties.getProperty("renderer")),
   };
-  debugLog("Got prefs size:" + savedPrefs.size);
+  activeRendererPreference = savedPrefs.renderer;
+  debugLog("Got prefs size:" + savedPrefs.size + " renderer:" + savedPrefs.renderer);
   return savedPrefs;
 }
 
@@ -284,14 +459,30 @@ function getKey() {
 /**
  * @public
  */
-function renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number) {
-  var equation = "";
+function renderEquation(
+  equationOriginal: string,
+  renderOptionsOrQuality: RenderOptions | number,
+  legacyDelim?: Delimiter,
+  legacyInline?: boolean,
+  legacyRed?: number,
+  legacyGreen?: number,
+  legacyBlue?: number
+) {
+  const renderOptions = normalizeRenderEquationArgs(
+    renderOptionsOrQuality,
+    legacyDelim,
+    legacyInline,
+    legacyRed,
+    legacyGreen,
+    legacyBlue
+  );
+  let equation = "";
   let renderer: Renderer | null = null;
   let resp: GoogleAppsScript.URL_Fetch.HTTPResponse | null = null;
   let failure = 1;
   let rendererType = "";
   let deltaTime: number;
-  let worked = 1;
+  let worked = capableRenderers + 1;
 
   let failedCodecogs = 0;
   let failedTexrendr = 0;
@@ -299,13 +490,13 @@ function renderEquation(equationOriginal: string, quality: number, delim: Delimi
   // if only failed codecogs, probably weird evening bug from 10/15/19
   // if failed codecogs and texrendr, probably shitty equation and the codecogs error is more descriptive so show it
 
-  // note the last few renderers might be legacy, so ignored
-  for (; worked <= capableRenderers; ++worked) {
+  for (const rendererIndex of getRendererOrder()) {
+    worked = rendererIndex;
     //[3,"https://latex.codecogs.com/png.latex?","http://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]
     try {
       renderer = getRenderer(worked);
       rendererType = renderer[5];
-      equation = getStyle(equationOriginal, quality, renderer, isInline, worked, red, green, blue);
+      equation = getStyle(equationOriginal, renderer, worked, renderOptions);
       // console.log(rendererType, "Texrendr", rendererType == "Texrendr")
       if (rendererType == "Texrendr") {
         // console.log("Used texrendr", equation, equation.replace("%5C%5C", "%0D"))
@@ -325,7 +516,7 @@ function renderEquation(equationOriginal: string, quality: number, delim: Delimi
       renderer[1] = renderer[1].split("EQUATION").join(equation);
       renderer[2] = renderer[2].split("FILENAME").join(getFilenameEncode(equation, 0)); // since mutating original object, important each is a new one
       debugLog("Link with equation", renderer[1]);
-      debugLog("Title Alt Text " + renderer[2] + equationOriginal + "#" + delim[6]);
+      debugLog("Title Alt Text " + renderer[2] + equationOriginal + "#" + renderOptions.delim[6]);
       debugLog("Cached equation: " + renderer[2] + renderer[6] + equation);
       reportDeltaTime(453);
       console.log("Fetching ", renderer[1], " and ", renderer[2] + renderer[6] + equation);
@@ -392,7 +583,8 @@ function renderEquation(equationOriginal: string, quality: number, delim: Delimi
       break;
     } catch (err) {
       console.log(rendererType + " Error! - " + err);
-      deltaTime = reportDeltaTime(533, " failed equation link length " + renderer![1].length + " and renderer  " + rendererType);
+      const failedEquationLinkLength = renderer ? renderer[1].length : -1;
+      deltaTime = reportDeltaTime(533, " failed equation link length " + failedEquationLinkLength + " and renderer  " + rendererType);
       if (rendererType == "Texrendr") {
         // equation.indexOf("align")==-1 &&  removed since align now supported
         console.log("Texrendr likely down, deprioritized!");
@@ -400,6 +592,10 @@ function renderEquation(equationOriginal: string, quality: number, delim: Delimi
       }
     }
     if (failure == 0) break;
+  }
+
+  if (failure != 0) {
+    worked = capableRenderers + 1;
   }
 
   return {
@@ -562,9 +758,22 @@ function getRenderer(worked: number): Renderer {
       "Number empire",
       "",
     ];
-  } // to de render possibly very old equations
+  }
+  // to de render MathJax equations
+  else if (worked == 13) {
+    return [
+      13,
+      MATHJAX_VIEWER_URL,
+      MATHJAX_VIEWER_URL,
+      "",
+      "",
+      "MathJax",
+      "",
+    ];
+  }
+  // to de render possibly very old equations
   else
-    return [13, "https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION", "https://www.codecogs.com/eqnedit.php?latex=", "%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"];
+    return [14, "https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7DEQUATION", "https://www.codecogs.com/eqnedit.php?latex=", "%5Cinline%20", "", "Codecogs", "%5Cdpi%7B900%7D"];
 }
 
 /**
