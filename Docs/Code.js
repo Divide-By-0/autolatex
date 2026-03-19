@@ -327,7 +327,7 @@ function clientRenderComplete(equations) {
                 continue;
             }
             var equationBlob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
-            var result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equation, equation.options.size, equation.options.delim);
+            var result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equationLinkEncoded, equation.options.size, equation.options.delim);
             if (result.status === 6 /* DocsEquationRenderStatus.Success */) {
                 c++;
             }
@@ -388,7 +388,7 @@ function findEquationAndPlaceImage(startElement, renderOptions) {
             .build();
         // save this range for later
         var namedRange = doc.addNamedRange("ale-equation-range", range);
-        var clientRenderOptions = __assign(__assign({}, coloredRenderOptions), { size: size, rangeId: namedRange.getId(), equation: clientEquation });
+        var clientRenderOptions = __assign(__assign({}, coloredRenderOptions), { size: size, rangeId: namedRange.getId(), equation: clientEquation, equationLinkEncoded: encodeURIComponent(clientEquation) });
         // make sure we can retrieve this element later
         return {
             status: 1 /* DocsEquationRenderStatus.ClientRender */,

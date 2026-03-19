@@ -79,6 +79,8 @@ declare namespace AutoLatexCommon {
 
         equation: string;
 
+        equationLinkEncoded: string;
+
         g: number;
 
         inline: boolean;

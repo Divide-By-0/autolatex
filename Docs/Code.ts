@@ -391,7 +391,7 @@ function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRender
       }
 
       const equationBlob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
-      const result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equation, equation.options.size, equation.options.delim);
+      const result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equationLinkEncoded, equation.options.size, equation.options.delim);
 
       if (result.status === DocsEquationRenderStatus.Success) {
         c++;
@@ -467,7 +467,8 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
       ...coloredRenderOptions,
       size,
       rangeId: namedRange.getId(),
-      equation: clientEquation
+      equation: clientEquation,
+      equationLinkEncoded: encodeURIComponent(clientEquation)
     };
     // make sure we can retrieve this element later
     return {
