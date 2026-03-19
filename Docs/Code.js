@@ -205,6 +205,46 @@ function replaceEquations(sizeRaw, delimiter, renderer) {
         successCount: c
     };
 }
+function hasEscapedSingleDollar(text, offset) {
+    var slashCount = 0;
+    for (var index = offset - 1; index >= 0 && text.charAt(index) === "\\"; index--) {
+        slashCount++;
+    }
+    return slashCount % 2 === 1;
+}
+function isSingleDollarDelimiter(rangeElement) {
+    var text = rangeElement.getElement().asText().getText();
+    var offset = rangeElement.getStartOffset();
+    if (offset < 0 || text.charAt(offset) !== "$") {
+        return false;
+    }
+    if (hasEscapedSingleDollar(text, offset)) {
+        return false;
+    }
+    if (offset > 0 && text.charAt(offset - 1) === "$") {
+        return false;
+    }
+    if (offset + 1 < text.length && text.charAt(offset + 1) === "$") {
+        return false;
+    }
+    return true;
+}
+function findNextDelimiter(docBody, renderOptions, fromRange) {
+    if (fromRange === void 0) { fromRange = null; }
+    if (renderOptions.delim[6] !== 2) {
+        return fromRange == null
+            ? docBody.findText(renderOptions.delim[2])
+            : docBody.findText(renderOptions.delim[2], fromRange);
+    }
+    var candidate = fromRange == null ? docBody.findText("\\$") : docBody.findText("\\$", fromRange);
+    while (candidate != null) {
+        if (isSingleDollarDelimiter(candidate)) {
+            return candidate;
+        }
+        candidate = docBody.findText("\\$", candidate);
+    }
+    return null;
+}
 /**
  * Get position of insertion then place the image there.
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order. E.g. ["\\[", "\\]", "\\\\\\[", "\\\\\\]", 2, 1, 1]
@@ -227,17 +267,14 @@ function findPos(index, renderOptions, prevFailedStartElemIfIsEmpty) {
             status: 3 /* DocsEquationRenderStatus.NoDocument */
         };
     }
-    var startElement = docBody.findText(renderOptions.delim[2]);
-    if (prevFailedStartElemIfIsEmpty) {
-        startElement = docBody.findText(renderOptions.delim[2], prevFailedStartElemIfIsEmpty);
-    }
+    var startElement = findNextDelimiter(docBody, renderOptions, prevFailedStartElemIfIsEmpty);
     if (startElement == null) {
         return {
             status: 5 /* DocsEquationRenderStatus.NoStartDelimiter */
         };
     }
     var placeHolderStart = startElement.getStartOffset(); //position of image insertion
-    var endElement = docBody.findText(renderOptions.delim[3], startElement);
+    var endElement = findNextDelimiter(docBody, renderOptions, startElement);
     // could not find the ending delimiter after the start
     if (endElement == null) {
         return {
