@@ -16,6 +16,8 @@ declare namespace google {
 
             getKey(): void //intrinsic;
 
+            logMathJaxClientError(payloadJson: string): void //intrinsic;
+
             getPrefs(): void //reflection;
 
             removeAll(defaultDelimRaw: string): void //intrinsic;

@@ -58,7 +58,12 @@ const DocsApp = {
  *     running in, inspect e.authMode.
  */
 function onOpen(_e: object) {
-  DocsApp.getUi().createAddonMenu().addItem("Start", "showSidebar").addToUi();
+  try {
+    DocsApp.getUi().createAddonMenu().addItem("Start", "showSidebar").addToUi();
+  } catch (error) {
+    // Manual runs from the Apps Script editor do not have a document UI context.
+    console.warn("Skipping onOpen outside a Docs UI context.", error);
+  }
 }
 
 /**
@@ -100,12 +105,56 @@ function getKey() {
 }
 
 /**
+ * @public
+ */
+function logMathJaxClientError(payloadJson: string) {
+  console.error("MathJax client error:", payloadJson);
+}
+
+function getRgbFromHex(colorHex: string | null): [number, number, number] {
+  if (!colorHex || !/^#[0-9a-fA-F]{6}$/.test(colorHex)) {
+    return [0, 0, 0];
+  }
+
+  const channels = [1, 3, 5].map(index => parseInt(colorHex.slice(index, index + 2), 16));
+  if (channels.some(channel => isNaN(channel))) {
+    return [0, 0, 0];
+  }
+
+  return channels as [number, number, number];
+}
+
+function renderEquationWithCompatibility(equationOriginal: string, renderOptions: AutoLatexCommon.RenderOptions) {
+  const compatibleRenderEquation = Common.renderEquation as unknown as {
+    (equationOriginal: string, renderOptions: AutoLatexCommon.RenderOptions): ReturnType<typeof Common.renderEquation>;
+    (equationOriginal: string, quality: number, delim: AutoLatexCommon.Delimiter, isInline: boolean, red: number, green: number, blue: number): ReturnType<typeof Common.renderEquation>;
+  };
+
+  if (compatibleRenderEquation.length >= 7) {
+    return compatibleRenderEquation(
+      equationOriginal,
+      900,
+      renderOptions.delim,
+      renderOptions.inline,
+      renderOptions.r,
+      renderOptions.g,
+      renderOptions.b
+    );
+  }
+
+  return compatibleRenderEquation(equationOriginal, renderOptions);
+}
+
+/**
  * Constantly keep replacing latex till all are finished
  * @public
  */
 function replaceEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const quality = 900;
   const clientRender = renderer === "mathjax";
+  if (clientRender) {
+    console.log("MathJax render requested.", JSON.stringify({ sizeRaw, delimiter }));
+  }
   let size = Common.getSize(sizeRaw);
   let isInline = false;
   if (size < 0) {
@@ -198,6 +247,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
   }
   
   if (clientRender) {
+    console.log("MathJax equations queued for client rendering:", clientEquations.length);
     return {
       lastStatus: DocsEquationRenderStatus.ClientRender,
       clientEquations,
@@ -326,6 +376,7 @@ function getSize(size: number, defaultSize: number, rangeElement: GoogleAppsScri
 function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRenderOptions, renderedEquationB64: string }[]) {
   const mathjaxRenderer = Common.getRenderer(Common.rendererIds.MATHJAX);
   let c = 0;
+  console.log("MathJax client render completion received equations:", equations.length);
   
   // Go backwards so that the named ranges for multiple equations in the same paragraph don't get removed
   equations.reverse();
@@ -399,8 +450,8 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
   
   // get font color
   const colorHex = textElement.getForegroundColor(startElement.getStartOffset());
-  // convert to rgb (default to black when colorHex is null - this happens in some weird cases where Docs can't figure out the color)
-  const [r, g, b] = colorHex ? [1, 3, 5].map(i => parseInt(colorHex.slice(i, i + 2), 16)) : [0, 0, 0];
+  // Docs can return null or malformed colors in some edge cases. Fall back to black.
+  const [r, g, b] = getRgbFromHex(colorHex);
   
   // add color info to render options
   const coloredRenderOptions = {
@@ -433,8 +484,8 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
     };
   }
   
-  let { resp, renderer, worked } = Common.renderEquation(equationOriginal, coloredRenderOptions); 
-  if (worked > Common.capableRenderers) return {
+  let { resp, renderer, worked } = renderEquationWithCompatibility(equationOriginal, coloredRenderOptions);
+  if (worked > Common.capableRenderers || !resp || !renderer) return {
     status: DocsEquationRenderStatus.AllRenderersFailed
   };
   // SAVING FORMATTING

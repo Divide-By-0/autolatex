@@ -37,6 +37,15 @@ interface RenderOptions extends CommonRenderOptions {
   clientRender: boolean;
 }
 
+interface LegacyRenderArgs {
+  quality: number;
+  delim: Delimiter;
+  isInline: boolean;
+  red: number;
+  green: number;
+  blue: number;
+}
+
 /**
 * Options/state for rendering on the client - these are settings for a specific equation
 * 
@@ -158,6 +167,60 @@ function getPreferredRenderer() {
   }
   activeRendererPreference = normalizeRendererPreference(PropertiesService.getUserProperties().getProperty("renderer"));
   return activeRendererPreference;
+}
+
+function normalizeColorChannel(value: number | undefined) {
+  if (typeof value !== "number" || !isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function isRenderOptions(value: RenderOptions | number): value is RenderOptions {
+  return typeof value === "object" && value !== null && "delim" in value;
+}
+
+function getDefaultRenderOptions(delim: Delimiter): RenderOptions {
+  return {
+    size: 0,
+    defaultSize: 11,
+    inline: false,
+    delim,
+    clientRender: false,
+    r: 0,
+    g: 0,
+    b: 0,
+  };
+}
+
+function normalizeRenderEquationArgs(
+  renderOptionsOrQuality: RenderOptions | number,
+  legacyDelim?: Delimiter,
+  legacyInline?: boolean,
+  legacyRed?: number,
+  legacyGreen?: number,
+  legacyBlue?: number
+) {
+  if (!isRenderOptions(renderOptionsOrQuality)) {
+    const fallbackDelim = legacyDelim || getDelimiters("$$");
+    return {
+      ...getDefaultRenderOptions(fallbackDelim),
+      inline: Boolean(legacyInline),
+      r: normalizeColorChannel(legacyRed),
+      g: normalizeColorChannel(legacyGreen),
+      b: normalizeColorChannel(legacyBlue),
+    };
+  }
+
+  const fallbackDelim = renderOptionsOrQuality.delim || getDelimiters("$$");
+  return {
+    ...getDefaultRenderOptions(fallbackDelim),
+    ...renderOptionsOrQuality,
+    delim: fallbackDelim,
+    r: normalizeColorChannel(renderOptionsOrQuality.r),
+    g: normalizeColorChannel(renderOptionsOrQuality.g),
+    b: normalizeColorChannel(renderOptionsOrQuality.b),
+  };
 }
 
 function getRendererOrder() {
@@ -393,7 +456,23 @@ function getKey() {
 /**
  * @public
  */
-function renderEquation(equationOriginal: string, renderOptions: RenderOptions) {
+function renderEquation(
+  equationOriginal: string,
+  renderOptionsOrQuality: RenderOptions | number,
+  legacyDelim?: Delimiter,
+  legacyInline?: boolean,
+  legacyRed?: number,
+  legacyGreen?: number,
+  legacyBlue?: number
+) {
+  const renderOptions = normalizeRenderEquationArgs(
+    renderOptionsOrQuality,
+    legacyDelim,
+    legacyInline,
+    legacyRed,
+    legacyGreen,
+    legacyBlue
+  );
   let equation = "";
   let renderer: Renderer | null = null;
   let resp: GoogleAppsScript.URL_Fetch.HTTPResponse | null = null;
@@ -501,7 +580,8 @@ function renderEquation(equationOriginal: string, renderOptions: RenderOptions) 
       break;
     } catch (err) {
       console.log(rendererType + " Error! - " + err);
-      deltaTime = reportDeltaTime(533, " failed equation link length " + renderer![1].length + " and renderer  " + rendererType);
+      const failedEquationLinkLength = renderer ? renderer[1].length : -1;
+      deltaTime = reportDeltaTime(533, " failed equation link length " + failedEquationLinkLength + " and renderer  " + rendererType);
       if (rendererType == "Texrendr") {
         // equation.indexOf("align")==-1 &&  removed since align now supported
         console.log("Texrendr likely down, deprioritized!");

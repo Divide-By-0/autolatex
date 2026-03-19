@@ -18,6 +18,85 @@ declare const MathJax: MathJaxApi;
 
 // animation timeout ID
 let runDots = -1;
+const reportedMathJaxErrors = new Set<string>();
+
+function normalizeError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      name: error.name,
+      stack: error.stack || "",
+    };
+  }
+  if (typeof error === "string") {
+    return {
+      message: error,
+      name: "Error",
+      stack: "",
+    };
+  }
+  try {
+    return {
+      message: JSON.stringify(error),
+      name: "UnknownError",
+      stack: "",
+    };
+  } catch {
+    return {
+      message: String(error),
+      name: "UnknownError",
+      stack: "",
+    };
+  }
+}
+
+function shouldLogMathJaxErrors() {
+  try {
+    return getCurrentSettings().renderer === "mathjax";
+  } catch {
+    return false;
+  }
+}
+
+function reportMathJaxClientError(context: string, error: unknown, extra: Record<string, unknown> = {}) {
+  if (!shouldLogMathJaxErrors()) {
+    return;
+  }
+
+  const normalizedError = normalizeError(error);
+  const dedupeKey = `${context}:${normalizedError.message}`;
+  if (reportedMathJaxErrors.has(dedupeKey)) {
+    return;
+  }
+  reportedMathJaxErrors.add(dedupeKey);
+
+  const payload = {
+    context,
+    error: normalizedError,
+    extra,
+    href: window.location.href,
+    userAgent: navigator.userAgent,
+    timestamp: new Date().toISOString(),
+  };
+
+  google.script.run
+    .withFailureHandler(logError => console.error("Failed to report MathJax client error.", logError))
+    .logMathJaxClientError(JSON.stringify(payload));
+}
+
+window.addEventListener("error", event => {
+  if (event.error || shouldLogMathJaxErrors()) {
+    reportMathJaxClientError("window.error", event.error || event.message, {
+      filename: event.filename,
+      lineno: event.lineno,
+      colno: event.colno,
+    });
+  }
+});
+
+window.addEventListener("unhandledrejection", event => {
+  reportMathJaxClientError("window.unhandledrejection", event.reason);
+});
 
 /**
 * Convert a Blob to a base64 string for transmission to the server
@@ -221,7 +300,10 @@ function successHandler({ lastStatus, successCount, clientEquations }: { lastSta
           .withUserObject(element)
           .clientRenderComplete(rendered);
       })
-      .catch(err => errorHandler(err, element));
+      .catch(err => {
+        reportMathJaxClientError("clientRenderBatch", err, { equationCount: equationsToRender.length });
+        errorHandler(err, element);
+      });
   } else {
     $("#loading").html('');
     clearInterval(runDots);
@@ -244,8 +326,9 @@ function successHandler({ lastStatus, successCount, clientEquations }: { lastSta
 function errorHandler(msg, element) {
   $("#loading").html('');
   clearInterval(runDots);
-  console.error("Error console errored!", msg, element)
-  showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts.", "Status: Error, please reload.");
+  console.error("Error console errored!", msg, element);
+  reportMathJaxClientError("sidebar.errorHandler", msg);
+  showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts. Also ensure you clicked 'Select all' on the permissions screen - if not, try uninstalling and reinstalling the add-on to redo permissions.", "Status: Error, please reload.");
   element.disabled = false;
 }
   
