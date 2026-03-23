@@ -35,6 +35,13 @@ interface RenderOptions extends CommonRenderOptions {
   // The default/previous size of the text, in case size is null.
   defaultSize: number;
   clientRender: boolean;
+  // REASON: When true, Codecogs is tried server-side first in auto mode.
+  // If Codecogs fails, the equation is sent to the client for MathJax rendering.
+  // This enables the fallback order: Codecogs -> MathJax (client) -> Texrendr/Sciweavers.
+  autoFallbackToClient?: boolean;
+  // REASON: When set, only server-side renderers whose family name is in this list will be attempted.
+  // Used to implement staged fallback: first try Codecogs only, then Texrendr/Sciweavers only.
+  allowedServerFamilies?: string[];
 }
 
 interface LegacyRenderArgs {
@@ -452,8 +459,9 @@ function getPrefs() {
  * @public
  */
 function getKey() {
-  console.log("Got Key: " + Session.getTemporaryActiveUserKey() + " and email " + Session.getEffectiveUser().getEmail());
-  return Session.getTemporaryActiveUserKey();
+  const key = Session.getTemporaryActiveUserKey();
+  console.log("Got Key: " + key);
+  return key;
 }
 
 /**
@@ -490,7 +498,17 @@ function renderEquation(
   // if only failed codecogs, probably weird evening bug from 10/15/19
   // if failed codecogs and texrendr, probably shitty equation and the codecogs error is more descriptive so show it
 
-  for (const rendererIndex of getRendererOrder()) {
+  // REASON: allowedServerFamilies restricts which server renderers are attempted in this call.
+  // In auto mode, the first pass tries only Codecogs; the fallback pass tries Texrendr/Sciweavers.
+  let rendererOrder = getRendererOrder();
+  if (renderOptions.allowedServerFamilies) {
+    rendererOrder = rendererOrder.filter(idx => {
+      const family = getRenderer(idx)[5];
+      return renderOptions.allowedServerFamilies!.includes(family);
+    });
+  }
+
+  for (const rendererIndex of rendererOrder) {
     worked = rendererIndex;
     //[3,"https://latex.codecogs.com/png.latex?","http://www.codecogs.com/eqnedit.php?latex=","%5Cinline%20", "", "Codecogs"]
     try {

@@ -5,6 +5,156 @@
 /// <reference path="../types/common-types/index.d.ts" />
 /// <reference lib="dom" />
 
+interface MathJaxApi {
+  tex2svgPromise(equation: string, options: { display: boolean, em: number }): Promise<Element>;
+  svgStylesheet(): Element;
+}
+
+interface Window {
+  MathJax: MathJaxApi;
+}
+
+declare const MathJax: MathJaxApi;
+
+interface SlidesClientRenderOptions {
+  size: number;
+  inline: boolean;
+  r: number;
+  g: number;
+  b: number;
+  delim: AutoLatexCommon.Delimiter;
+  equation: string;
+  equationLinkEncoded: string;
+  slideId: string;
+  pageElementId: string;
+  tableRow?: number;
+  tableColumn?: number;
+  rangeStart: number;
+  rangeEnd: number;
+}
+
+interface SlidesClientEquationRenderResult {
+  lastStatus: SlidesClientRenderStatus;
+  successCount: number;
+  clientEquations?: SlidesClientRenderOptions[];
+}
+
+const enum SlidesClientRenderStatus {
+  AllRenderersFailed,
+  ClientRender,
+  NoPresentation,
+  Success,
+}
+
+function isSlidesEquationRenderResult(value: unknown): value is SlidesClientEquationRenderResult {
+  return typeof value === "object" && value !== null && "lastStatus" in value;
+}
+
+function makeSlidesRenderStatusText(renderCount: number) {
+  if (renderCount == 0)
+    return "Status: No equations rendered";
+  else if (renderCount == 1)
+    return "Status: 1 equation rendered";
+  return `Status: ${renderCount} equations rendered`;
+}
+
+// REASON: MathJax rendering is CPU-heavy (SVG → canvas → PNG). Running too many in parallel
+// (e.g. 1000 equations) would freeze the browser. This limits concurrency to a safe number.
+const MATHJAX_CONCURRENCY_LIMIT = 4;
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await fn(items[index]);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
+async function blobToB64(blob: Blob) {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = err => reject(err);
+    reader.readAsDataURL(blob);
+  });
+  return dataUrl.substring(dataUrl.indexOf(",") + 1);
+}
+
+async function renderMathJaxEquation(renderOptions: SlidesClientRenderOptions) {
+  const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + renderOptions.equation.replace(/\n|\r|\r\n/g, "\\\\");
+
+  if (!window.MathJax || typeof window.MathJax.tex2svgPromise !== "function") {
+    throw new Error("MathJax is still loading. Please try again in a moment.");
+  }
+
+  const result = await window.MathJax.tex2svgPromise(equation, {
+    display: !renderOptions.inline,
+    em: renderOptions.size
+  });
+  const svg: SVGSVGElement | null = result.querySelector("svg");
+  if (!svg) {
+    throw new Error("MathJax did not return an SVG element.");
+  }
+
+  svg.classList.add("mathjax-equation-hidden-render");
+  svg.style.fontSize = `${renderOptions.size}px`;
+  document.body.appendChild(svg);
+
+  const width = svg.clientWidth * 5;
+  const height = svg.clientHeight * 5;
+
+  svg.remove();
+  svg.setAttribute("width", `${width}px`);
+  svg.setAttribute("height", `${height}px`);
+
+  const styles = MathJax.svgStylesheet().outerHTML;
+  const svgString = new XMLSerializer().serializeToString(svg).replace("</svg>", styles + "</svg>");
+  const svgBlob = new Blob([svgString], {
+    type: "image/svg+xml"
+  });
+  const svgUrl = URL.createObjectURL(svgBlob);
+
+  const canvas = typeof OffscreenCanvas !== "undefined"
+    ? new OffscreenCanvas(width, height)
+    : Object.assign(document.createElement("canvas"), { width, height });
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Could not initialize a 2D canvas for MathJax rendering.");
+  }
+
+  try {
+    const svgImage = new Image(width, height);
+    svgImage.src = svgUrl;
+    await new Promise<void>((resolve, reject) => {
+      svgImage.onload = () => resolve();
+      svgImage.onerror = err => reject(err);
+    });
+
+    ctx.drawImage(svgImage, 0, 0);
+
+    return "convertToBlob" in canvas
+      ? await canvas.convertToBlob({ type: "image/png" })
+      : await new Promise<Blob>((resolve, reject) => {
+          (canvas as HTMLCanvasElement).toBlob(blob => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error("Could not convert MathJax canvas to a PNG blob."));
+            }
+          }, "image/png");
+        });
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}
+
 /**
  * On document load, assign click handlers to each button. Added document.ready.
  */
@@ -84,7 +234,7 @@ function loadPreferences(choicePrefs: {size: string, delim: string, renderer: st
     $('#custom-size').hide();
   }
   $('#delimit').val(choicePrefs.delim);
-  const savedRenderer = ["auto", "codecogs", "texrendr", "sciweavers"].includes(choicePrefs.renderer) ? choicePrefs.renderer : "auto";
+  const savedRenderer = ["auto", "codecogs", "mathjax", "texrendr", "sciweavers"].includes(choicePrefs.renderer) ? choicePrefs.renderer : "auto";
   $('#renderer').val(savedRenderer);
   $('#insert-text').prop("disabled", false);
   $('#edit-text').prop("disabled", false);
@@ -98,51 +248,138 @@ function insertText(){
   $("#loading").html("Status: Loading");
   const runDots = runDotAnimation();
   const {sizeRaw, delimiter, renderer} = getCurrentSettings();
+  let mathJaxRenderedCount = 0;
+
+  const finishNumericRender = function(returnSuccess: number, element: HTMLButtonElement) {
+    $("#loading").html('');
+    clearInterval(runDots);
+    element.disabled = false;
+    console.log(returnSuccess);
+    let flag = 0;
+    let renderCount = 1;
+    if(returnSuccess < -1){
+      flag = -2;
+      renderCount = -2 - returnSuccess;
+    }
+    else if(returnSuccess == -1){
+      flag = -1;
+      renderCount = 0;
+    }
+    else{
+      flag = 0;
+      renderCount = returnSuccess;
+    }
+    if(flag == -1)
+      showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", "Status: " + renderCount +  " equations replaced");
+    else if(flag == -2 && renderCount > 0)
+      showError("Sorry, the equation is too long or another problem occurred.", "Status: " + renderCount +  " equations replaced");
+    else if(flag == -2 && renderCount == 0)
+      showError("Sorry, the renderers are down, an equation is too long, or an equation is misformed.", "Status: " + renderCount +  " equations replaced");
+    else if(flag == 0 && renderCount == 0)
+      $("#loading").html("Status: " + "No"          + " equations rendered");
+    else if(flag == 0 && renderCount == 1)
+      $("#loading").html("Status: " + renderCount + " equation rendered" );
+    else
+      $("#loading").html("Status: " + renderCount + " equations rendered");
+  };
+
+  const finishMathJaxRender = function(result: SlidesClientEquationRenderResult, element: HTMLButtonElement) {
+    $("#loading").html('');
+    clearInterval(runDots);
+    element.disabled = false;
+
+    const statusText = makeSlidesRenderStatusText(mathJaxRenderedCount);
+    if (result.lastStatus === SlidesClientRenderStatus.NoPresentation)
+      showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", statusText);
+    else if (result.lastStatus === SlidesClientRenderStatus.AllRenderersFailed && mathJaxRenderedCount > 0)
+      showError("Sorry, the equation is too long or another problem occurred.", statusText);
+    else if (result.lastStatus === SlidesClientRenderStatus.AllRenderersFailed && mathJaxRenderedCount === 0)
+      showError("Sorry, the renderers are down, an equation is too long, or an equation is misformed.", statusText);
+    else
+      $("#loading").html(statusText);
+  };
+
+  const handleFailure = function(msg: unknown, element: HTMLButtonElement) {
+    $("#loading").html('');
+    clearInterval(runDots);
+    console.error("Error console errored!", msg, element);
+    showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page.", "Status: Error, please reload.");
+    element.disabled = false;
+  };
+
+  const requestNextMathJaxBatch = function(element: HTMLButtonElement) {
+    google.script.run
+      .withSuccessHandler((response, userObject) => handleSuccess(response, userObject as HTMLButtonElement))
+      .withFailureHandler((msg, userObject) => handleFailure(msg, userObject as HTMLButtonElement))
+      .withUserObject(element)
+      .replaceEquations(sizeRaw, delimiter, renderer);
+  };
+
+  const handleMathJaxResponse = function(result: SlidesClientEquationRenderResult, element: HTMLButtonElement) {
+    if (result.lastStatus === SlidesClientRenderStatus.ClientRender) {
+      const equationsToRender = result.clientEquations || [];
+      if (equationsToRender.length === 0) {
+        finishMathJaxRender({
+          lastStatus: SlidesClientRenderStatus.AllRenderersFailed,
+          successCount: 0
+        }, element);
+        return;
+      }
+
+      // REASON: In auto mode, count any server-side successes (Codecogs) in the total.
+      mathJaxRenderedCount += result.successCount;
+
+      // REASON: Render ALL equations with concurrency limit to avoid freezing the browser.
+      mapWithConcurrency(equationsToRender, MATHJAX_CONCURRENCY_LIMIT, eq =>
+        renderMathJaxEquation(eq)
+          .then(blob => blobToB64(blob))
+          .then(b64 => ({ options: eq, renderedEquationB64: b64 }))
+      )
+        .then(rendered => {
+          const scriptRun = google.script.run as any;
+          scriptRun
+            .withSuccessHandler((response: SlidesClientEquationRenderResult, userObject: HTMLButtonElement) => handleMathJaxResponse(response, userObject))
+            .withFailureHandler((msg: unknown, userObject: HTMLButtonElement) => handleFailure(msg, userObject))
+            .withUserObject(element)
+            .clientRenderComplete(rendered);
+        })
+        .catch(error => {
+          // REASON: In auto mode, if MathJax fails, try remaining server renderers (Texrendr/Sciweavers)
+          if (renderer === "auto") {
+            const scriptRun = google.script.run as any;
+            scriptRun
+              .withSuccessHandler((response: SlidesClientEquationRenderResult, userObject: HTMLButtonElement) => handleMathJaxResponse(response, userObject))
+              .withFailureHandler((msg: unknown, userObject: HTMLButtonElement) => handleFailure(msg, userObject))
+              .withUserObject(element)
+              .clientRenderFailed(equationsToRender.map(eq => ({ options: eq })));
+          } else {
+            handleFailure(error, element);
+          }
+        });
+      return;
+    }
+
+    mathJaxRenderedCount += result.successCount;
+    if (result.lastStatus === SlidesClientRenderStatus.Success && result.successCount > 0) {
+      requestNextMathJaxBatch(element);
+      return;
+    }
+
+    finishMathJaxRender(result, element);
+  };
+
+  const handleSuccess = function(returnSuccess: number | SlidesClientEquationRenderResult, element: HTMLButtonElement) {
+    // REASON: In auto mode, server returns object responses (like MathJax mode) for the one-at-a-time flow.
+    if ((renderer === "mathjax" || renderer === "auto") && isSlidesEquationRenderResult(returnSuccess)) {
+      handleMathJaxResponse(returnSuccess, element);
+      return;
+    }
+    finishNumericRender(returnSuccess as number, element);
+  };
 
   google.script.run
-    .withSuccessHandler(
-      function(returnSuccess, element) {
-        $("#loading").html('');
-        clearInterval(runDots);
-        element.disabled = false;
-        console.log(returnSuccess);
-        let flag = 0;
-        let renderCount = 1;
-        if(returnSuccess < -1){
-          flag = -2;
-          renderCount = -2 - returnSuccess;
-        }
-        else if(returnSuccess == -1){
-          flag = -1;
-          renderCount = 0;
-        }
-        else{
-          flag = 0;
-          renderCount = returnSuccess;
-        }
-        // var flag = returnSuccess.flag
-        // var renderCount = returnSuccess.renderCount
-        if(flag == -1)
-          showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", "Status: " + renderCount +  " equations replaced");
-        else if(flag == -2 && renderCount > 0)
-          showError("Sorry, the equation is too long or another problem occurred.", "Status: " + renderCount +  " equations replaced");
-        else if(flag == -2 && renderCount == 0)
-          showError("Sorry, the renderers are down, an equation is too long, or an equation is misformed.", "Status: " + renderCount +  " equations replaced");
-        else if(flag == 0 && renderCount == 0)
-          $("#loading").html("Status: " + "No"          + " equations rendered");
-        else if(flag == 0 && renderCount == 1)
-          $("#loading").html("Status: " + renderCount + " equation rendered" );
-        else
-          $("#loading").html("Status: " + renderCount + " equations rendered");
-      })
-    .withFailureHandler(
-      function(msg, element) {
-        $("#loading").html('');
-        clearInterval(runDots);
-        console.error("Error console errored!", msg, element)
-        showError("Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page.", "Status: Error, please reload.");
-        element.disabled = false;
-    })
+    .withSuccessHandler((returnSuccess, element) => handleSuccess(returnSuccess, element as HTMLButtonElement))
+    .withFailureHandler((msg, element) => handleFailure(msg, element as HTMLButtonElement))
     .withUserObject(this)
     .replaceEquations(sizeRaw, delimiter, renderer);
 }

@@ -58,7 +58,8 @@ function normalizeError(error: unknown) {
 
 function shouldLogMathJaxErrors() {
   try {
-    return getCurrentSettings().renderer === "mathjax";
+    const renderer = getCurrentSettings().renderer;
+    return renderer === "mathjax" || renderer === "auto";
   } catch {
     return false;
   }
@@ -197,11 +198,30 @@ window.addEventListener("unhandledrejection", event => {
   reportMathJaxClientError("window.unhandledrejection", event.reason);
 });
 
+// REASON: MathJax rendering is CPU-heavy (SVG → canvas → PNG). Running too many in parallel
+// (e.g. 1000 equations) would freeze the browser. This limits concurrency to a safe number.
+const MATHJAX_CONCURRENCY_LIMIT = 4;
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await fn(items[index]);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
 /**
 * Convert a Blob to a base64 string for transmission to the server
-* 
+*
 * @param blob the blob to convert
-* @returns 
+* @returns
 */
 async function blobToB64(blob: Blob) {
   const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -394,9 +414,17 @@ function successHandler({ lastStatus, successCount, clientEquations }: { lastSta
     return;
   }
   if (lastStatus === google.script.DocsEquationRenderStatus.ClientRender) {
+    // REASON: In auto mode, enable chaining lazily when we first need client rendering.
+    // This avoids an unnecessary extra round-trip when all equations succeed with Codecogs.
+    if (!isMathJaxRenderChaining) {
+      isMathJaxRenderChaining = true;
+      mathJaxRenderedCount = successCount; // count any server-side (Codecogs) successes
+      setRenderButtonState(true);
+    }
+
     // we're not done yet - these equations need to be rendered on the client
     const equationsToRender = clientEquations || [];
-    Promise.all(equationsToRender.map(async c => ({ options: c, renderedEquationB64: await renderMathJaxEquation(c).then(b => blobToB64(b)) })))
+    mapWithConcurrency(equationsToRender, MATHJAX_CONCURRENCY_LIMIT, async c => ({ options: c, renderedEquationB64: await renderMathJaxEquation(c).then(b => blobToB64(b)) }))
       .then(rendered => {
         if (isStaleSidebarAction(actionId)) {
           return;
@@ -409,7 +437,20 @@ function successHandler({ lastStatus, successCount, clientEquations }: { lastSta
       })
       .catch(err => {
         reportMathJaxClientError("clientRenderBatch", err, { equationCount: equationsToRender.length });
-        errorHandler(err, element, actionId);
+        // REASON: In auto mode, if MathJax fails, try remaining server renderers (Texrendr/Sciweavers)
+        // instead of showing an error immediately.
+        if (getCurrentSettings().renderer === "auto") {
+          if (isStaleSidebarAction(actionId)) {
+            return;
+          }
+          google.script.run
+            .withSuccessHandler((result, userObject) => successHandler(result, userObject, actionId))
+            .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
+            .withUserObject(element)
+            .clientRenderFailed(equationsToRender.map(c => ({ options: c })));
+        } else {
+          errorHandler(err, element, actionId);
+        }
       });
   } else {
     const roundSuccessCount = successCount;

@@ -152,6 +152,8 @@ function renderEquationWithCompatibility(equationOriginal: string, renderOptions
 function replaceEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const quality = 900;
   const clientRender = renderer === "mathjax";
+  // REASON: In auto mode, try Codecogs server-side first, then MathJax on client, then Texrendr/Sciweavers.
+  const autoFallbackToClient = renderer === "auto";
   if (clientRender) {
     console.log("MathJax render requested.", JSON.stringify({ sizeRaw, delimiter }));
   }
@@ -186,13 +188,19 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     delim,
     
     clientRender,
-    
+    autoFallbackToClient,
+
     // TODO: color support for Docs
     r: 0,
     g: 0,
     b: 0
   };
   
+  // REASON: Collect equations that need client-side MathJax rendering instead of returning
+  // on the first one. This allows Codecogs to batch-process all equations it can handle,
+  // then send ALL remaining failures to the client for parallel MathJax rendering.
+  const clientRenderBatch: AutoLatexCommon.ClientRenderOptions[] = [];
+
   const childCount = body.getBody().getParent().getNumChildren();
   Common.reportDeltaTime(156);
   for (let index = 0; index < childCount; index++) {
@@ -209,16 +217,16 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
       if (nextStartElement) failedStartElemIfIsEmpty = nextStartElement;
       // if we found an actual equation, update the default size
       if (equationSize) baseRenderOptions.defaultSize = equationSize;
-        
+
       // count consecutive empty equations
       if (status == DocsEquationRenderStatus.EmptyEquation) {
         allEmpty++;
       } else {
         allEmpty = 0;
       }
-      
+
       if (allEmpty > 10) break; //Assume we quit on 10 consecutive empty equations.
-      
+
       // quit if all renderers failed or if document failed to load (conflicting authorizations)
       if (status == DocsEquationRenderStatus.AllRenderersFailed || status == DocsEquationRenderStatus.NoDocument) {
         return {
@@ -226,29 +234,37 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
           successCount: c
         };
       }
-      
+
       if (status === DocsEquationRenderStatus.ClientRender && clientRenderOptions) {
-        console.log("MathJax queued next equation for client rendering.");
-        return {
-          lastStatus: DocsEquationRenderStatus.ClientRender,
-          clientEquations: [clientRenderOptions],
-          successCount: 0
-        };
+        // REASON: Collect for batch instead of returning immediately.
+        // This lets Codecogs process all equations it can first, then MathJax handles the rest in parallel.
+        clientRenderBatch.push(clientRenderOptions);
+        continue;
       }
-      
+
       // could not find next equation
       // move to next section
       if (status == DocsEquationRenderStatus.NoStartDelimiter || status == DocsEquationRenderStatus.NoEndDelimiter) {
         break;
       }
-      
+
       if (status != DocsEquationRenderStatus.EmptyEquation) {
         c++;
       }
       console.log("Rendered equations: " + c);
     }
   }
-  
+
+  // If any equations need client-side MathJax rendering, send them all at once
+  if (clientRenderBatch.length > 0) {
+    console.log("MathJax queued", clientRenderBatch.length, "equations for parallel client rendering.");
+    return {
+      lastStatus: DocsEquationRenderStatus.ClientRender,
+      clientEquations: clientRenderBatch,
+      successCount: c
+    };
+  }
+
   return {
     lastStatus: DocsEquationRenderStatus.Success,
     successCount: c
@@ -503,32 +519,31 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
     r, g, b,
   };
   
-  // send info to the client for rendering
+  // send info to the client for rendering (explicit MathJax mode)
   if (renderOptions.clientRender) {
-    // we don't need URL encoding or double escaping for client renderers
-    const clientEquation = decodeURIComponent(equationOriginal).replace(/\\\\/g, "\\");
-    const doc = DocumentApp.getActiveDocument();
-    const range = doc.newRange()
-      .addElement(textElement, startElement.getStartOffset(), startElement.getEndOffsetInclusive())
-      .build();
-    // save this range for later
-    const namedRange = doc.addNamedRange("ale-equation-range", range);
-    const clientRenderOptions: AutoLatexCommon.ClientRenderOptions = {
-      ...coloredRenderOptions,
-      size,
-      rangeId: namedRange.getId(),
-      equation: clientEquation,
-      equationLinkEncoded: encodeURIComponent(clientEquation)
-    };
-    // make sure we can retrieve this element later
-    return {
-      status: DocsEquationRenderStatus.ClientRender,
-      equationSize: size,
-      clientRenderOptions,
-      nextStartElement: startElement
-    };
+    return buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size);
   }
-  
+
+  // REASON: In auto mode, try Codecogs first. If Codecogs fails, fall back to MathJax on the client.
+  // If MathJax also fails, the client calls clientRenderFailed to try Texrendr/Sciweavers.
+  if (renderOptions.autoFallbackToClient) {
+    const codecogsResult = renderEquationWithCompatibility(equationOriginal, {
+      ...coloredRenderOptions,
+      allowedServerFamilies: ["Codecogs"]
+    });
+
+    if (codecogsResult.worked <= Common.capableRenderers && codecogsResult.resp && codecogsResult.renderer) {
+      // Codecogs succeeded
+      if (escape(codecogsResult.resp.getBlob().getDataAsString()).substring(0, 50) == Common.invalidEquationHashCodecogsFirst50) {
+        codecogsResult.renderer = Common.getRenderer(Common.rendererIds.CODECOGS);
+      }
+      return placeImage(startElement, codecogsResult.resp.getBlob(), codecogsResult.renderer, equationOriginal, size, renderOptions.delim);
+    }
+
+    // Codecogs failed - fall back to MathJax on client
+    return buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size);
+  }
+
   let { resp, renderer, worked } = renderEquationWithCompatibility(equationOriginal, coloredRenderOptions);
   if (worked > Common.capableRenderers || !resp || !renderer) return {
     status: DocsEquationRenderStatus.AllRenderersFailed
@@ -543,6 +558,101 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
   return placeImage(startElement, resp.getBlob(), renderer, equationOriginal, size, renderOptions.delim);
 }
   
+function buildClientRenderResponse(
+  textElement: GoogleAppsScript.Document.Text,
+  startElement: GoogleAppsScript.Document.RangeElement,
+  equationOriginal: string,
+  coloredRenderOptions: AutoLatexCommon.RenderOptions & { r: number; g: number; b: number },
+  size: number
+): DocsEquationRenderResult {
+  // we don't need URL encoding or double escaping for client renderers
+  const clientEquation = decodeURIComponent(equationOriginal).replace(/\\\\/g, "\\");
+  const doc = DocumentApp.getActiveDocument();
+  const range = doc.newRange()
+    .addElement(textElement, startElement.getStartOffset(), startElement.getEndOffsetInclusive())
+    .build();
+  // save this range for later
+  const namedRange = doc.addNamedRange("ale-equation-range", range);
+  const clientRenderOptions: AutoLatexCommon.ClientRenderOptions = {
+    ...coloredRenderOptions,
+    size,
+    rangeId: namedRange.getId(),
+    equation: clientEquation,
+    equationLinkEncoded: encodeURIComponent(clientEquation)
+  };
+  return {
+    status: DocsEquationRenderStatus.ClientRender,
+    equationSize: size,
+    clientRenderOptions,
+    nextStartElement: startElement
+  };
+}
+
+/**
+ * Called by the client when MathJax rendering fails in auto mode.
+ * Tries remaining server-side renderers (Texrendr, Sciweavers) for the failed equations.
+ * @public
+ */
+function clientRenderFailed(equations: { options: AutoLatexCommon.ClientRenderOptions }[]) {
+  let c = 0;
+  console.log("MathJax client render failed, trying server fallback for", equations.length, "equations");
+
+  // Go backwards so that the named ranges for multiple equations in the same paragraph don't get removed
+  equations.reverse();
+
+  for (const equation of equations) {
+    let namedRange: GoogleAppsScript.Document.NamedRange | null = null;
+    try {
+      namedRange = DocsApp.getActive().getNamedRangeById(equation.options.rangeId);
+      if (!namedRange) {
+        console.warn("Server fallback: range disappeared:", equation.options.rangeId);
+        continue;
+      }
+
+      const rangeElements = namedRange.getRange().getRangeElements();
+      if (rangeElements.length === 0) {
+        console.warn("Server fallback: range is empty:", equation.options.rangeId);
+        continue;
+      }
+
+      const equationOriginal = Common.reEncode(equation.options.equation, DocsApp);
+
+      // REASON: Try Texrendr and Sciweavers only - Codecogs already failed, MathJax already failed.
+      const fallbackResult = renderEquationWithCompatibility(equationOriginal, {
+        size: equation.options.size,
+        defaultSize: equation.options.size,
+        inline: equation.options.inline,
+        delim: equation.options.delim,
+        clientRender: false,
+        r: equation.options.r,
+        g: equation.options.g,
+        b: equation.options.b,
+        allowedServerFamilies: ["Texrendr", "Sciweavers", "Sciweavers_old", "Roger's renderer", "Number empire"]
+      });
+
+      if (fallbackResult.worked > Common.capableRenderers || !fallbackResult.resp || !fallbackResult.renderer) {
+        continue;
+      }
+
+      const equationBlob = fallbackResult.resp.getBlob();
+      const result = placeImage(rangeElements[0], equationBlob, fallbackResult.renderer, equationOriginal, equation.options.size, equation.options.delim);
+
+      if (result.status === DocsEquationRenderStatus.Success) {
+        c++;
+      }
+    } catch (error) {
+      console.error("Server fallback render failed.", error);
+    } finally {
+      namedRange?.remove();
+    }
+  }
+
+  return {
+    lastStatus: c > 0 ? DocsEquationRenderStatus.Success : DocsEquationRenderStatus.AllRenderersFailed,
+    successCount: c
+  };
+}
+
 function placeImage(startElement: GoogleAppsScript.Document.RangeElement, renderedEquation: GoogleAppsScript.Base.Blob, renderer: AutoLatexCommon.Renderer, equation: string, size: number, delim: AutoLatexCommon.Delimiter) {
   // GET VARIABLES
   const textElement = startElement.getElement().asText();

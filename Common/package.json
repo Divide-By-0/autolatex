@@ -6,6 +6,8 @@
   "author": "",
   "license": "ISC",
   "scripts": {
+    "preclasp-push": "node ../BuildSidebarJS.js",
+    "clasp-push": "clasp push",
     "build-types": "clasp-types -o ../types -p AutoLatexCommon -n Common"
   }
 }

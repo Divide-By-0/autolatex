@@ -69,12 +69,14 @@
             <option value="$$" selected>$$ ... $$</option>
             <!-- $("#instructions").val("<p>Replace all valid mathematical equations with high-quality LaTeX rendered images. Remember to wrap all latex in \[ ... \]. </p>"); -->
             <option value="\[">\[ ... \]</option>
-            <!--<option value = '$'>$ ... $</option>-->
+            <option value="(">\( ... \)</option>
+            <option value="$">$ ... $</option>
           </select>
           <label id="select_size">Preferred Renderer:<br /></label>
-          <select id="renderer" name="renderer">
+          <select id="renderer" name="renderer" data-mathjax-enabled="true">
             <option value="auto" selected>Automatic</option>
             <option value="codecogs">Codecogs</option>
+            <option value="mathjax">MathJax beta</option>
             <option value="texrendr">Texrendr</option>
             <option value="sciweavers">Sciweavers</option>
           </select>
