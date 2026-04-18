@@ -15,17 +15,28 @@ const enum DocsEquationRenderStatus {
   AllRenderersFailed,
   ClientRender,
   EmptyEquation,
+  MultiElementEquation,
   NoDocument,
   NoEndDelimiter,
   NoStartDelimiter,
   Success,
 }
 
+// REASON: Carries human-actionable info about a single equation that we couldn't render or
+// auto-fix. The sidebar uses these to tell the user *which* equation broke and *why*, instead
+// of the legacy generic "an equation is incorrect" message.
+interface EquationFailureDetail {
+  reason: string; // short machine-style tag, e.g. "multi-paragraph", "multi-element", "stale-offset"
+  snippet: string; // up to ~80 chars of the equation start so the user can locate it in their doc
+  hint: string;    // user-facing remediation suggestion
+}
+
 interface DocsEquationRenderResult {
   status: DocsEquationRenderStatus,
   equationSize?: number,
   nextStartElement?: GoogleAppsScript.Document.RangeElement,
-  clientRenderOptions?: AutoLatexCommon.ClientRenderOptions
+  clientRenderOptions?: AutoLatexCommon.ClientRenderOptions,
+  failureDetail?: EquationFailureDetail
 }
 
 const DocsApp = {
@@ -174,12 +185,21 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     body = DocumentApp.getActiveDocument();
   } catch (error) {
     console.error(error);
-    
+
     return {
       lastStatus: DocsEquationRenderStatus.NoDocument,
-      successCount: 0
+      successCount: 0,
+      autoFixedCount: 0,
+      failureDetails: [] as EquationFailureDetail[]
     };
   }
+
+  // REASON: Collect every equation we couldn't render so we can return them all to the sidebar
+  // in a single response, instead of dying on the first error and hiding the rest from the user.
+  const failureDetails: EquationFailureDetail[] = [];
+  // REASON: Count of equations we silently auto-recovered (e.g. merged paragraph-split equations).
+  // Surfaced in the sidebar so the user knows we changed their doc on their behalf.
+  let autoFixedCount = 0;
   
   const baseRenderOptions: AutoLatexCommon.RenderOptions = {
     size,
@@ -207,16 +227,27 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     let failedStartElemIfIsEmpty = null;
     while (true) {
       // prevFailedStartElemIfIsEmpty is here so when $$$$ fails again and again, it doesn't get stuck there and moves on.
+      const findPosResult = findPos(index, baseRenderOptions, failedStartElemIfIsEmpty); //or: "\\\$\\\$", "\\\$\\\$"
       const {
         status,
         equationSize,
         nextStartElement,
-        clientRenderOptions
-      } = findPos(index, baseRenderOptions, failedStartElemIfIsEmpty); //or: "\\\$\\\$", "\\\$\\\$"
+        clientRenderOptions,
+        failureDetail
+      } = findPosResult;
 
       if (nextStartElement) failedStartElemIfIsEmpty = nextStartElement;
       // if we found an actual equation, update the default size
       if (equationSize) baseRenderOptions.defaultSize = equationSize;
+
+      // REASON: findPos signals an auto-fix by setting equationSize === -1 in addition to the
+      // regular status. We bump the count and re-run the same index from scratch since the doc
+      // structure changed (paragraphs merged) and any cached RangeElement is now stale.
+      if (status === DocsEquationRenderStatus.Success && equationSize === -1) {
+        autoFixedCount++;
+        failedStartElemIfIsEmpty = null;
+        continue;
+      }
 
       // count consecutive empty equations
       if (status == DocsEquationRenderStatus.EmptyEquation) {
@@ -231,8 +262,19 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
       if (status == DocsEquationRenderStatus.AllRenderersFailed || status == DocsEquationRenderStatus.NoDocument) {
         return {
           lastStatus: status,
-          successCount: c
+          successCount: c,
+          autoFixedCount,
+          failureDetails
         };
+      }
+
+      // REASON: Cross-element / cross-paragraph equations we couldn't auto-fix. Record for the
+      // sidebar and skip past so we don't infinite-loop on the same broken equation.
+      if (status === DocsEquationRenderStatus.MultiElementEquation) {
+        if (failureDetail) failureDetails.push(failureDetail);
+        // failedStartElemIfIsEmpty was set above to nextStartElement (the end delimiter),
+        // so the next findPos call will search after this broken equation.
+        continue;
       }
 
       if (status === DocsEquationRenderStatus.ClientRender && clientRenderOptions) {
@@ -261,13 +303,17 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     return {
       lastStatus: DocsEquationRenderStatus.ClientRender,
       clientEquations: clientRenderBatch,
-      successCount: c
+      successCount: c,
+      autoFixedCount,
+      failureDetails
     };
   }
 
   return {
     lastStatus: DocsEquationRenderStatus.Success,
-    successCount: c
+    successCount: c,
+    autoFixedCount,
+    failureDetails
   };
 }
 
@@ -337,6 +383,112 @@ function findNextDelimiter(
 					1 if eqn is "" and 0 if not. Assume we close on 4 consecutive empty ones.
 */
 
+// REASON: Walk up the parent chain to find the containing top-level body child (Paragraph or
+// ListItem) for a Text element. We need this to detect equations that cross paragraph boundaries
+// (the Enter-instead-of-Shift+Enter case) so we can auto-fix them.
+function getContainingTopLevelChild(
+  element: GoogleAppsScript.Document.Element,
+  body: GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection | GoogleAppsScript.Document.FooterSection
+): { topLevelChild: GoogleAppsScript.Document.Element, indexInBody: number } | null {
+  let current: GoogleAppsScript.Document.Element | null = element;
+  while (current != null) {
+    const parent = current.getParent();
+    if (parent == null) {
+      return null;
+    }
+    const parentType = parent.getType();
+    if (parentType === DocumentApp.ElementType.BODY_SECTION ||
+        parentType === DocumentApp.ElementType.HEADER_SECTION ||
+        parentType === DocumentApp.ElementType.FOOTER_SECTION) {
+      try {
+        // ContainerElement already exposes getChildIndex, so no cast needed.
+        const idx = parent.getChildIndex(current);
+        return { topLevelChild: current, indexInBody: idx };
+      } catch (err) {
+        // Stale or detached element
+        return null;
+      }
+    }
+    current = parent;
+  }
+  return null;
+}
+
+// REASON: When findText returns delimiters in different paragraphs, the user almost always
+// pressed Enter instead of Shift+Enter inside a multiline equation. We auto-fix by merging
+// every paragraph from start to end into the start paragraph, joining them with `\r` (the
+// in-paragraph soft line break character that Docs uses for Shift+Enter). The original
+// rendering loop then re-runs findPos and the equation now lives in a single Text element.
+//
+// What breaks if removed: every multiline equation entered with Enter raises a "End index N
+// must be >= start index M" exception in findPos and the user gets a useless generic error.
+//
+// Limitations: any rich formatting (bold/italic/font/color) on text inside the merged
+// paragraphs is collapsed because appendText only takes a string. We accept that loss because
+// the merged region is the equation itself, which gets replaced by an image anyway.
+function tryAutoMergeMultiParagraphEquation(
+  body: GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection | GoogleAppsScript.Document.FooterSection,
+  startParaIdx: number,
+  endParaIdx: number
+): { success: boolean, reason: string } {
+  if (endParaIdx <= startParaIdx) {
+    return { success: false, reason: "Paragraph indices out of order" };
+  }
+
+  // Verify every paragraph in the span is a plain Paragraph containing only Text children.
+  // If there are tables, inline images, drawings, etc., merging would either fail outright or
+  // silently destroy user content - safer to bail and show a precise error.
+  for (let i = startParaIdx; i <= endParaIdx; i++) {
+    const child = body.getChild(i);
+    const childType = child.getType();
+    if (childType !== DocumentApp.ElementType.PARAGRAPH) {
+      return { success: false, reason: "Cross-paragraph equation includes a " + childType + " block" };
+    }
+    const para = child.asParagraph();
+    for (let j = 0; j < para.getNumChildren(); j++) {
+      const innerType = para.getChild(j).getType();
+      if (innerType !== DocumentApp.ElementType.TEXT) {
+        return { success: false, reason: "Cross-paragraph equation contains a non-text element (" + innerType + ")" };
+      }
+    }
+  }
+
+  const startPara = body.getChild(startParaIdx).asParagraph();
+  const numToMerge = endParaIdx - startParaIdx;
+
+  // REASON: Forward loop, always grabbing the paragraph immediately after startPara.
+  // After each removeFromParent the indices above startParaIdx all shift down by one, so
+  // (startParaIdx + 1) consistently points at the next paragraph to merge.
+  for (let i = 0; i < numToMerge; i++) {
+    const nextPara = body.getChild(startParaIdx + 1).asParagraph();
+    const text = nextPara.getText();
+    // \r (\u000D) is the in-text representation of a Shift+Enter line break in Docs.
+    // See newlineCharacter comment near top of this file.
+    startPara.appendText("\r" + text);
+    nextPara.removeFromParent();
+  }
+
+  return { success: true, reason: "Merged " + numToMerge + " paragraph(s) with line breaks" };
+}
+
+// REASON: Build a short snippet of the equation start that the user can ctrl-F for in their
+// document. We grab from the start delimiter forward, capping at 80 chars and stopping at the
+// first paragraph break so the snippet stays on one line in the sidebar.
+function buildEquationSnippet(startElement: GoogleAppsScript.Document.RangeElement): string {
+  try {
+    const text = startElement.getElement().asText().getText();
+    const startOffset = startElement.getStartOffset();
+    if (startOffset < 0 || startOffset >= text.length) {
+      return "";
+    }
+    const tail = text.substring(startOffset, Math.min(text.length, startOffset + 80));
+    // Strip line break characters so it renders cleanly in the sidebar
+    return tail.replace(/[\r\n]/g, " ").trim();
+  } catch (err) {
+    return "";
+  }
+}
+
 function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, prevFailedStartElemIfIsEmpty = null): DocsEquationRenderResult {
   Common.debugLog("Checking document section index # ", index);
   Common.reportDeltaTime(195);
@@ -368,19 +520,99 @@ function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, pr
   if (placeHolderEnd - placeHolderStart == 2.0) {
     // empty equation
     console.log("Empty equation! In index " + index + " and offset " + placeHolderStart);
-    
+
     return {
       // start from the end element next time to avoid an infinite loop
       nextStartElement: endElement,
       status: DocsEquationRenderStatus.EmptyEquation
     };
   }
-  
-  // build the RangeElement for this equation
-  // we make the assumption that the entire equation is contained within one TextElement
-  const range = DocsApp.getActive().newRange()
-    .addElement(startElement.getElement().asText(), startElement.getStartOffset(), endElement.getEndOffsetInclusive())
-    .build();
+
+  // REASON: The legacy assumption was "start and end delimiters live in the same Text element."
+  // That breaks in two real-world cases:
+  //   1. Multi-paragraph equations: user pressed Enter (paragraph break) inside the equation
+  //      instead of Shift+Enter. start and end live in different paragraphs entirely.
+  //   2. Multi-element equations: even within a single paragraph, an inline image or formatting
+  //      change between the delimiters can split the paragraph into multiple Text children.
+  //
+  // Both cases used to throw an uncaught "End index (N) must be >= start index (M)" exception
+  // from addElement, which bubbled up to the sidebar as a generic error.
+  //
+  // Now we detect both cases preemptively, auto-fix case 1 by merging the paragraphs, and
+  // return a precise MultiElementEquation status with a snippet+hint for case 2.
+  const startContainer = getContainingTopLevelChild(startElement.getElement(), docBody);
+  const endContainer = getContainingTopLevelChild(endElement.getElement(), docBody);
+
+  if (startContainer && endContainer && startContainer.indexInBody !== endContainer.indexInBody) {
+    // Cross-paragraph case (1). Try to auto-merge.
+    const snippet = buildEquationSnippet(startElement);
+    console.log("Detected multi-paragraph equation:", JSON.stringify({
+      startParaIdx: startContainer.indexInBody,
+      endParaIdx: endContainer.indexInBody,
+      snippet
+    }));
+    const merge = tryAutoMergeMultiParagraphEquation(docBody, startContainer.indexInBody, endContainer.indexInBody);
+    if (merge.success) {
+      console.log("Auto-fixed multi-paragraph equation:", merge.reason);
+      // REASON: Signal an auto-fix to the caller via equationSize === -1 so the loop
+      // increments autoFixedCount and re-runs findPos against the fresh document state.
+      // We can't recurse here because the caller's `failedStartElemIfIsEmpty` would be stale.
+      return {
+        status: DocsEquationRenderStatus.Success,
+        equationSize: -1
+      };
+    }
+    return {
+      status: DocsEquationRenderStatus.MultiElementEquation,
+      // Skip past the broken end delimiter so we don't loop on it forever
+      nextStartElement: endElement,
+      failureDetail: {
+        reason: "multi-paragraph",
+        snippet: snippet || "(unknown)",
+        hint: "This equation appears to span multiple paragraphs. Inside an equation, use Shift+Enter (line break) instead of Enter (paragraph break). " + merge.reason + "."
+      }
+    };
+  }
+
+  // Same top-level container but possibly different Text children (e.g., split by inline
+  // image or formatting boundary). Detect by trying the addElement build under a try/catch
+  // so we don't have to fragile-compare element references.
+  // REASON: We deliberately wrap *only* the range build in try/catch, not the downstream
+  // findEquationAndPlaceImage call. Catching findEquationAndPlaceImage failures here would
+  // hide unrelated bugs (network/render failures) behind a generic "multi-element" message.
+  let range: GoogleAppsScript.Document.Range;
+  try {
+    range = DocsApp.getActive().newRange()
+      .addElement(startElement.getElement().asText(), startElement.getStartOffset(), endElement.getEndOffsetInclusive())
+      .build();
+  } catch (rangeErr) {
+    const snippet = buildEquationSnippet(startElement);
+    console.warn("Could not build equation range:", JSON.stringify({
+      error: String(rangeErr),
+      startOffset: startElement.getStartOffset(),
+      endOffset: endElement.getEndOffsetInclusive(),
+      snippet
+    }));
+    // REASON: Distinguish "stale offsets after a prior mutation" from "real cross-element"
+    // by inspecting the error message. Stale-offset errors look like "Index (N) must be less
+    // than the content length (M)" — these happen when an earlier render moved text under us
+    // and the user can usually fix them just by re-running the renderer. Cross-element errors
+    // look like "End index (N) must be greater or equal to start index (M)" — these need a
+    // structural fix in the doc.
+    const errMsg = String(rangeErr || "");
+    const isStaleOffset = /Index \([0-9]+\) must be less than/.test(errMsg) || /less than the content length/.test(errMsg);
+    return {
+      status: DocsEquationRenderStatus.MultiElementEquation,
+      nextStartElement: endElement,
+      failureDetail: {
+        reason: isStaleOffset ? "stale-offset" : "multi-element",
+        snippet: snippet || "(unknown)",
+        hint: isStaleOffset
+          ? "This equation could not be located after a prior render. Try clicking 'Render Equations' again — it usually works on the second try."
+          : "This equation appears to cross a formatting boundary or an inline element. Try removing any formatting changes (bold, italic, font, color) inside the $$ delimiters, or remove inline images from the equation."
+      }
+    };
+  }
 
   return findEquationAndPlaceImage(range.getRangeElements()[0], renderOptions);
 }
@@ -814,42 +1046,59 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
   const defaultDelim = Common.getDelimiters(delimiter);
   Common.savePrefs(sizeRaw, delimiter, renderer);
   const cursor = DocumentApp.getActiveDocument().getCursor();
-  if (cursor) {
-    // Attempt to insert text at the cursor position. If the insertion returns null, the cursor's
-    // containing element doesn't allow insertions, so show the user an error message.
-    const element = cursor.getElement() as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph; //startElement
-
-    if (element) {
-      console.log("Valid cursor.");
-
-      const position = cursor.getOffset(); //offset
-      if (position >= element.getNumChildren()) {
-        return Common.DerenderResult.CursorNotFound;
-      }
-      //element.getChild(position).removeFromParent();  //SUCCESSFULLY REMOVES IMAGE FROM PARAGRAPH
-      // console.log(element.getAllContent(), element.type())
-      const image = element.getChild(position).asInlineImage();
-      Common.debugLog("Image height", image.getHeight());
-      const origURL = image.getLinkUrl();
-      if (!origURL) {
-        return Common.DerenderResult.NullUrl;
-      }
-      Common.debugLog("Original URL from image", origURL);
-      const result = Common.derenderEquation(origURL, DocsApp);
-      if (!result) return Common.DerenderResult.InvalidUrl;
-      const { delim: newDelim, origEq } = result;
-      const delim = newDelim || defaultDelim;
-      if (origEq.length <= 0) {
-        console.log("Empty equation derender.");
-        return Common.DerenderResult.EmptyEquation;
-      }
-      cursor.insertText(delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
-      element.getChild(position + 1).removeFromParent();
-      return Common.DerenderResult.Success;
-    } else {
-      return Common.DerenderResult.NonExistentElement;
-    }
-  } else {
+  if (!cursor) {
     return Common.DerenderResult.CursorNotFound;
   }
+
+  const elementRaw = cursor.getElement();
+  if (!elementRaw) {
+    return Common.DerenderResult.NonExistentElement;
+  }
+
+  // REASON: Cursor.getElement() can return any Element subtype (Table, TableOfContents,
+  // FootnoteSection, etc.) - not just Paragraph/ListItem. The previous code did an unchecked
+  // `as ListItem | Paragraph` cast and then called .getNumChildren(), which crashed with
+  // "TypeError: element.getNumChildren is not a function" for users whose cursor was inside
+  // a table cell or footnote. Validate the element type up front.
+  const elementType = elementRaw.getType();
+  if (elementType !== DocumentApp.ElementType.PARAGRAPH && elementType !== DocumentApp.ElementType.LIST_ITEM) {
+    console.log("editEquations: cursor is in unsupported element type", elementType);
+    return Common.DerenderResult.NonExistentElement;
+  }
+
+  const element = elementRaw as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph;
+  console.log("Valid cursor.");
+
+  const position = cursor.getOffset(); //offset
+  if (position >= element.getNumChildren()) {
+    return Common.DerenderResult.CursorNotFound;
+  }
+
+  // REASON: getChild(position).asInlineImage() throws "TEXT can't be cast to INLINE_IMAGE"
+  // when the user's cursor is on text instead of an equation image. Check the child type
+  // first and return a precise status so the sidebar can tell them to click the image.
+  const childAtCursor = element.getChild(position);
+  if (childAtCursor.getType() !== DocumentApp.ElementType.INLINE_IMAGE) {
+    console.log("editEquations: child at cursor is not an inline image", childAtCursor.getType());
+    return Common.DerenderResult.NonExistentElement;
+  }
+
+  const image = childAtCursor.asInlineImage();
+  Common.debugLog("Image height", image.getHeight());
+  const origURL = image.getLinkUrl();
+  if (!origURL) {
+    return Common.DerenderResult.NullUrl;
+  }
+  Common.debugLog("Original URL from image", origURL);
+  const result = Common.derenderEquation(origURL, DocsApp);
+  if (!result) return Common.DerenderResult.InvalidUrl;
+  const { delim: newDelim, origEq } = result;
+  const delim = newDelim || defaultDelim;
+  if (origEq.length <= 0) {
+    console.log("Empty equation derender.");
+    return Common.DerenderResult.EmptyEquation;
+  }
+  cursor.insertText(delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
+  element.getChild(position + 1).removeFromParent();
+  return Common.DerenderResult.Success;
 }

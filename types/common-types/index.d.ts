@@ -111,6 +111,21 @@ declare namespace AutoLatexCommon {
 
     }
 
+    /**
+     * Per-equation failure info surfaced from server-side rendering to the sidebar.
+     * Used by the sidebar to show users *which* equation broke and *why*, instead of a
+     * generic catch-all error.
+     */
+    export interface EquationFailureDetail {
+
+        reason: string;
+
+        snippet: string;
+
+        hint: string;
+
+    }
+
     export interface IntegratedApp {
 
         newlineCharacter: string;

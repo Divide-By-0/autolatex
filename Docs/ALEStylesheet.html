@@ -122,6 +122,56 @@
     color: #b3261e;
   }
 
+  /* Per-equation failure list shown inside .ale-error when the server reports
+     specific equations it couldn't render or auto-fix. */
+  .ale-failure-list {
+    margin-top: 8px;
+    color: #5f3939;
+  }
+
+  .ale-failure-list ul {
+    margin: 4px 0 0 16px;
+    padding: 0;
+  }
+
+  .ale-failure-list li {
+    margin-bottom: 6px;
+  }
+
+  .ale-failure-list code {
+    background: #f6e8e7;
+    border: 1px solid #e3c2c0;
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-size: 11px;
+    word-break: break-all;
+  }
+
+  .ale-error-hint {
+    color: #5f3939;
+    font-size: 11px;
+    display: block;
+    margin-top: 2px;
+  }
+
+  .ale-error-more {
+    margin-top: 6px;
+    font-style: italic;
+    font-size: 11px;
+  }
+
+  /* Soft note shown after a successful render when we silently auto-fixed
+     a multiline equation. Not styled as an error - just an FYI to the user. */
+  .ale-autofix-note {
+    margin-top: 6px;
+    padding: 6px 8px;
+    background: #e8f0fe;
+    border-left: 3px solid #4285f4;
+    color: #1a73e8;
+    font-size: 11px;
+    border-radius: 2px;
+  }
+
   .sidebar-content {
     padding-bottom: 112px;
   }
