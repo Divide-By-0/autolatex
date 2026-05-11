@@ -333,8 +333,9 @@ function getPrefs() {
  * @public
  */
 function getKey() {
-    console.log("Got Key: " + Session.getTemporaryActiveUserKey() + " and email " + Session.getEffectiveUser().getEmail());
-    return Session.getTemporaryActiveUserKey();
+    var key = Session.getTemporaryActiveUserKey();
+    console.log("Got Key: " + key);
+    return key;
 }
 /**
  * @public

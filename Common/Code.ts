@@ -53,6 +53,15 @@ interface LegacyRenderArgs {
   blue: number;
 }
 
+interface RenderEquationResult {
+  resp: GoogleAppsScript.URL_Fetch.HTTPResponse | null;
+  renderer: Renderer | null;
+  rendererType: string;
+  worked: number;
+  equation: string;
+  authorizationError?: boolean;
+}
+
 /**
 * Options/state for rendering on the client - these are settings for a specific equation
 * 
@@ -475,7 +484,7 @@ function renderEquation(
   legacyRed?: number,
   legacyGreen?: number,
   legacyBlue?: number
-) {
+): RenderEquationResult {
   const renderOptions = normalizeRenderEquationArgs(
     renderOptionsOrQuality,
     legacyDelim,
@@ -495,6 +504,7 @@ function renderEquation(
   let failedCodecogs = 0;
   let failedTexrendr = 0;
   let failedResp: GoogleAppsScript.URL_Fetch.HTTPResponse | null = null;
+  let authorizationError = false;
   // if only failed codecogs, probably weird evening bug from 10/15/19
   // if failed codecogs and texrendr, probably shitty equation and the codecogs error is more descriptive so show it
 
@@ -600,6 +610,9 @@ function renderEquation(
       console.log("Worked with renderer ", worked, " and type ", rendererType);
       break;
     } catch (err) {
+      if (isUrlFetchAuthorizationError(err)) {
+        authorizationError = true;
+      }
       console.log(rendererType + " Error! - " + err);
       const failedEquationLinkLength = renderer ? renderer[1].length : -1;
       deltaTime = reportDeltaTime(533, " failed equation link length " + failedEquationLinkLength + " and renderer  " + rendererType);
@@ -621,8 +634,15 @@ function renderEquation(
     renderer,
     rendererType,
     worked,
-    equation
+    equation,
+    authorizationError
   }
+}
+
+function isUrlFetchAuthorizationError(err: unknown) {
+  const message = String(err || "");
+  return message.indexOf("You do not have permission to call UrlFetchApp.fetch") !== -1 ||
+    message.indexOf("script.external_request") !== -1;
 }
 
 /**
