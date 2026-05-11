@@ -351,15 +351,21 @@ function isSingleDollarDelimiter(rangeElement: GoogleAppsScript.Document.RangeEl
   return true;
 }
 
+// REASON: delimIdx picks delim[2] (start regex) vs delim[3] (end regex).
+// For asymmetric delimiters like `\[ ... \]` and `\( ... \)` the start and end patterns differ,
+// so using delim[2] for both (the original bug) caused the end-search to look for another `\[`
+// instead of `\]`, find none, and report "no equations found." For `$ ... $` the two are the
+// same regex so either index works; isSingleDollarDelimiter still filters out `$$` / `\$` cases.
 function findNextDelimiter(
   docBody: GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection | GoogleAppsScript.Document.FooterSection,
   renderOptions: AutoLatexCommon.RenderOptions,
-  fromRange: GoogleAppsScript.Document.RangeElement | null = null
+  fromRange: GoogleAppsScript.Document.RangeElement | null = null,
+  delimIdx: 2 | 3 = 2
 ) {
   if (renderOptions.delim[6] !== 2) {
     return fromRange == null
-      ? docBody.findText(renderOptions.delim[2])
-      : docBody.findText(renderOptions.delim[2], fromRange);
+      ? docBody.findText(renderOptions.delim[delimIdx])
+      : docBody.findText(renderOptions.delim[delimIdx], fromRange);
   }
 
   let candidate = fromRange == null ? docBody.findText("\\$") : docBody.findText("\\$", fromRange);
@@ -501,7 +507,7 @@ function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, pr
       status: DocsEquationRenderStatus.NoDocument
     };
   }
-  const startElement = findNextDelimiter(docBody, renderOptions, prevFailedStartElemIfIsEmpty);
+  const startElement = findNextDelimiter(docBody, renderOptions, prevFailedStartElemIfIsEmpty, 2);
   if (startElement == null) {
     return {
       status: DocsEquationRenderStatus.NoStartDelimiter
@@ -509,7 +515,7 @@ function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, pr
   }
   const placeHolderStart = startElement.getStartOffset(); //position of image insertion
 
-  const endElement = findNextDelimiter(docBody, renderOptions, startElement);
+  const endElement = findNextDelimiter(docBody, renderOptions, startElement, 3);
   // could not find the ending delimiter after the start
   if (endElement == null) {
     return {

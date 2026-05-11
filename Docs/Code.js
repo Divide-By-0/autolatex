@@ -277,12 +277,18 @@ function isSingleDollarDelimiter(rangeElement) {
     }
     return true;
 }
-function findNextDelimiter(docBody, renderOptions, fromRange) {
+// REASON: delimIdx picks delim[2] (start regex) vs delim[3] (end regex).
+// For asymmetric delimiters like `\[ ... \]` and `\( ... \)` the start and end patterns differ,
+// so using delim[2] for both (the original bug) caused the end-search to look for another `\[`
+// instead of `\]`, find none, and report "no equations found." For `$ ... $` the two are the
+// same regex so either index works; isSingleDollarDelimiter still filters out `$$` / `\$` cases.
+function findNextDelimiter(docBody, renderOptions, fromRange, delimIdx) {
     if (fromRange === void 0) { fromRange = null; }
+    if (delimIdx === void 0) { delimIdx = 2; }
     if (renderOptions.delim[6] !== 2) {
         return fromRange == null
-            ? docBody.findText(renderOptions.delim[2])
-            : docBody.findText(renderOptions.delim[2], fromRange);
+            ? docBody.findText(renderOptions.delim[delimIdx])
+            : docBody.findText(renderOptions.delim[delimIdx], fromRange);
     }
     var candidate = fromRange == null ? docBody.findText("\\$") : docBody.findText("\\$", fromRange);
     while (candidate != null) {
@@ -409,14 +415,14 @@ function findPos(index, renderOptions, prevFailedStartElemIfIsEmpty) {
             status: 5 /* DocsEquationRenderStatus.NoDocument */
         };
     }
-    var startElement = findNextDelimiter(docBody, renderOptions, prevFailedStartElemIfIsEmpty);
+    var startElement = findNextDelimiter(docBody, renderOptions, prevFailedStartElemIfIsEmpty, 2);
     if (startElement == null) {
         return {
             status: 7 /* DocsEquationRenderStatus.NoStartDelimiter */
         };
     }
     var placeHolderStart = startElement.getStartOffset(); //position of image insertion
-    var endElement = findNextDelimiter(docBody, renderOptions, startElement);
+    var endElement = findNextDelimiter(docBody, renderOptions, startElement, 3);
     // could not find the ending delimiter after the start
     if (endElement == null) {
         return {
