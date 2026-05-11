@@ -13,6 +13,7 @@ var DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DE
  */
 const enum DocsEquationRenderStatus {
   AllRenderersFailed,
+  AuthorizationFailed,
   ClientRender,
   EmptyEquation,
   MultiElementEquation,
@@ -259,7 +260,9 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
       if (allEmpty > 10) break; //Assume we quit on 10 consecutive empty equations.
 
       // quit if all renderers failed or if document failed to load (conflicting authorizations)
-      if (status == DocsEquationRenderStatus.AllRenderersFailed || status == DocsEquationRenderStatus.NoDocument) {
+      if (status == DocsEquationRenderStatus.AllRenderersFailed ||
+          status == DocsEquationRenderStatus.AuthorizationFailed ||
+          status == DocsEquationRenderStatus.NoDocument) {
         return {
           lastStatus: status,
           successCount: c,
@@ -776,9 +779,9 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
     return buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size);
   }
 
-  let { resp, renderer, worked } = renderEquationWithCompatibility(equationOriginal, coloredRenderOptions);
+  let { resp, renderer, worked, authorizationError } = renderEquationWithCompatibility(equationOriginal, coloredRenderOptions);
   if (worked > Common.capableRenderers || !resp || !renderer) return {
-    status: DocsEquationRenderStatus.AllRenderersFailed
+    status: authorizationError ? DocsEquationRenderStatus.AuthorizationFailed : DocsEquationRenderStatus.AllRenderersFailed
   };
   // SAVING FORMATTING
   Common.reportDeltaTime(511);
@@ -827,6 +830,7 @@ function buildClientRenderResponse(
  */
 function clientRenderFailed(equations: { options: AutoLatexCommon.ClientRenderOptions }[]) {
   let c = 0;
+  let authorizationFailure = false;
   console.log("MathJax client render failed, trying server fallback for", equations.length, "equations");
 
   // Go backwards so that the named ranges for multiple equations in the same paragraph don't get removed
@@ -863,6 +867,9 @@ function clientRenderFailed(equations: { options: AutoLatexCommon.ClientRenderOp
       });
 
       if (fallbackResult.worked > Common.capableRenderers || !fallbackResult.resp || !fallbackResult.renderer) {
+        if (fallbackResult.authorizationError) {
+          authorizationFailure = true;
+        }
         continue;
       }
 
@@ -880,7 +887,11 @@ function clientRenderFailed(equations: { options: AutoLatexCommon.ClientRenderOp
   }
 
   return {
-    lastStatus: c > 0 ? DocsEquationRenderStatus.Success : DocsEquationRenderStatus.AllRenderersFailed,
+    lastStatus: c > 0
+      ? DocsEquationRenderStatus.Success
+      : authorizationFailure
+        ? DocsEquationRenderStatus.AuthorizationFailed
+        : DocsEquationRenderStatus.AllRenderersFailed,
     successCount: c
   };
 }

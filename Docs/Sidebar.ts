@@ -534,6 +534,8 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
 
     if (lastStatus === google.script.DocsEquationRenderStatus.NoDocument) {
       showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts." + autoFixHtml + failureHtml, statusText);
+    } else if (lastStatus === google.script.DocsEquationRenderStatus.AuthorizationFailed) {
+      showError("<strong>Auto-LaTeX is missing permission to call external renderers.</strong> Try uninstalling and reinstalling the add-on, then click 'Select all' on the permissions screen. The equation may be valid; Google has not granted the add-on external request access yet." + autoFixHtml + failureHtml, statusText);
     } else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount > 0) {
       showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used." + autoFixHtml + failureHtml, statusText);
     } else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount === 0) {

@@ -35,6 +35,8 @@ declare namespace google {
 
             AllRenderersFailed,
 
+            AuthorizationFailed,
+
             ClientRender,
 
             EmptyEquation,
