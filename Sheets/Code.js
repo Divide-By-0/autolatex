@@ -435,6 +435,28 @@ function getBodyFromIndex(index) {
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
 
+// REASON: Mirror of Docs/Code.ts findInsertableAncestor. The text element's direct
+// parent is usually a Paragraph or ListItem (both support insertInlineImage), but for
+// equations inside smart chips, rich-link wrappers, or other unusual containers, the
+// direct parent doesn't expose insertInlineImage and the call below would crash with
+// `paragraph.insertInlineImage is not a function` AFTER we've already deleted the
+// user's equation text. Walk up to 6 ancestor levels looking for any container that
+// does support insertInlineImage (TableCell, Body, FootnoteSection, etc.). For the
+// common case where direct parent already supports it, this returns immediately —
+// behavior is byte-identical to the previous code path.
+function findInsertableAncestor(element) {
+  var current = element.getParent();
+  var direct = element;
+  for (var steps = 0; current && steps < 6; steps++) {
+    if (typeof current.insertInlineImage === "function") {
+      return { container: current, directChild: direct };
+    }
+    direct = current;
+    current = current.getParent();
+  }
+  return null;
+}
+
 function placeImage(index, startElement, start, end, quality, size, defaultSize, delim, isInline) {
   reportDeltaTime(411);
   var docBody = getBodyFromIndex(index);
@@ -442,8 +464,15 @@ function placeImage(index, startElement, start, end, quality, size, defaultSize,
   // GET VARIABLES
   var textElement = startElement.getElement();
   var text = textElement.getText();
-  var paragraph = textElement.getParent();
-  var childIndex = paragraph.getChildIndex(textElement); //gets index of found text in paragaph
+  var ancestor = findInsertableAncestor(textElement);
+  if (!ancestor) {
+    var directParent = textElement.getParent();
+    var parentType = directParent && typeof directParent.getType === "function" ? String(directParent.getType()) : "<unknown>";
+    console.error("placeImage: no ancestor within 6 levels supports insertInlineImage. directParentType=", parentType);
+    return [-100000, null];
+  }
+  var paragraph = ancestor.container;
+  var childIndex = paragraph.getChildIndex(ancestor.directChild); //gets index of found text (or its containing wrapper) in the insertable ancestor
   size = setSize(size, defaultSize, paragraph, childIndex, start);
   var equationOriginal = getEquation(paragraph, childIndex, start, end, delim);
 
