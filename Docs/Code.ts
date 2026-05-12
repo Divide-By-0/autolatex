@@ -40,26 +40,33 @@ interface DocsEquationRenderResult {
   failureDetail?: EquationFailureDetail
 }
 
-const DocsApp = {
-	getUi: function(){
-		let activeUi = DocumentApp.getUi();
-		return activeUi;
-	},
-	getBody: function(){
-		let activeBody = DocumentApp.getActiveDocument().getBody();
-		return activeBody;
-	},
-	getActive: function(){
-		let activeDoc = DocumentApp.getActiveDocument();
-		return activeDoc;
-	},
-	getPageWidth: function() {
-		let activeWidth = DocumentApp.getActiveDocument().getBody().getPageWidth();
-		return activeWidth;
-	},
-	// A \n in Docs represents a paragraph break, while a \r (\x0D) represents a break within a paragraph
-	newlineCharacter: "%0D"
-} satisfies AutoLatexCommon.IntegratedApp;
+interface DocsIntegratedApp extends AutoLatexCommon.IntegratedApp {
+  getActive(): GoogleAppsScript.Document.Document;
+  getBody(): GoogleAppsScript.Document.Body;
+}
+
+function getDocsApp(): DocsIntegratedApp {
+  return {
+    getUi: function(){
+      let activeUi = DocumentApp.getUi();
+      return activeUi;
+    },
+    getBody: function(){
+      let activeBody = DocumentApp.getActiveDocument().getBody();
+      return activeBody;
+    },
+    getActive: function(){
+      let activeDoc = DocumentApp.getActiveDocument();
+      return activeDoc;
+    },
+    getPageWidth: function() {
+      let activeWidth = DocumentApp.getActiveDocument().getBody().getPageWidth();
+      return activeWidth;
+    },
+    // A \n in Docs represents a paragraph break, while a \r (\x0D) represents a break within a paragraph
+    newlineCharacter: "%0D"
+  };
+}
 
 
 /** //8.03 - De-Render, Inline, Advanced Delimiters > Fixed Inline Not Appearing
@@ -71,7 +78,7 @@ const DocsApp = {
  */
 function onOpen(_e: object) {
   try {
-    DocsApp.getUi().createAddonMenu().addItem("Start", "showSidebar").addToUi();
+    DocumentApp.getUi().createAddonMenu().addItem("Start", "showSidebar").addToUi();
   } catch (error) {
     // Manual runs from the Apps Script editor do not have a document UI context.
     console.warn("Skipping onOpen outside a Docs UI context.", error);
@@ -99,7 +106,7 @@ function showSidebar() {
     .setTitle("Auto-LaTeX Equations")
     .setSandboxMode(HtmlService.SandboxMode.IFRAME) // choose mode IFRAME which is fastest option
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL); // allow third party Docs clients
-  DocsApp.getUi().showSidebar(ui);
+  DocumentApp.getUi().showSidebar(ui);
 }
 
 /**
@@ -591,7 +598,7 @@ function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, pr
   // hide unrelated bugs (network/render failures) behind a generic "multi-element" message.
   let range: GoogleAppsScript.Document.Range;
   try {
-    range = DocsApp.getActive().newRange()
+    range = getDocsApp().getActive().newRange()
       .addElement(startElement.getElement().asText(), startElement.getStartOffset(), endElement.getEndOffsetInclusive())
       .build();
   } catch (rangeErr) {
@@ -637,7 +644,7 @@ function getEquation(rangeElement: GoogleAppsScript.Document.RangeElement, delim
       rangeElement.getStartOffset() + delimiters[4], rangeElement.getEndOffsetInclusive() - delimiters[4] + 1
     );
   Common.debugLog("See equation", equation);
-  const equationStringEncoded = Common.reEncode(equation, DocsApp); //escape deprecated
+  const equationStringEncoded = Common.reEncode(equation, getDocsApp()); //escape deprecated
   Common.reportDeltaTime(290);
   //console.log("Encoded: " + equationStringEncoded);
   return equationStringEncoded;
@@ -685,7 +692,7 @@ function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRender
   for (const equation of equations) {
     let namedRange: GoogleAppsScript.Document.NamedRange | null = null;
     try {
-      namedRange = DocsApp.getActive().getNamedRangeById(equation.options.rangeId);
+      namedRange = getDocsApp().getActive().getNamedRangeById(equation.options.rangeId);
       if (!namedRange) {
         console.warn("MathJax client render range disappeared before completion:", equation.options.rangeId);
         continue;
@@ -845,7 +852,7 @@ function clientRenderFailed(equations: { options: AutoLatexCommon.ClientRenderOp
   for (const equation of equations) {
     let namedRange: GoogleAppsScript.Document.NamedRange | null = null;
     try {
-      namedRange = DocsApp.getActive().getNamedRangeById(equation.options.rangeId);
+      namedRange = getDocsApp().getActive().getNamedRangeById(equation.options.rangeId);
       if (!namedRange) {
         console.warn("Server fallback: range disappeared:", equation.options.rangeId);
         continue;
@@ -857,7 +864,7 @@ function clientRenderFailed(equations: { options: AutoLatexCommon.ClientRenderOp
         continue;
       }
 
-      const equationOriginal = Common.reEncode(equation.options.equation, DocsApp);
+      const equationOriginal = Common.reEncode(equation.options.equation, getDocsApp());
 
       // REASON: Try Texrendr and Sciweavers only - Codecogs already failed, MathJax already failed.
       const fallbackResult = renderEquationWithCompatibility(equationOriginal, {
@@ -991,7 +998,7 @@ function repairImage(paragraph: GoogleAppsScript.Document.ListItem | GoogleAppsS
     multiple = 1.26 / 5;
 
   Common.reportDeltaTime(595);
-  Common.sizeImage(DocsApp, paragraph, childIndex + 1, Math.round(height * multiple), Math.round(width * multiple));
+  Common.sizeImage(getDocsApp(), paragraph, childIndex + 1, Math.round(height * multiple), Math.round(width * multiple));
   
   return {
     status: DocsEquationRenderStatus.Success,
@@ -1000,7 +1007,7 @@ function repairImage(paragraph: GoogleAppsScript.Document.ListItem | GoogleAppsS
 }
 
 function getBodyFromIndex(index: number) {
-  const doc = DocsApp.getActive();
+  const doc = getDocsApp().getActive();
   const p = doc.getBody().getParent();
   const all = p.getNumChildren();
   Common.assert(index < all, "index < all");
@@ -1021,7 +1028,7 @@ function removeAll(defaultDelimRaw: string) {
   let counter = 0;
   const defaultDelim = Common.getDelimiters(defaultDelimRaw);
   
-  for (var index = 0; index < DocsApp.getBody().getParent().getNumChildren(); index++) {
+  for (var index = 0; index < getDocsApp().getBody().getParent().getNumChildren(); index++) {
     const body = getBodyFromIndex(index);
     const img = body?.getImages(); //places all InlineImages from the active document into the array img
     for (let i = 0; i < (img?.length || 0); i++) {
@@ -1032,7 +1039,7 @@ function removeAll(defaultDelimRaw: string) {
       }
       // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
       // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
-      const result = Common.derenderEquation(origURL, DocsApp);
+      const result = Common.derenderEquation(origURL, getDocsApp());
       if (!result) continue;
       const { origEq, delim: newDelim } = result;
       const delim = newDelim || defaultDelim;
@@ -1107,7 +1114,7 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
     return Common.DerenderResult.NullUrl;
   }
   Common.debugLog("Original URL from image", origURL);
-  const result = Common.derenderEquation(origURL, DocsApp);
+  const result = Common.derenderEquation(origURL, getDocsApp());
   if (!result) return Common.DerenderResult.InvalidUrl;
   const { delim: newDelim, origEq } = result;
   const delim = newDelim || defaultDelim;

@@ -14,6 +14,21 @@ Use this workflow for any request to push code from this repo to the remote Apps
 - `Slides`: run `npm run clasp-push` from [Slides/package.json](/Users/aayushgupta/Documents/.projects.nosync/autolatex/Slides/package.json).
 - `Workspace`: run `npm run clasp-push` from [Workspace/package.json](/Users/aayushgupta/Documents/.projects.nosync/autolatex/Workspace/package.json).
 
+## Production Safety
+
+Treat production Apps Script projects as live user-impacting systems.
+
+Do not hard-code production script IDs in this skill. If production IDs are needed for target checks, load them from a local untracked `.env` file:
+
+- `AUTOLATEX_PROD_COMMON_SCRIPT_ID`
+- `AUTOLATEX_PROD_DOCS_SCRIPT_ID`
+
+Do not push test or debugging changes to these production projects unless the user explicitly asks for a production push or restore. This is especially important for `Common`: some already-published Docs versions may reference `Common` with `version: "0"` and `developmentMode: true`, so pushing `Common` HEAD can immediately change production behavior without a new Docs version or Marketplace publish.
+
+For testing, use a separate Apps Script project or deployment, not production `Common` or production `Docs`. Before any push, print the target `.clasp.json` script ID and say whether it matches a production ID from `.env`, is a non-production target, or cannot be classified because `.env` is missing.
+
+Do not create Apps Script versions, deployments, or ask the user to update Marketplace SDK App Configuration unless the user explicitly requests a production release or rollback. If a version/deployment is created by mistake, mark it as unused and do not tell the user to publish it.
+
 ## Why `npm run clasp-push`
 
 For `Docs`, `Slides`, and `Workspace`, do not use raw `clasp push` by default.
@@ -39,11 +54,14 @@ Before pushing:
 
 - Check `git status --short` and make sure only intended files are going up.
 - For Docs and Slides, confirm [BuildSidebarJS.js](/Users/aayushgupta/Documents/.projects.nosync/autolatex/BuildSidebarJS.js) has been run through the package script.
+- If pushing Docs, inspect the manifest that will be uploaded and verify `Common` is pinned to a numbered library version with `developmentMode: false` for production releases.
+- If `clasp push` prints `Skipping push`, do not create a new version from it. Either investigate why the push skipped or intentionally rerun with `--force` only after confirming the target is correct.
 
 After pushing:
 
 - Verify the remote project content with `clasp pull` into a temp directory or by inspecting the script editor.
 - If a behavior test still shows old code, assume the user is running an older deployment, not project head.
+- For production versions, verify the immutable version content through the Apps Script API or Script Editor before telling the user to publish it in GCP.
 
 ## Deployment Caveat
 

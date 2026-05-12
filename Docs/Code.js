@@ -15,26 +15,28 @@ var __assign = (this && this.__assign) || function () {
 };
 /* exported onOpen, showSidebar, replaceEquations */
 var DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
-var DocsApp = {
-    getUi: function () {
-        var activeUi = DocumentApp.getUi();
-        return activeUi;
-    },
-    getBody: function () {
-        var activeBody = DocumentApp.getActiveDocument().getBody();
-        return activeBody;
-    },
-    getActive: function () {
-        var activeDoc = DocumentApp.getActiveDocument();
-        return activeDoc;
-    },
-    getPageWidth: function () {
-        var activeWidth = DocumentApp.getActiveDocument().getBody().getPageWidth();
-        return activeWidth;
-    },
-    // A \n in Docs represents a paragraph break, while a \r (\x0D) represents a break within a paragraph
-    newlineCharacter: "%0D"
-};
+function getDocsApp() {
+    return {
+        getUi: function () {
+            var activeUi = DocumentApp.getUi();
+            return activeUi;
+        },
+        getBody: function () {
+            var activeBody = DocumentApp.getActiveDocument().getBody();
+            return activeBody;
+        },
+        getActive: function () {
+            var activeDoc = DocumentApp.getActiveDocument();
+            return activeDoc;
+        },
+        getPageWidth: function () {
+            var activeWidth = DocumentApp.getActiveDocument().getBody().getPageWidth();
+            return activeWidth;
+        },
+        // A \n in Docs represents a paragraph break, while a \r (\x0D) represents a break within a paragraph
+        newlineCharacter: "%0D"
+    };
+}
 /** //8.03 - De-Render, Inline, Advanced Delimiters > Fixed Inline Not Appearing
  * Creates a menu entry in the Google Docs UI when the document is opened.
  *
@@ -44,7 +46,7 @@ var DocsApp = {
  */
 function onOpen(_e) {
     try {
-        DocsApp.getUi().createAddonMenu().addItem("Start", "showSidebar").addToUi();
+        DocumentApp.getUi().createAddonMenu().addItem("Start", "showSidebar").addToUi();
     }
     catch (error) {
         // Manual runs from the Apps Script editor do not have a document UI context.
@@ -71,7 +73,7 @@ function showSidebar() {
         .setTitle("Auto-LaTeX Equations")
         .setSandboxMode(HtmlService.SandboxMode.IFRAME) // choose mode IFRAME which is fastest option
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL); // allow third party Docs clients
-    DocsApp.getUi().showSidebar(ui);
+    DocumentApp.getUi().showSidebar(ui);
 }
 /**
  * @public
@@ -493,7 +495,7 @@ function findPos(index, renderOptions, prevFailedStartElemIfIsEmpty) {
     // hide unrelated bugs (network/render failures) behind a generic "multi-element" message.
     var range;
     try {
-        range = DocsApp.getActive().newRange()
+        range = getDocsApp().getActive().newRange()
             .addElement(startElement.getElement().asText(), startElement.getStartOffset(), endElement.getEndOffsetInclusive())
             .build();
     }
@@ -535,7 +537,7 @@ function getEquation(rangeElement, delimiters) {
         .getText()
         .substring(rangeElement.getStartOffset() + delimiters[4], rangeElement.getEndOffsetInclusive() - delimiters[4] + 1);
     Common.debugLog("See equation", equation);
-    var equationStringEncoded = Common.reEncode(equation, DocsApp); //escape deprecated
+    var equationStringEncoded = Common.reEncode(equation, getDocsApp()); //escape deprecated
     Common.reportDeltaTime(290);
     //console.log("Encoded: " + equationStringEncoded);
     return equationStringEncoded;
@@ -580,7 +582,7 @@ function clientRenderComplete(equations) {
         var equation = equations_1[_i];
         var namedRange = null;
         try {
-            namedRange = DocsApp.getActive().getNamedRangeById(equation.options.rangeId);
+            namedRange = getDocsApp().getActive().getNamedRangeById(equation.options.rangeId);
             if (!namedRange) {
                 console.warn("MathJax client render range disappeared before completion:", equation.options.rangeId);
                 continue;
@@ -705,7 +707,7 @@ function clientRenderFailed(equations) {
         var equation = equations_2[_i];
         var namedRange = null;
         try {
-            namedRange = DocsApp.getActive().getNamedRangeById(equation.options.rangeId);
+            namedRange = getDocsApp().getActive().getNamedRangeById(equation.options.rangeId);
             if (!namedRange) {
                 console.warn("Server fallback: range disappeared:", equation.options.rangeId);
                 continue;
@@ -715,7 +717,7 @@ function clientRenderFailed(equations) {
                 console.warn("Server fallback: range is empty:", equation.options.rangeId);
                 continue;
             }
-            var equationOriginal = Common.reEncode(equation.options.equation, DocsApp);
+            var equationOriginal = Common.reEncode(equation.options.equation, getDocsApp());
             // REASON: Try Texrendr and Sciweavers only - Codecogs already failed, MathJax already failed.
             var fallbackResult = renderEquationWithCompatibility(equationOriginal, {
                 size: equation.options.size,
@@ -840,14 +842,14 @@ function repairImage(paragraph, childIndex, size, renderer, delim, textCopy, res
         // TODO: When MathJax supports changing font, switch to a font that's more similar to CodeCogs
         multiple = 1.26 / 5;
     Common.reportDeltaTime(595);
-    Common.sizeImage(DocsApp, paragraph, childIndex + 1, Math.round(height * multiple), Math.round(width * multiple));
+    Common.sizeImage(getDocsApp(), paragraph, childIndex + 1, Math.round(height * multiple), Math.round(width * multiple));
     return {
         status: 8 /* DocsEquationRenderStatus.Success */,
         equationSize: oldSize
     };
 }
 function getBodyFromIndex(index) {
-    var doc = DocsApp.getActive();
+    var doc = getDocsApp().getActive();
     var p = doc.getBody().getParent();
     var all = p.getNumChildren();
     Common.assert(index < all, "index < all");
@@ -866,7 +868,7 @@ function getBodyFromIndex(index) {
 function removeAll(defaultDelimRaw) {
     var counter = 0;
     var defaultDelim = Common.getDelimiters(defaultDelimRaw);
-    for (var index = 0; index < DocsApp.getBody().getParent().getNumChildren(); index++) {
+    for (var index = 0; index < getDocsApp().getBody().getParent().getNumChildren(); index++) {
         var body = getBodyFromIndex(index);
         var img = body === null || body === void 0 ? void 0 : body.getImages(); //places all InlineImages from the active document into the array img
         for (var i = 0; i < ((img === null || img === void 0 ? void 0 : img.length) || 0); i++) {
@@ -877,7 +879,7 @@ function removeAll(defaultDelimRaw) {
             }
             // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
             // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
-            var result = Common.derenderEquation(origURL, DocsApp);
+            var result = Common.derenderEquation(origURL, getDocsApp());
             if (!result)
                 continue;
             var origEq = result.origEq, newDelim = result.delim;
@@ -946,7 +948,7 @@ function editEquations(sizeRaw, delimiter, renderer) {
         return 4 /* Common.DerenderResult.NullUrl */;
     }
     Common.debugLog("Original URL from image", origURL);
-    var result = Common.derenderEquation(origURL, DocsApp);
+    var result = Common.derenderEquation(origURL, getDocsApp());
     if (!result)
         return 2 /* Common.DerenderResult.InvalidUrl */;
     var newDelim = result.delim, origEq = result.origEq;

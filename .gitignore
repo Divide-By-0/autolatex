@@ -11,3 +11,6 @@ Slides/Code.js
 Workspace/Code.js
 Workspace/Docs.js
 Workspace/Sheets.js
+.env
+.env.*
+!.env.example
