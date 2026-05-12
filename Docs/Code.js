@@ -348,9 +348,9 @@ function getContainingTopLevelChild(element, body) {
 // What breaks if removed: every multiline equation entered with Enter raises a "End index N
 // must be >= start index M" exception in findPos and the user gets a useless generic error.
 //
-// Limitations: any rich formatting (bold/italic/font/color) on text inside the merged
-// paragraphs is collapsed because appendText only takes a string. We accept that loss because
-// the merged region is the equation itself, which gets replaced by an image anyway.
+// Limitations: rich formatting inside paragraphs that are moved during this auto-fix is not
+// preserved because appendText only takes a string. Formatting is not the failure condition;
+// the paragraph break is.
 function tryAutoMergeMultiParagraphEquation(body, startParaIdx, endParaIdx) {
     if (endParaIdx <= startParaIdx) {
         return { success: false, reason: "Paragraph indices out of order" };
@@ -382,7 +382,7 @@ function tryAutoMergeMultiParagraphEquation(body, startParaIdx, endParaIdx) {
         var text = nextPara.getText();
         // \r (\u000D) is the in-text representation of a Shift+Enter line break in Docs.
         // See newlineCharacter comment near top of this file.
-        startPara.appendText("\r" + text);
+        startPara.editAsText().appendText("\r" + text);
         nextPara.removeFromParent();
     }
     return { success: true, reason: "Merged " + numToMerge + " paragraph(s) with line breaks" };
@@ -485,8 +485,8 @@ function findPos(index, renderOptions, prevFailedStartElemIfIsEmpty) {
             }
         };
     }
-    // Same top-level container but possibly different Text children (e.g., split by inline
-    // image or formatting boundary). Detect by trying the addElement build under a try/catch
+    // Same top-level container but possibly different Text children. Detect by trying
+    // the addElement build under a try/catch
     // so we don't have to fragile-compare element references.
     // REASON: We deliberately wrap *only* the range build in try/catch, not the downstream
     // findEquationAndPlaceImage call. Catching findEquationAndPlaceImage failures here would
@@ -521,7 +521,7 @@ function findPos(index, renderOptions, prevFailedStartElemIfIsEmpty) {
                 snippet: snippet || "(unknown)",
                 hint: isStaleOffset
                     ? "This equation could not be located after a prior render. Try clicking 'Render Equations' again — it usually works on the second try."
-                    : "This equation appears to cross a formatting boundary or an inline element. Try removing any formatting changes (bold, italic, font, color) inside the $$ delimiters, or remove inline images from the equation."
+                    : "This equation appears to contain a paragraph break inside the delimiters. Use Shift+Enter instead of Enter for line breaks inside an equation."
             }
         };
     }

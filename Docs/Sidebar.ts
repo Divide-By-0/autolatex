@@ -26,6 +26,7 @@ const reportedMathJaxErrors = new Set<string>();
 let isMathJaxRenderChaining = false;
 let mathJaxRenderedCount = 0;
 let activeSidebarActionId = 0;
+let autoFixRerenderAttempted = false;
 const RENDER_BUTTON_LABEL = "Render Equations";
 const STOP_RENDER_BUTTON_LABEL = "Stop Rendering";
 const DONATE_CLICKED_STORAGE_KEY = "ale-docs-donate-clicked";
@@ -521,6 +522,18 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
       resetMathJaxRenderProgress();
     }
 
+    if (lastStatus === google.script.DocsEquationRenderStatus.Success &&
+        successCount === 0 &&
+        lastReplaceAutoFixedCount > 0 &&
+        lastReplaceFailureDetails.length === 0 &&
+        !autoFixRerenderAttempted) {
+      autoFixRerenderAttempted = true;
+      lastReplaceAutoFixedCount = 0;
+      $("#loading").html("Auto-fixed multiline equation. Rendering again...");
+      requestNextMathJaxBatch(element, actionId);
+      return;
+    }
+
     $("#loading").html('');
     restoreIdleSidebarControls();
 
@@ -582,6 +595,7 @@ function insertText(){
     return;
   }
   const actionId = beginSidebarAction();
+  autoFixRerenderAttempted = false;
   const {sizeRaw, delimiter, renderer} = getCurrentSettings();
   if (renderer === "mathjax") {
     isMathJaxRenderChaining = true;
