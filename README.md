@@ -8,15 +8,17 @@ You need to get the .clasp.json files within Docs/, Slides/, and Sheets/ by dm'i
 
 clasp is used to sync your local folder with the actual code sandbox in the Google Doc/Slide/whatever that's eventually published. We use Github for development with multiple people. You can use clasp to live update the code in the Google sandbox so you dont have to deal with push/pull anymore. More info at https://www.toptal.com/google-docs/extending-google-sheets-app-scripts.
 
-For the Common library, you can use `clasp push -w` to watch for changes and push them to this library. Dependent Apps Script projects will automatically use the development version of the library.
+For the Common library, use `npm -w Common run clasp-push` so the generated `.js` files exist before upload. Dependent Apps Script projects will automatically use the development version of the library.
 
 For any projects which depend on the Common library (Slides and Docs), the Common project ID must be added to the manifest file. The `LibraryLinker` script does this for you, and is called when using the `clasp-push` NPM script in Slides and Docs. (This script links the library, runs `clasp push`, then unlinks the library.)
 
-Therefore, to push changes to Slides and Docs, instead of using `clasp-push`, use `npm run clasp-push` in the respective directory, or use the workspace name in the root directory. (e.g. `npm -w Slides run clasp-push`)
+Therefore, to push changes to Slides and Docs, instead of using raw `clasp push`, use `npm run clasp-push` in the respective directory, or use the workspace name in the root directory. (e.g. `npm -w Slides run clasp-push`)
 
 If you would like to watch for changes, `npm -w Slides/Docs run clasp-push -- -w` will pass the `-w` flag to `clasp push`.
 
 **However**, `Ctrl+C`'ing the watch will not run the `postclasp-push` script, meaning the Common library will stay linked to the dependent project. To fix this, run `npm -w Slides/Docs run postclasp-push` after stopping the watch.
+
+Agent note: if Codex or Claude Code is handling a push or deployment task, have it read [skills/apps-script-push/SKILL.md](skills/apps-script-push/SKILL.md) first. That file documents the supported push commands, linker behavior, sidebar rebuild requirements, remote verification, and the difference between project head and versioned deployments.
 
 ## Types
 
@@ -39,7 +41,7 @@ To get types for google.script.run, the sidebar JS must be contained in its own 
 
 1. Ensure `.clasp.json` points to the production script project (the script ID should match the one in the URL bar on `script.google.com`)
 2. Set `DEBUG` to `false` in Code.ts
-3. Run `clasp push`
+3. Run `npm run clasp-push`
 4. Open the project on `script.google.com` (Auto-Latex Equations: Common library)
 5. Click Deploy -> New deployment
 6. Select the "Library" type

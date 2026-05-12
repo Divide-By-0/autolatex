@@ -42,9 +42,9 @@ declare namespace AutoLatexCommon {
          */
         reEncode(equation: string, app: IntegratedApp): string;
 
-        renderEquation(equationOriginal: string, renderOptions: RenderOptions): {equation: string, renderer: Renderer, rendererType: string, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, worked: number};
+        renderEquation(equationOriginal: string, renderOptions: RenderOptions): RenderEquationResult;
 
-        renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number): {equation: string, renderer: Renderer, rendererType: string, resp: GoogleAppsScript.URL_Fetch.HTTPResponse, worked: number};
+        renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number): RenderEquationResult;
 
         reportDeltaTime(line?: number, forcePrint?: string): number;
 
@@ -111,6 +111,21 @@ declare namespace AutoLatexCommon {
 
     }
 
+    /**
+     * Per-equation failure info surfaced from server-side rendering to the sidebar.
+     * Used by the sidebar to show users *which* equation broke and *why*, instead of a
+     * generic catch-all error.
+     */
+    export interface EquationFailureDetail {
+
+        reason: string;
+
+        snippet: string;
+
+        hint: string;
+
+    }
+
     export interface IntegratedApp {
 
         newlineCharacter: string;
@@ -130,6 +145,10 @@ declare namespace AutoLatexCommon {
      */
     export interface RenderOptions {
 
+        allowedServerFamilies?: string[];
+
+        autoFallbackToClient?: boolean;
+
         b: number;
 
         clientRender: boolean;
@@ -145,6 +164,22 @@ declare namespace AutoLatexCommon {
         r: number;
 
         size: number;
+
+    }
+
+    export interface RenderEquationResult {
+
+        authorizationError?: boolean;
+
+        equation: string;
+
+        renderer: Renderer | null;
+
+        rendererType: string;
+
+        resp: GoogleAppsScript.URL_Fetch.HTTPResponse | null;
+
+        worked: number;
 
     }
 

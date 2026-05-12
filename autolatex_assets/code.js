@@ -323,7 +323,6 @@ function getSize(sizeRaw){
 function getDelimiters(delimiters){// //HARDCODED DELIMTERS!!!!!!!!!!!!!
   if(delimiters=="$$"){return["$$", "$$", "\\\$\\\$", "\\\$\\\$"];}
   if(delimiters=="\["){return["\\[", "\\]", "\\\\\\[", "\\\\\\]"];}
-  if(delimiters=="("){return["\\(", "\\)", "\\\\\\(", "\\\\\\)"];}
   return ["\\[", "\\]", "\\\\\\[", "\\\\\\]"];
 }
 

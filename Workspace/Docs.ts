@@ -23,7 +23,8 @@ const DocsApp = {
 	getPageWidth: function() {
 		let activeWidth = DocumentApp.getActiveDocument().getBody().getPageWidth();
 		return activeWidth;
-	}
+	},
+	newlineCharacter: "%0D"
 };
 
 /**
@@ -132,7 +133,7 @@ function getEquation(paragraph: GoogleAppsScript.Document.Paragraph, childIndex:
     .getText()
     .substring(start + delimiters[4], end - delimiters[4] + 1);
     Common.debugLog("See equation", equation);
-    const equationStringEncoded = Common.reEncode(equation); //escape deprecated
+    const equationStringEncoded = Common.reEncode(equation, DocsApp); //escape deprecated
   equationOriginal.push(equationStringEncoded);
   Common.reportDeltaTime(290);
   //console.log("Encoded: " + equationStringEncoded);
@@ -332,7 +333,7 @@ function removeAll(defaultDelimRaw: string) {
       }
       // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
       // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
-      const result = Common.derenderEquation(origURL);
+      const result = Common.derenderEquation(origURL, DocsApp);
       if (!result) continue;
       const { origEq, delim: newDelim } = result;
       const delim = newDelim || defaultDelim;
@@ -384,7 +385,7 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
         return Common.DerenderResult.NullUrl;
       }
       Common.debugLog("Original URL from image", origURL);
-      const result = Common.derenderEquation(origURL);
+      const result = Common.derenderEquation(origURL, DocsApp);
       if (!result) return Common.DerenderResult.InvalidUrl;
       const { delim: newDelim, origEq } = result;
       const delim = newDelim || defaultDelim;

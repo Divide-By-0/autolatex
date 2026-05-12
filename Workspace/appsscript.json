@@ -1,13 +1,6 @@
 {
   "timeZone": "America/Los_Angeles",
   "dependencies": {
-    "enabledAdvancedServices": [
-      {
-        "userSymbol": "Analytics",
-        "serviceId": "analytics",
-        "version": "v3"
-      }
-    ],
     "libraries": [
       {
         "userSymbol": "Common",
@@ -17,6 +10,16 @@
       }
     ]
   },
+  "urlFetchWhitelist": [
+    "https://latex.codecogs.com/png.latex",
+    "https://latex.codecogs.com/gif.latex",
+    "https://www.codecogs.com/eqnedit.php",
+    "https://latex-staging.easygenerator.com/gif.latex",
+    "https://latex-staging.easygenerator.com/eqneditor/editor.php",
+    "https://texrendr.com/cgi-bin/mathtex.cgi",
+    "https://www.texrendr.com/",
+    "https://saxarona.github.io/mathjax-viewer/"
+  ],
   "addOns": {
     "common": {
       "homepageTrigger": {

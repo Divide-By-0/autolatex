@@ -12,6 +12,8 @@ declare namespace google {
 
             clientRenderComplete(equations: {options: AutoLatexCommon.ClientRenderOptions, renderedEquationB64: string}[]): void //intrinsic;
 
+            clientRenderFailed(equations: {options: AutoLatexCommon.ClientRenderOptions}[]): void //intrinsic;
+
             editEquations(sizeRaw: string, delimiter: string, renderer: string): void //reference;
 
             getKey(): void //intrinsic;
@@ -33,9 +35,13 @@ declare namespace google {
 
             AllRenderersFailed,
 
+            AuthorizationFailed,
+
             ClientRender,
 
             EmptyEquation,
+
+            MultiElementEquation,
 
             NoDocument,
 

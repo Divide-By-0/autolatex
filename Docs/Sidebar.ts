@@ -17,11 +17,16 @@ interface Window {
 declare const MathJax: MathJaxApi;
 
 // animation timeout ID
-let runDots = -1;
+// REASON: setInterval return type conflicts between DOM lib (number) and Node @types
+// (Timeout) when both are in scope during Sidebar.ts compilation. The runtime contract is
+// "either a setInterval handle or the -1 sentinel meaning 'no animation'", and clearInterval
+// accepts both. Use a permissive type so the build doesn't break on the declaration mismatch.
+let runDots: any = -1;
 const reportedMathJaxErrors = new Set<string>();
 let isMathJaxRenderChaining = false;
 let mathJaxRenderedCount = 0;
 let activeSidebarActionId = 0;
+let autoFixRerenderAttempted = false;
 const RENDER_BUTTON_LABEL = "Render Equations";
 const STOP_RENDER_BUTTON_LABEL = "Stop Rendering";
 const DONATE_CLICKED_STORAGE_KEY = "ale-docs-donate-clicked";
@@ -58,7 +63,8 @@ function normalizeError(error: unknown) {
 
 function shouldLogMathJaxErrors() {
   try {
-    return getCurrentSettings().renderer === "mathjax";
+    const renderer = getCurrentSettings().renderer;
+    return renderer === "mathjax" || renderer === "auto";
   } catch {
     return false;
   }
@@ -197,11 +203,30 @@ window.addEventListener("unhandledrejection", event => {
   reportMathJaxClientError("window.unhandledrejection", event.reason);
 });
 
+// REASON: MathJax rendering is CPU-heavy (SVG → canvas → PNG). Running too many in parallel
+// (e.g. 1000 equations) would freeze the browser. This limits concurrency to a safe number.
+const MATHJAX_CONCURRENCY_LIMIT = 4;
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await fn(items[index]);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
 /**
 * Convert a Blob to a base64 string for transmission to the server
-* 
+*
 * @param blob the blob to convert
-* @returns 
+* @returns
 */
 async function blobToB64(blob: Blob) {
   const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -389,14 +414,75 @@ function makeStatusText(successCount: number) {
   else return `Status: ${successCount} equations rendered`;
 }
 
-function successHandler({ lastStatus, successCount, clientEquations }: { lastStatus: google.script.DocsEquationRenderStatus, successCount: number, clientEquations?: AutoLatexCommon.ClientRenderOptions[] }, element: HTMLButtonElement, actionId: number) {
+// REASON: Track the most recent server response so client-side fallback paths
+// (MathJax round-trips, Texrendr/Sciweavers retries) can carry forward the auto-fix
+// count and any equation failures the server already detected. Without this,
+// successive calls would reset the counts and the user would never see them.
+let lastReplaceFailureDetails: AutoLatexCommon.EquationFailureDetail[] = [];
+let lastReplaceAutoFixedCount = 0;
+
+interface ReplaceEquationsResult {
+  lastStatus: google.script.DocsEquationRenderStatus,
+  successCount: number,
+  clientEquations?: AutoLatexCommon.ClientRenderOptions[],
+  autoFixedCount?: number,
+  failureDetails?: AutoLatexCommon.EquationFailureDetail[]
+}
+
+// REASON: Build a single HTML message that summarises every equation we couldn't render and
+// the precise hint for each one. Up to 5 equations are shown verbatim; anything beyond that
+// is collapsed into a count so the sidebar doesn't blow up vertically.
+function buildFailureDetailsHtml(failureDetails: AutoLatexCommon.EquationFailureDetail[]): string {
+  if (!failureDetails || failureDetails.length === 0) return "";
+  const escape = (s: string) => String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+  const maxShown = 5;
+  const shown = failureDetails.slice(0, maxShown);
+  const items = shown.map(detail => {
+    const snippet = detail.snippet ? `<code>${escape(detail.snippet)}</code>` : "<em>(unknown location)</em>";
+    return `<li>${snippet}<br><span class="ale-error-hint">${escape(detail.hint || "")}</span></li>`;
+  }).join("");
+  const remainder = failureDetails.length - shown.length;
+  const more = remainder > 0 ? `<div class="ale-error-more">…and ${remainder} more equation${remainder === 1 ? "" : "s"} with similar issues.</div>` : "";
+  return `<div class="ale-failure-list"><strong>${failureDetails.length} equation${failureDetails.length === 1 ? "" : "s"} could not be rendered:</strong><ul>${items}</ul>${more}</div>`;
+}
+
+function buildAutoFixedNote(autoFixedCount: number): string {
+  if (!autoFixedCount || autoFixedCount <= 0) return "";
+  return `<div class="ale-autofix-note">Auto-fixed ${autoFixedCount} multiline equation${autoFixedCount === 1 ? "" : "s"} (replaced paragraph breaks with line breaks inside the equation${autoFixedCount === 1 ? "" : "s"}).</div>`;
+}
+
+function successHandler({ lastStatus, successCount, clientEquations, autoFixedCount, failureDetails }: ReplaceEquationsResult, element: HTMLButtonElement, actionId: number) {
   if (isStaleSidebarAction(actionId)) {
     return;
   }
+
+  // REASON: The server may produce auto-fix counts and failure details on this round and on
+  // any future client-side round-trip (MathJax, Texrendr fallback). Accumulate them across
+  // rounds so the final summary in the sidebar is complete.
+  if (typeof autoFixedCount === "number" && autoFixedCount > 0) {
+    lastReplaceAutoFixedCount += autoFixedCount;
+  }
+  if (failureDetails && failureDetails.length > 0) {
+    lastReplaceFailureDetails = lastReplaceFailureDetails.concat(failureDetails);
+  }
+
   if (lastStatus === google.script.DocsEquationRenderStatus.ClientRender) {
+    // REASON: In auto mode, enable chaining lazily when we first need client rendering.
+    // This avoids an unnecessary extra round-trip when all equations succeed with Codecogs.
+    if (!isMathJaxRenderChaining) {
+      isMathJaxRenderChaining = true;
+      mathJaxRenderedCount = successCount; // count any server-side (Codecogs) successes
+      setRenderButtonState(true);
+    }
+
     // we're not done yet - these equations need to be rendered on the client
     const equationsToRender = clientEquations || [];
-    Promise.all(equationsToRender.map(async c => ({ options: c, renderedEquationB64: await renderMathJaxEquation(c).then(b => blobToB64(b)) })))
+    mapWithConcurrency(equationsToRender, MATHJAX_CONCURRENCY_LIMIT, async c => ({ options: c, renderedEquationB64: await renderMathJaxEquation(c).then(b => blobToB64(b)) }))
       .then(rendered => {
         if (isStaleSidebarAction(actionId)) {
           return;
@@ -409,7 +495,20 @@ function successHandler({ lastStatus, successCount, clientEquations }: { lastSta
       })
       .catch(err => {
         reportMathJaxClientError("clientRenderBatch", err, { equationCount: equationsToRender.length });
-        errorHandler(err, element, actionId);
+        // REASON: In auto mode, if MathJax fails, try remaining server renderers (Texrendr/Sciweavers)
+        // instead of showing an error immediately.
+        if (getCurrentSettings().renderer === "auto") {
+          if (isStaleSidebarAction(actionId)) {
+            return;
+          }
+          google.script.run
+            .withSuccessHandler((result, userObject) => successHandler(result, userObject, actionId))
+            .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
+            .withUserObject(element)
+            .clientRenderFailed(equationsToRender.map(c => ({ options: c })));
+        } else {
+          errorHandler(err, element, actionId);
+        }
       });
   } else {
     const roundSuccessCount = successCount;
@@ -423,18 +522,47 @@ function successHandler({ lastStatus, successCount, clientEquations }: { lastSta
       resetMathJaxRenderProgress();
     }
 
+    if (lastStatus === google.script.DocsEquationRenderStatus.Success &&
+        successCount === 0 &&
+        lastReplaceAutoFixedCount > 0 &&
+        lastReplaceFailureDetails.length === 0 &&
+        !autoFixRerenderAttempted) {
+      autoFixRerenderAttempted = true;
+      lastReplaceAutoFixedCount = 0;
+      $("#loading").html("Auto-fixed multiline equation. Rendering again...");
+      requestNextMathJaxBatch(element, actionId);
+      return;
+    }
+
     $("#loading").html('');
     restoreIdleSidebarControls();
-    
+
     const statusText = makeStatusText(successCount);
-    
-    if (lastStatus === google.script.DocsEquationRenderStatus.NoDocument)
-      showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", statusText);
-    else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount > 0)
-      showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used.", statusText);
-    else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount === 0)
-      showError("Sorry, likely (temporarily) unavailable commands (i.e. align, &) were used or the equation was too long.", statusText);
-    else {
+    const autoFixHtml = buildAutoFixedNote(lastReplaceAutoFixedCount);
+    const failureHtml = buildFailureDetailsHtml(lastReplaceFailureDetails);
+    // Reset accumulators now that we're rendering the final summary for this run.
+    const accumulatedFailures = lastReplaceFailureDetails;
+    lastReplaceFailureDetails = [];
+    lastReplaceAutoFixedCount = 0;
+
+    if (lastStatus === google.script.DocsEquationRenderStatus.NoDocument) {
+      showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts." + autoFixHtml + failureHtml, statusText);
+    } else if (lastStatus === google.script.DocsEquationRenderStatus.AuthorizationFailed) {
+      showError("<strong>Auto-LaTeX is missing permission to call external renderers.</strong> Try uninstalling and reinstalling the add-on, then click 'Select all' on the permissions screen. The equation may be valid; Google has not granted the add-on external request access yet." + autoFixHtml + failureHtml, statusText);
+    } else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount > 0) {
+      showError("Sorry, an equation is incorrect, or (temporarily) unavailable commands (i.e. align, &) were used." + autoFixHtml + failureHtml, statusText);
+    } else if (lastStatus === google.script.DocsEquationRenderStatus.AllRenderersFailed && successCount === 0) {
+      showError("Sorry, likely (temporarily) unavailable commands (i.e. align, &) were used or the equation was too long." + autoFixHtml + failureHtml, statusText);
+    } else if (accumulatedFailures.length > 0) {
+      // REASON: We rendered some equations successfully but skipped others with structural
+      // issues (multi-paragraph or multi-element). Show a precise breakdown so the user knows
+      // exactly which equations need a manual fix.
+      showError("Some equations could not be rendered automatically." + autoFixHtml + failureHtml, statusText);
+    } else if (autoFixHtml) {
+      // Pure auto-fix success: surface a soft note instead of an error so the user knows we
+      // touched their doc, but doesn't see a scary red error block.
+      $("#loading").html(statusText + autoFixHtml);
+    } else {
       $("#loading").html(statusText);
     }
   }
@@ -449,7 +577,17 @@ function errorHandler(msg, element, actionId: number) {
   restoreIdleSidebarControls();
   console.error("Error console errored!", msg, element);
   reportMathJaxClientError("sidebar.errorHandler", msg);
-  showError("<strong>Ensure you clicked 'Select all' on the permissions screen. If not, try uninstalling and reinstalling the add-on to redo permissions.</strong> Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between, or reload the page. If authorization required, try signing out of other google accounts.", "Status: Error, please reload.");
+
+  // REASON: If the server already detected and reported some equation failures before throwing
+  // (e.g. it auto-fixed three multiline equations and then a fourth one hit an unrelated bug),
+  // surface those auto-fixes and failure details to the user instead of dropping them on the
+  // floor with the legacy generic message.
+  const autoFixHtml = buildAutoFixedNote(lastReplaceAutoFixedCount);
+  const failureHtml = buildFailureDetailsHtml(lastReplaceFailureDetails);
+  lastReplaceFailureDetails = [];
+  lastReplaceAutoFixedCount = 0;
+
+  showError("<strong>Ensure you clicked 'Select all' on the permissions screen. If not, try uninstalling and reinstalling the add-on to redo permissions.</strong> Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between (use Shift+Enter for line breaks inside an equation), or reload the page. If authorization required, try signing out of other google accounts." + autoFixHtml + failureHtml, "Status: Error, please reload.");
 }
   
 function insertText(){ 
@@ -457,6 +595,7 @@ function insertText(){
     return;
   }
   const actionId = beginSidebarAction();
+  autoFixRerenderAttempted = false;
   const {sizeRaw, delimiter, renderer} = getCurrentSettings();
   if (renderer === "mathjax") {
     isMathJaxRenderChaining = true;
@@ -504,7 +643,12 @@ function editText(){
             showError("Cannot retrieve equation. Is your cursor before an Auto-LaTeX rendered equation?", "Status: Error, please move cursor before inline equation.");
             break;
           case AutoLatexCommon.DerenderResult.NonExistentElement:
-            showError("Cannot insert text here. Is your cursor before an equation?", "Status: Error, please move cursor before equation.");
+            // REASON: This status now also covers two distinct cases the server defensively
+            // detects: (a) the cursor is on plain text instead of on the equation image, and
+            // (b) the cursor is inside an unsupported element type (table cell, footnote,
+            // table of contents). Both used to crash with a TypeError. The combined hint
+            // covers both without forcing a new enum value.
+            showError("Place your cursor immediately before the rendered equation image and try again. De-render only works on equations rendered by Auto-LaTeX inside a normal paragraph - it doesn't work inside tables, footnotes, or on plain text.", "Status: Error, please move cursor before the equation image.");
             break;
           case AutoLatexCommon.DerenderResult.CursorNotFound:
             showError("Cannot find a cursor/equation. Please click before an equation.", "Status: Error, please move cursor before equation.");

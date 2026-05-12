@@ -21,7 +21,9 @@ function generateWorkspaceHomepage(status: string, error: string | null = null) 
 
   const delims = [
     ["$$ ... $$", "$$"],
-    ["\\[ ... \\]", "\["]
+    ["\\[ ... \\]", "["],
+    ["\\( ... \\)", "("],
+    ["$ ... $", "$"]
   ];
   const renderers = [
     ["Automatic", "auto"],

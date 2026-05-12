@@ -1,6 +1,9 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": {
-    "typeRoots": ["../node_modules/@types"]
-  }
+    "typeRoots": ["../node_modules/@types", "../types"],
+    "types": ["google-apps-script", "common-types"],
+    "skipLibCheck": true
+  },
+  "files": ["Code.ts", "Docs.ts", "Sheets.ts"]
 }

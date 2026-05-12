@@ -4,3 +4,13 @@
 Slides/Sidebar.js
 Docs/Sidebar.js
 SidebarJS.html
+Common/Code.js
+Common/Unicode.js
+Docs/Code.js
+Slides/Code.js
+Workspace/Code.js
+Workspace/Docs.js
+Workspace/Sheets.js
+.env
+.env.*
+!.env.example

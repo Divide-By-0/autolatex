@@ -1,18 +1,11 @@
 {
   "timeZone": "America/Los_Angeles",
   "dependencies": {
-    "enabledAdvancedServices": [
-      {
-        "userSymbol": "Analytics",
-        "serviceId": "analytics",
-        "version": "v3"
-      }
-    ],
     "libraries": [
       {
         "userSymbol": "Common",
         "version": "0",
-        "libraryId": "",
+        "libraryId": "1uvjXsMOV3WRrN6wEFVDVEuuc7-ygpMynvy1B1Dy4AOoWXBrQa4Cu4ZA7",
         "developmentMode": true
       }
     ]
