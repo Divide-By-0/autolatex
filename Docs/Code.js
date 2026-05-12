@@ -93,6 +93,26 @@ function getKey() {
 function logMathJaxClientError(payloadJson) {
     console.error("MathJax client error:", payloadJson);
 }
+/**
+ * Returns the OAuth consent URL the user needs to visit to grant any
+ * still-missing scopes, or null if everything is already authorized.
+ *
+ * REASON: Prod logs show a steady drip of `You do not have permission to call
+ * DocumentApp.getActiveDocument` (and the equivalent in 10+ languages) — users
+ * landing in the sidebar before they've granted documents.currentonly. Rather
+ * than throwing a scary stack trace at them, the sidebar can call this helper
+ * and present a clean "Click here to authorize" link that opens the consent
+ * screen in a new tab.
+ *
+ * @public
+ */
+function getAuthorizationUrl() {
+    var info = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+    if (info.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.REQUIRED) {
+        return info.getAuthorizationUrl();
+    }
+    return null;
+}
 function getRgbFromHex(colorHex) {
     if (!colorHex || !/^#[0-9a-fA-F]{6}$/.test(colorHex)) {
         return [0, 0, 0];
@@ -758,12 +778,46 @@ function clientRenderFailed(equations) {
         successCount: c
     };
 }
+// REASON: The Text element's direct parent is normally a Paragraph or ListItem (both
+// have insertInlineImage). But equations can also live inside structures whose direct
+// parent doesn't expose insertInlineImage — e.g. smart-chip wrappers, rich-link
+// containers, equations dragged inside a Drawing's text frame, certain
+// programmatically-inserted templates. Rather than crashing with
+// `paragraph.insertInlineImage is not a function`, walk up the ancestor chain to find a
+// container that does support it (TableCell, Body, FootnoteSection, etc. all do). The
+// caller inserts at childIndex of the *direct descendant* of that container that
+// contains the equation, which keeps the image visually adjacent to the source text.
+// Caps at 6 levels of ancestor traversal so we never spin on a malformed tree.
+function findInsertableAncestor(element) {
+    var current = element.getParent();
+    var direct = element;
+    for (var steps = 0; current && steps < 6; steps++) {
+        if (typeof current.insertInlineImage === "function") {
+            return { container: current, directChild: direct };
+        }
+        direct = current;
+        current = current.getParent();
+    }
+    return null;
+}
 function placeImage(startElement, renderedEquation, renderer, equation, size, delim) {
     // GET VARIABLES
     var textElement = startElement.getElement().asText();
     var text = textElement.getText();
-    var paragraph = textElement.getParent();
-    var childIndex = paragraph.getChildIndex(textElement); //gets index of found text in paragaph
+    var ancestor = findInsertableAncestor(textElement);
+    if (!ancestor) {
+        var directParent = textElement.getParent();
+        var parentType = directParent && typeof directParent.getType === "function" ? String(directParent.getType()) : "<unknown>";
+        console.error("placeImage: no ancestor within 6 levels supports insertInlineImage. directParentType=", parentType, " equation=", equation);
+        throw new Error("Cannot place image: equation is in an unsupported container (direct parent type ".concat(parentType, "). Inline images can't be inserted here."));
+    }
+    // REASON: TypeScript's union of insertable containers (Body, TableCell, FootnoteSection,
+    // Paragraph, ListItem, ...) is wide; the methods we actually call (insertInlineImage,
+    // insertText, getChild, getChildIndex) exist on all of them at runtime. Cast to the
+    // existing ListItem|Paragraph signature so the rest of the function and repairImage
+    // continue to compile unchanged.
+    var paragraph = ancestor.container;
+    var childIndex = paragraph.getChildIndex(ancestor.directChild); //gets index of found text (or its containing wrapper) in the insertable ancestor
     var textCopy = textElement.asText().copy();
     var endLimit = startElement.getEndOffsetInclusive();
     if (text.length - 1 < endLimit)

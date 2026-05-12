@@ -16,6 +16,8 @@ declare namespace google {
 
             editEquations(sizeRaw: string, delimiter: string, renderer: string): void //reference;
 
+            getAuthorizationUrl(): void //intrinsic;
+
             getKey(): void //intrinsic;
 
             logMathJaxClientError(payloadJson: string): void //intrinsic;

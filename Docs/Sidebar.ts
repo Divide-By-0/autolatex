@@ -190,6 +190,20 @@ function requestNextMathJaxBatch(element: HTMLButtonElement, actionId: number) {
 }
 
 window.addEventListener("error", event => {
+  // REASON: Browsers blank the message to "Script error." with empty filename/lineno
+  // when a cross-origin script throws without CORS. We now load MathJax with
+  // crossorigin="anonymous" (see BuildSidebarJS.js) so real errors come through,
+  // but third-party scripts injected by Chrome extensions / corporate proxies will
+  // still emit this opaque shape — and there is nothing actionable in those rows.
+  // Drop them at the source so Cloud Logging shows real bugs instead of noise.
+  const isOpaqueCorsError =
+    (event.message === "Script error." || event.message === "Script error") &&
+    !event.filename &&
+    !event.lineno &&
+    !event.colno;
+  if (isOpaqueCorsError) {
+    return;
+  }
   if (event.error || shouldLogMathJaxErrors()) {
     reportMathJaxClientError("window.error", event.error || event.message, {
       filename: event.filename,
@@ -568,6 +582,41 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
   }
 }
 
+// REASON: Match the server-side "Exception: You do not have permission to call …"
+// message across the languages we've actually observed in prod logs
+// (en, es, fr, it, ko, uk). Looser than parsing the link because the link text is
+// stable but the prose around it varies. If a user hits this in a locale we
+// haven't enumerated, they fall through to the generic message — harmless.
+function isAuthorizationError(msg: unknown): boolean {
+  const text = typeof msg === "string" ? msg : (msg && typeof msg === "object" && "message" in msg ? String((msg as { message: unknown }).message) : "");
+  if (!text) return false;
+  return /permission to call|Authorization is required|Authori[sz]ation is required|необхідн[аі] [^ ]* дозвол|необходим|권한이 없|permiso para llamar|autorisations requises|autorizzazione|disposer des autorisations/i.test(text);
+}
+
+function showAuthorizationPrompt(statusText: string) {
+  google.script.run
+    .withSuccessHandler((authUrl: string | null) => {
+      if (authUrl) {
+        showError(
+          `<strong>Auto-LaTeX needs your permission to read this document.</strong> <a href="${authUrl}" target="_blank" rel="noopener">Click here to authorize</a>, then come back and try again.`,
+          statusText
+        );
+      } else {
+        showError(
+          "<strong>Authorization is required.</strong> Try reloading the document or signing out of any other Google accounts in this tab. If that doesn't help, reinstall the add-on and click 'Select all' on the permissions screen.",
+          statusText
+        );
+      }
+    })
+    .withFailureHandler(() => {
+      showError(
+        "<strong>Authorization is required.</strong> Reload the document or reinstall the add-on (click 'Select all' on the permissions screen).",
+        statusText
+      );
+    })
+    .getAuthorizationUrl();
+}
+
 function errorHandler(msg, element, actionId: number) {
   if (isStaleSidebarAction(actionId)) {
     return;
@@ -586,6 +635,14 @@ function errorHandler(msg, element, actionId: number) {
   const failureHtml = buildFailureDetailsHtml(lastReplaceFailureDetails);
   lastReplaceFailureDetails = [];
   lastReplaceAutoFixedCount = 0;
+
+  if (isAuthorizationError(msg)) {
+    // REASON: Don't dump the stack trace at the user when they just haven't granted
+    // documents.currentonly yet. Get the OAuth URL from the server and show a clean
+    // "Click here to authorize" link.
+    showAuthorizationPrompt("Status: Authorization required");
+    return;
+  }
 
   showError("<strong>Ensure you clicked 'Select all' on the permissions screen. If not, try uninstalling and reinstalling the add-on to redo permissions.</strong> Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between (use Shift+Enter for line breaks inside an equation), or reload the page. If authorization required, try signing out of other google accounts." + autoFixHtml + failureHtml, "Status: Error, please reload.");
 }

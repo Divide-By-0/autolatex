@@ -1085,7 +1085,22 @@ function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoL
   // debugLog("Left: " + positionX)
   const positionY = image.getTop(); // returns vertical position
   
-  let derenderData: DerenderData | [number, number, number, string, number] = JSON.parse(image.getTitle());
+  // REASON: image.getTitle() is empty for images that weren't placed by Auto-LaTeX
+  // (e.g. user-pasted screenshots, charts, other add-ons' images). JSON.parse("") throws
+  // SyntaxError: Unexpected end of JSON input — we used to surface that to the user as a
+  // raw crash from removeAll. Treat empty / unparseable titles as "not our image" and
+  // bail out cleanly so the iteration in removeAll just skips this one.
+  const rawTitle = image.getTitle();
+  if (!rawTitle || !rawTitle.trim()) {
+    return Common.DerenderResult.InvalidUrl;
+  }
+  let derenderData: DerenderData | [number, number, number, string, number];
+  try {
+    derenderData = JSON.parse(rawTitle);
+  } catch (err) {
+    console.log("derenderImage: image title is not Auto-LaTeX JSON; skipping.", rawTitle, err);
+    return Common.DerenderResult.InvalidUrl;
+  }
   
   if (Array.isArray(derenderData)) { 
     // backwards-compatibility - we use an object now

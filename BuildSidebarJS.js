@@ -24,8 +24,14 @@ window.MathJax = {
 
 function wrapJS(sidebarJS, includeMathJax) {
   const mathJaxSetup = includeMathJax ? getMathJaxSetup() : "";
+  // REASON: crossorigin="anonymous" makes the browser surface real error
+  // details (message/filename/lineno/stack) in window.onerror for this
+  // cross-origin script. Without it, every MathJax failure inside the sandboxed
+  // iframe gets reported as the opaque "Script error." — which dominated our
+  // Cloud Logging signal. The jsdelivr CDN serves the proper
+  // Access-Control-Allow-Origin header, so this is purely an opt-in on our side.
   const mathJaxScript = includeMathJax
-    ? '\n<script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>'
+    ? '\n<script type="text/javascript" id="MathJax-script" async crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>'
     : "";
 
   return `<script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
