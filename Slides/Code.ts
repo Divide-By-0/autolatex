@@ -46,6 +46,12 @@ const enum SlidesEquationRenderStatus {
   ClientRender,
   NoPresentation,
   Success,
+  // REASON: Distinguish UrlFetchApp authorization errors from generic renderer failure
+  // so the sidebar can show a "reinstall and click Select all" message instead of the
+  // misleading "an equation is incorrect" copy. Must be appended; const enum order is
+  // load-bearing because SlidesClientRenderStatus in Sidebar.ts must produce the same
+  // numeric values when both files are compiled independently.
+  AuthorizationFailed,
 }
 
 interface SlidesEquationRenderResult {
@@ -817,8 +823,11 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
     return [renderOptions.defaultSize, 1];
   }
 
-  const { renderer, rendererType, worked } = Common.renderEquation(equationOriginal, renderOptions); 
-  if (worked > Common.capableRenderers) return -100000;
+  const { renderer, rendererType, worked, authorizationError } = Common.renderEquation(equationOriginal, renderOptions);
+  // REASON: -100001 marks an auth-permission failure so callers (clientRenderFailed) can
+  // surface a "reinstall and grant external_request" message instead of treating it as a
+  // generic renderer-down error. -100000 stays the generic-failure sentinel.
+  if (worked > Common.capableRenderers) return authorizationError ? -100001 : -100000;
   var doc = IntegratedApp.getBody();
   var body = doc[slideNum];
 
@@ -1005,6 +1014,7 @@ function clientRenderComplete(equations: SlidesClientRenderPayload[]): SlidesEqu
  */
 function clientRenderFailed(equations: { options: SlidesClientRenderOptions }[]): SlidesEquationRenderResult {
   let successCount = 0;
+  let authorizationFailure = false;
 
   for (const equation of equations) {
     try {
@@ -1035,6 +1045,10 @@ function clientRenderFailed(equations: { options: SlidesClientRenderOptions }[])
 
       if (Array.isArray(result) && result[1] === 1) {
         successCount++;
+      } else if (result === -100001) {
+        // REASON: placeImage signals UrlFetchApp auth failure with -100001 so we can
+        // distinguish it from a generic renderer outage for the sidebar's error copy.
+        authorizationFailure = true;
       }
     } catch (error) {
       console.error("Slides server fallback render failed.", error);
@@ -1042,7 +1056,11 @@ function clientRenderFailed(equations: { options: SlidesClientRenderOptions }[])
   }
 
   return {
-    lastStatus: successCount > 0 ? SlidesEquationRenderStatus.Success : SlidesEquationRenderStatus.AllRenderersFailed,
+    lastStatus: successCount > 0
+      ? SlidesEquationRenderStatus.Success
+      : authorizationFailure
+        ? SlidesEquationRenderStatus.AuthorizationFailed
+        : SlidesEquationRenderStatus.AllRenderersFailed,
     successCount
   };
 }

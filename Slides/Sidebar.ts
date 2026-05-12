@@ -44,6 +44,10 @@ const enum SlidesClientRenderStatus {
   ClientRender,
   NoPresentation,
   Success,
+  // REASON: Must mirror Code.ts SlidesEquationRenderStatus exactly. const enums get
+  // inlined as numbers per file at compile time, so the order here has to match the
+  // server-side definition or values arriving via google.script.run will be misread.
+  AuthorizationFailed,
 }
 
 function isSlidesEquationRenderResult(value: unknown): value is SlidesClientEquationRenderResult {
@@ -291,6 +295,8 @@ function insertText(){
     const statusText = makeSlidesRenderStatusText(mathJaxRenderedCount);
     if (result.lastStatus === SlidesClientRenderStatus.NoPresentation)
       showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", statusText);
+    else if (result.lastStatus === SlidesClientRenderStatus.AuthorizationFailed)
+      showError("<strong>Auto-LaTeX is missing permission to call external renderers.</strong> Try uninstalling and reinstalling the add-on, then click 'Select all' on the permissions screen. The equation may be valid; Google has not granted the add-on external request access yet.", statusText);
     else if (result.lastStatus === SlidesClientRenderStatus.AllRenderersFailed && mathJaxRenderedCount > 0)
       showError("Sorry, the equation is too long or another problem occurred.", statusText);
     else if (result.lastStatus === SlidesClientRenderStatus.AllRenderersFailed && mathJaxRenderedCount === 0)

@@ -22,10 +22,13 @@ Do not hard-code production script IDs in this skill. If production IDs are need
 
 - `AUTOLATEX_PROD_COMMON_SCRIPT_ID`
 - `AUTOLATEX_PROD_DOCS_SCRIPT_ID`
+- `AUTOLATEX_PROD_SLIDES_SCRIPT_ID` — the live Slides Marketplace add-on; what `Slides/.clasp.json` points at by default.
+- `AUTOLATEX_PROD_SLIDES_VERSIONS_SCRIPT_ID` — separate Slides project where new prod versions are cut before the SDK App Config flips to them. Not the live add-on, but still production-adjacent.
+- `AUTOLATEX_TEST_SLIDES_SCRIPT_ID` — Slides sandbox for ad-hoc testing; safe to push freely.
 
 Do not push test or debugging changes to these production projects unless the user explicitly asks for a production push or restore. This is especially important for `Common`: some already-published Docs versions may reference `Common` with `version: "0"` and `developmentMode: true`, so pushing `Common` HEAD can immediately change production behavior without a new Docs version or Marketplace publish.
 
-For testing, use a separate Apps Script project or deployment, not production `Common` or production `Docs`. Before any push, print the target `.clasp.json` script ID and say whether it matches a production ID from `.env`, is a non-production target, or cannot be classified because `.env` is missing.
+For testing, use the Slides test sandbox (`AUTOLATEX_TEST_SLIDES_SCRIPT_ID`) or a separate Apps Script project, not production `Common`, `Docs`, or the live Slides add-on. Before any push, print the target `.clasp.json` script ID and say which env-var (if any) it matches, or that it cannot be classified because `.env` is missing.
 
 Do not create Apps Script versions, deployments, or ask the user to update Marketplace SDK App Configuration unless the user explicitly requests a production release or rollback. If a version/deployment is created by mistake, mark it as unused and do not tell the user to publish it.
 
@@ -47,6 +50,17 @@ node ../LibraryLinker.js unlink Docs
 ```
 
 Swap `Docs` for `Slides` or `Workspace` as needed.
+
+### Pushing Slides to a non-default script ID
+
+The checked-in `Slides/.clasp.json` always points at `AUTOLATEX_PROD_SLIDES_SCRIPT_ID` (the live Marketplace add-on). To push to `AUTOLATEX_PROD_SLIDES_VERSIONS_SCRIPT_ID` or `AUTOLATEX_TEST_SLIDES_SCRIPT_ID` instead:
+
+1. `cp Slides/.clasp.json Slides/.clasp.json.bak`
+2. Overwrite `Slides/.clasp.json` with `{"scriptId":"<target>"}` (the staging/test projects don't have GCP `projectId` linkage).
+3. Run `npm run clasp-push --common_version=<n> -- --force` from `Slides/`. The `--force` is needed because `clasp` sees the local tree as unchanged after the previous push and skips otherwise.
+4. Restore `Slides/.clasp.json` from `.clasp.json.bak` and delete the backup.
+
+Always restore before doing anything else — a left-over wrong script ID in `.clasp.json` is how a test push lands on the live add-on.
 
 ## Validation
 

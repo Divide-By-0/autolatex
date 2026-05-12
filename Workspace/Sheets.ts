@@ -14,8 +14,38 @@ const SheetsApp = {
 	getPageWidth: function() {
 		let activeWidth = SpreadsheetApp.getActiveSheet().getMaxRows();
 		return activeWidth;
-	}
+	},
+	newlineCharacter: "%0A"
 };
+
+const SheetsIntegratedApp = SheetsApp as unknown as AutoLatexCommon.IntegratedApp;
+const SHEETS_INLINE_IMAGE_METADATA_KEY = "autolatex-inline-image";
+
+type SheetImage = GoogleAppsScript.Spreadsheet.OverGridImage | GoogleAppsScript.Spreadsheet.CellImage;
+type SheetImageAltText = [number, number, number, string];
+
+function buildSheetImageAltText(color: [number, number, number], origURL: string): string {
+  return JSON.stringify([...color, origURL]);
+}
+
+function parseSheetImageAltText(image: SheetImage): SheetImageAltText | null {
+  try {
+    const parsed = JSON.parse(image.getAltTextDescription());
+    if (!Array.isArray(parsed) || parsed.length < 4) return null;
+    const [red, green, blue, origURL] = parsed;
+    if (origURL === null || origURL === undefined || origURL === "") return null;
+    return [Number(red), Number(green), Number(blue), String(origURL)];
+  } catch (err) {
+    console.log("Could not parse Auto-LaTeX Sheets image alt text.");
+    return null;
+  }
+}
+
+function removeInlineImageMetadata(cell: GoogleAppsScript.Spreadsheet.Range) {
+  cell.getDeveloperMetadata()
+    .filter(metadata => metadata.getKey() === SHEETS_INLINE_IMAGE_METADATA_KEY)
+    .forEach(metadata => metadata.remove());
+}
 
 /**
  * Constantly keep replacing latex till all are finished
@@ -38,7 +68,10 @@ function replaceEquationsSheets(sizeRaw: string, delimiter: string, renderer: st
   
   for (let match = textFinder.findNext(); match !== null; match = textFinder.findNext()) {
     // Remove the delimiters
-    const [, equationOriginal] = (<string>match.getValue()).match(regex);
+    const matchValue = String(match.getValue());
+    const regexMatch = matchValue.match(regex);
+    if (!regexMatch) continue;
+    const [, equationOriginal] = regexMatch;
     if (equationOriginal === "") continue;
 
     // Get the color
@@ -48,10 +81,11 @@ function replaceEquationsSheets(sizeRaw: string, delimiter: string, renderer: st
       color = [rangeColor.getRed(), rangeColor.getGreen(), rangeColor.getBlue()];
     }
 
-    let { renderer, worked, rendererType, resp } = Common.renderEquation(Common.reEncode(equationOriginal), quality, delim, isInline, ...color);
-    if (worked > Common.capableRenderers) return Common.encodeFlag(-2, counter);
+    const equationEncoded = Common.reEncode(equationOriginal, SheetsIntegratedApp);
+    let { renderer, worked, rendererType, resp } = Common.renderEquation(equationEncoded, quality, delim, isInline, ...color);
+    if (worked > Common.capableRenderers || !renderer || !resp) return Common.encodeFlag(-2, counter);
 
-    const titleJson = JSON.stringify([...color, renderer[2] + equationOriginal + "#" + delim[6]]);
+    const titleJson = buildSheetImageAltText(color, renderer[2] + equationEncoded + "#" + delim[6]);
 
     if (isInline) {
       // An in-cell image. Resizes with the cell
@@ -63,7 +97,7 @@ function replaceEquationsSheets(sizeRaw: string, delimiter: string, renderer: st
       match.setValue(image);
 
       // This is so that we can easily find it when derendering everything
-      match.addDeveloperMetadata("autolatex-inline-image", GoogleAppsScript.Spreadsheet.DeveloperMetadataVisibility.PROJECT);
+      match.addDeveloperMetadata(SHEETS_INLINE_IMAGE_METADATA_KEY, GoogleAppsScript.Spreadsheet.DeveloperMetadataVisibility.PROJECT);
     } else {
       // An over-grid image
       const newSize = size || match.getFontSize();
@@ -77,7 +111,7 @@ function replaceEquationsSheets(sizeRaw: string, delimiter: string, renderer: st
         scale = (newSize / 200.0);
       else if (rendererType.valueOf() === "Sciweavers".valueOf())
         //Scieweavers
-        scale = (1 / 98.0);
+        scale = (newSize / 98.0);
       else if (rendererType.valueOf() === "Sciweavers_old".valueOf())
         //C [75.4, 79.6] on width and height ratio
         scale = (newSize / 76.0);
@@ -114,7 +148,10 @@ function resizeSheetImage(image: GoogleAppsScript.Spreadsheet.OverGridImage, sca
 }
 
 function isCellImage(value: any): value is GoogleAppsScript.Spreadsheet.CellImage {
-  return value.valueType === SpreadsheetApp.ValueType.IMAGE;
+  return value
+    && typeof value.getAltTextDescription === "function"
+    && typeof value.getContentUrl === "function"
+    && typeof value.toBuilder === "function";
 }
 
 /**
@@ -132,7 +169,9 @@ function derenderEquationSheets(sizeRaw: string, delimiter: string, renderer: st
   if (cell) {
     const val = cell.getValue();
     if (isCellImage(val)) {
-      return derenderSingleSheetImage(val, cell, defaultDelim);
+      const result = derenderSingleSheetImage(val, cell, defaultDelim);
+      if (result === Common.DerenderResult.Success) removeInlineImageMetadata(cell);
+      return result;
     } else {
       // Iterate over all of the OverGridImages on the sheet until we find the one
       const images = SheetsApp.getBody().getImages();
@@ -166,18 +205,36 @@ function derenderAllSheets(delimiter: string) {
     }
   });
 
-  // TODO: Derender cell images
+  SheetsApp.getActive().getSheets().forEach(sheet => {
+    const range = sheet.getDataRange();
+    const values = range.getValues();
+
+    values.forEach((row, rowOffset) => {
+      row.forEach((value, colOffset) => {
+        if (!isCellImage(value)) return;
+
+        const cell = range.offset(rowOffset, colOffset, 1, 1);
+        const result = derenderSingleSheetImage(value, cell, defaultDelim);
+        if (result === Common.DerenderResult.Success) {
+          removeInlineImageMetadata(cell);
+          successCount++;
+        }
+      });
+    });
+  });
 
   return successCount;
 }
 
 function derenderSingleSheetImage(image: GoogleAppsScript.Spreadsheet.OverGridImage | GoogleAppsScript.Spreadsheet.CellImage, cell: GoogleAppsScript.Spreadsheet.Range, defaultDelim: AutoLatexCommon.Delimiter) {
-  const [red, green, blue, origURL] = JSON.parse(image.getAltTextDescription());
-  const colors = [red, green, blue].map((x: string) => Number(x).toString(16).padStart(2, '0'));
+  const parsedAltText = parseSheetImageAltText(image);
+  if (!parsedAltText) return Common.DerenderResult.InvalidUrl;
+  const [red, green, blue, origURL] = parsedAltText;
+  const colors = [red, green, blue].map(x => Number(x).toString(16).padStart(2, '0'));
 
   if (!origURL) return Common.DerenderResult.NullUrl;
 
-  const result = Common.derenderEquation(origURL);
+  const result = Common.derenderEquation(origURL, SheetsIntegratedApp);
   if (!result) return Common.DerenderResult.InvalidUrl;
   const { delim: newDelim, origEq } = result;
   const delim = newDelim || defaultDelim;
