@@ -1,6 +1,6 @@
 ---
 name: apps-script-push
-description: Use when pushing this repo's Common, Docs, Slides, or Workspace projects to their remote Google Apps Script projects, especially when library linking, sidebar builds, or deployment/version confusion could cause a bad push.
+description: Use when pushing this repo's Common, Docs, Slides, Sheets, or Workspace projects to their remote Google Apps Script projects, especially when library linking, sidebar builds, or deployment/version confusion could cause a bad push.
 ---
 
 # Apps Script Push
@@ -12,7 +12,7 @@ Use this workflow for any request to push code from this repo to the remote Apps
 - `Common`: run `clasp push` from [Common/.clasp.json](/Users/aayushgupta/Documents/.projects.nosync/autolatex/Common/.clasp.json).
 - `Docs`: run `npm run clasp-push` from [Docs/package.json](/Users/aayushgupta/Documents/.projects.nosync/autolatex/Docs/package.json).
 - `Slides`: run `npm run clasp-push` from [Slides/package.json](/Users/aayushgupta/Documents/.projects.nosync/autolatex/Slides/package.json).
-- `Workspace`: run `npm run clasp-push` from [Workspace/package.json](/Users/aayushgupta/Documents/.projects.nosync/autolatex/Workspace/package.json).
+- `Sheets`: run `npm run clasp-push` from [Sheets/package.json](/Users/aayushgupta/Documents/.projects.nosync/autolatex/Sheets/package.json). Sheets is a real SpreadsheetApp-based project as of 2026-05-18 (previously it was a stale DocumentApp fork); it links Common like Docs/Slides do.
 
 ## Production Safety
 
@@ -34,11 +34,11 @@ Do not create Apps Script versions, deployments, or ask the user to update Marke
 
 ## Why `npm run clasp-push`
 
-For `Docs`, `Slides`, and `Workspace`, do not use raw `clasp push` by default.
+For `Docs`, `Slides`, `Sheets`, and `Workspace`, do not use raw `clasp push` by default.
 
 - The checked-in manifest keeps the `Common` library ID blank.
 - The `preclasp-push` script links the correct `Common` library ID.
-- `Docs` and `Slides` also rebuild `SidebarJS.html` before pushing.
+- `Docs`, `Slides`, and `Sheets` also rebuild `SidebarJS.html` before pushing.
 - The `postclasp-push` script unlinks the library ID again so git stays clean.
 
 Equivalent manual flow:
@@ -49,7 +49,7 @@ clasp push
 node ../LibraryLinker.js unlink Docs
 ```
 
-Swap `Docs` for `Slides` or `Workspace` as needed.
+Swap `Docs` for `Slides`, `Sheets`, or `Workspace` as needed.
 
 ### Pushing Slides to a non-default script ID
 
@@ -67,7 +67,7 @@ Always restore before doing anything else — a left-over wrong script ID in `.c
 Before pushing:
 
 - Check `git status --short` and make sure only intended files are going up.
-- For Docs and Slides, confirm [BuildSidebarJS.js](/Users/aayushgupta/Documents/.projects.nosync/autolatex/BuildSidebarJS.js) has been run through the package script.
+- For Docs, Slides, and Sheets, confirm [BuildSidebarJS.js](/Users/aayushgupta/Documents/.projects.nosync/autolatex/BuildSidebarJS.js) has been run through the package script.
 - If pushing Docs, inspect the manifest that will be uploaded and verify `Common` is pinned to a numbered library version with `developmentMode: false` for production releases.
 - If `clasp push` prints `Skipping push`, do not create a new version from it. Either investigate why the push skipped or intentionally rerun with `--force` only after confirming the target is correct.
 

@@ -1,0 +1,16 @@
+{
+  "name": "sheets",
+  "version": "1.0.0",
+  "description": "",
+  "main": "Code.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "preclasp-push": "npm run build-sidebar-js && node ../LibraryLinker.js link Sheets $npm_config_common_version",
+    "postclasp-push": "node ../LibraryLinker.js unlink Sheets",
+    "clasp-push": "clasp push",
+    "build-types": "clasp-types -o ../types --client",
+    "build-sidebar-js": "node ../BuildSidebarJS.js"
+  },
+  "author": "",
+  "license": "ISC"
+}
