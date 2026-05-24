@@ -91,8 +91,15 @@ async function blobToB64(blob: Blob) {
   return dataUrl.substring(dataUrl.indexOf(",") + 1);
 }
 
+function hasNonAsciiText(value: string) {
+  return value.split("").some(char => char.charCodeAt(0) > 0x7F);
+}
+
 async function renderMathJaxEquation(renderOptions: SlidesClientRenderOptions) {
-  const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + renderOptions.equation.replace(/\n|\r|\r\n/g, "\\\\");
+  const equationForMathJax = renderOptions.equation
+    .replace(/\\mbox\s*\{([^{}]*)\}/g, (match, text) => hasNonAsciiText(text) ? `\\text{${text}}` : match)
+    .replace(/\\mathrm\s*\{([^{}]*)\}/g, (match, text) => hasNonAsciiText(text) ? `\\text{${text}}` : match);
+  const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + equationForMathJax.replace(/\n|\r|\r\n/g, "\\\\");
 
   if (!window.MathJax || typeof window.MathJax.tex2svgPromise !== "function") {
     throw new Error("MathJax is still loading. Please try again in a moment.");
@@ -335,32 +342,58 @@ function insertText(){
       // REASON: In auto mode, count any server-side successes (Codecogs) in the total.
       mathJaxRenderedCount += result.successCount;
 
-      // REASON: Render ALL equations with concurrency limit to avoid freezing the browser.
-      mapWithConcurrency(equationsToRender, MATHJAX_CONCURRENCY_LIMIT, eq =>
-        renderMathJaxEquation(eq)
-          .then(blob => blobToB64(blob))
-          .then(b64 => ({ options: eq, renderedEquationB64: b64 }))
-      )
-        .then(rendered => {
+      // REASON: Render equations independently. A single MathJax failure should not force
+      // the whole batch through legacy server renderers that cannot preserve Unicode text.
+      mapWithConcurrency(equationsToRender, MATHJAX_CONCURRENCY_LIMIT, async eq => {
+        try {
+          return {
+            ok: true as const,
+            rendered: {
+              options: eq,
+              renderedEquationB64: await renderMathJaxEquation(eq).then(blob => blobToB64(blob))
+            }
+          };
+        } catch (error) {
+          console.error("MathJax equation render failed.", error, eq.equation);
+          return {
+            ok: false as const,
+            options: eq
+          };
+        }
+      })
+        .then(results => {
+          const rendered = results
+            .filter(result => result.ok)
+            .map(result => result.rendered);
+          const failed = results
+            .filter(result => !result.ok)
+            .map(result => ({ options: result.options }));
           const scriptRun = google.script.run as any;
-          scriptRun
-            .withSuccessHandler((response: SlidesClientEquationRenderResult, userObject: HTMLButtonElement) => handleMathJaxResponse(response, userObject))
-            .withFailureHandler((msg: unknown, userObject: HTMLButtonElement) => handleFailure(msg, userObject))
-            .withUserObject(element)
-            .clientRenderComplete(rendered);
-        })
-        .catch(error => {
-          // REASON: In auto mode, if MathJax fails, try remaining server renderers (Texrendr/Sciweavers)
-          if (renderer === "auto") {
-            const scriptRun = google.script.run as any;
+
+          if (rendered.length > 0) {
             scriptRun
-              .withSuccessHandler((response: SlidesClientEquationRenderResult, userObject: HTMLButtonElement) => handleMathJaxResponse(response, userObject))
+              .withSuccessHandler((response: SlidesClientEquationRenderResult, userObject: HTMLButtonElement) => {
+                if (failed.length > 0) {
+                  handleFailure(new Error(`MathJax failed to render ${failed.length} equation(s).`), element);
+                  return;
+                }
+                handleMathJaxResponse(response, userObject);
+              })
               .withFailureHandler((msg: unknown, userObject: HTMLButtonElement) => handleFailure(msg, userObject))
               .withUserObject(element)
-              .clientRenderFailed(equationsToRender.map(eq => ({ options: eq })));
-          } else {
-            handleFailure(error, element);
+              .clientRenderComplete(rendered);
+            return;
           }
+
+          if (failed.length > 0) {
+            handleFailure(new Error(`MathJax failed to render ${failed.length} equation(s).`), element);
+            return;
+          }
+
+          handleFailure(new Error("MathJax did not render any equations."), element);
+        })
+        .catch(error => {
+          handleFailure(error, element);
         });
       return;
     }

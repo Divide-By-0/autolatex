@@ -170,9 +170,10 @@ function renderEquationWithCompatibility(equationOriginal: string, renderOptions
  */
 function replaceEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const quality = 900;
-  const clientRender = renderer === "mathjax";
-  // REASON: In auto mode, try Codecogs server-side first, then MathJax on client, then Texrendr/Sciweavers.
-  const autoFallbackToClient = renderer === "auto";
+  // REASON: Default auto rendering uses MathJax in the sidebar. This avoids sending
+  // equation contents to legacy external renderer APIs such as Codecogs/Texrendr.
+  const clientRender = renderer === "mathjax" || renderer === "auto";
+  const autoFallbackToClient = false;
   if (clientRender) {
     console.log("MathJax render requested.", JSON.stringify({ sizeRaw, delimiter }));
   }

@@ -7,8 +7,8 @@ const execPromise = promisify(exec);
 function getMathJaxSetup() {
   return `
 window.MathJax = {
-  loader: { load: ['tex-svg', '[tex]/color'] },
-  tex: { packages: { '[+]': ['color'] } },
+  loader: { load: ['tex-svg', '[tex]/color', '[tex]/textmacros'] },
+  tex: { packages: { '[+]': ['color', 'textmacros'] } },
   svg: {
     fontCache: 'none'
   },
@@ -35,7 +35,7 @@ ${sidebarJS}</script>${mathJaxScript}`;
 }
 
 async function compileTS() {
-  await execPromise("npx tsc --preserveConstEnums Sidebar.ts -t es2020 --lib es2020,dom --skipLibCheck");
+  await execPromise("npx tsc --preserveConstEnums Sidebar.ts -t es2020 --lib es2020,dom --types google-apps-script,jquery --skipLibCheck");
 }
 
 async function buildSidebarJS() {

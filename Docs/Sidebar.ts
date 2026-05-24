@@ -238,9 +238,16 @@ async function blobToB64(blob: Blob) {
   return dataUrl.substring(dataUrl.indexOf(",") + 1); // strip dataurl header
 }
 
+function hasNonAsciiText(value: string) {
+  return value.split("").some(char => char.charCodeAt(0) > 0x7F);
+}
+
 async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRenderOptions) {
+  const equationForMathJax = renderOptions.equation
+    .replace(/\\mbox\s*\{([^{}]*)\}/g, (match, text) => hasNonAsciiText(text) ? `\\text{${text}}` : match)
+    .replace(/\\mathrm\s*\{([^{}]*)\}/g, (match, text) => hasNonAsciiText(text) ? `\\text{${text}}` : match);
   // apply RGB coloring + newline becomes \\
-  const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + renderOptions.equation.replace(/\n|\r|\r\n/g, "\\\\");
+  const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + equationForMathJax.replace(/\n|\r|\r\n/g, "\\\\");
   
   if (!window.MathJax || typeof window.MathJax.tex2svgPromise !== "function") {
     throw new Error("MathJax is still loading. Please try again in a moment.");
@@ -482,33 +489,65 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
 
     // we're not done yet - these equations need to be rendered on the client
     const equationsToRender = clientEquations || [];
-    mapWithConcurrency(equationsToRender, MATHJAX_CONCURRENCY_LIMIT, async c => ({ options: c, renderedEquationB64: await renderMathJaxEquation(c).then(b => blobToB64(b)) }))
-      .then(rendered => {
+    mapWithConcurrency(equationsToRender, MATHJAX_CONCURRENCY_LIMIT, async c => {
+      try {
+        return {
+          ok: true as const,
+          rendered: {
+            options: c,
+            renderedEquationB64: await renderMathJaxEquation(c).then(b => blobToB64(b))
+          }
+        };
+      } catch (err) {
+        reportMathJaxClientError("clientRenderEquation", err, {
+          equation: c.equation,
+          equationLength: c.equation.length
+        });
+        return {
+          ok: false as const,
+          options: c
+        };
+      }
+    })
+      .then(results => {
         if (isStaleSidebarAction(actionId)) {
           return;
         }
-        google.script.run
-          .withSuccessHandler((result, userObject) => successHandler(result, userObject, actionId))
-          .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
-          .withUserObject(element)
-          .clientRenderComplete(rendered);
+        const rendered = results
+          .filter(result => result.ok)
+          .map(result => result.rendered);
+        const failed = results
+          .filter(result => !result.ok)
+          .map(result => ({ options: result.options }));
+
+        if (rendered.length > 0) {
+          google.script.run
+            .withSuccessHandler((result: ReplaceEquationsResult) => {
+              if (isStaleSidebarAction(actionId)) {
+                return;
+              }
+              if (failed.length > 0) {
+                errorHandler(new Error(`MathJax failed to render ${failed.length} equation(s).`), element, actionId);
+                return;
+              }
+              successHandler(result, element, actionId);
+            })
+            .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
+            .withUserObject(element)
+            .clientRenderComplete(rendered);
+          return;
+        }
+
+        if (failed.length > 0) {
+          errorHandler(new Error(`MathJax failed to render ${failed.length} equation(s).`), element, actionId);
+          return;
+        }
+
+        errorHandler(new Error("MathJax did not render any equations."), element, actionId);
       })
       .catch(err => {
         reportMathJaxClientError("clientRenderBatch", err, { equationCount: equationsToRender.length });
-        // REASON: In auto mode, if MathJax fails, try remaining server renderers (Texrendr/Sciweavers)
-        // instead of showing an error immediately.
-        if (getCurrentSettings().renderer === "auto") {
-          if (isStaleSidebarAction(actionId)) {
-            return;
-          }
-          google.script.run
-            .withSuccessHandler((result, userObject) => successHandler(result, userObject, actionId))
-            .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
-            .withUserObject(element)
-            .clientRenderFailed(equationsToRender.map(c => ({ options: c })));
-        } else {
-          errorHandler(err, element, actionId);
-        }
+        errorHandler(err, element, actionId);
       });
   } else {
     const roundSuccessCount = successCount;
