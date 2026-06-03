@@ -148,9 +148,10 @@ function isTableCell(element: PageElement): element is GoogleAppsScript.Slides.T
  */
 function replaceEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const quality = 900;
-  const clientRender = renderer === "mathjax";
-  // REASON: In auto mode, try Codecogs server-side first, then MathJax on client, then Texrendr/Sciweavers.
-  const autoFallback = renderer === "auto";
+  // REASON: Default auto rendering uses MathJax in the sidebar. This avoids sending
+  // equation contents to legacy external renderer APIs such as Codecogs/Texrendr.
+  const clientRender = renderer === "mathjax" || renderer === "auto";
+  const autoFallback = false;
   let size = Common.getSize(sizeRaw);
   let isInline = false;
   if (size < 0) {
