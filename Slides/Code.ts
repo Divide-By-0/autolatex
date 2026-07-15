@@ -370,7 +370,11 @@ function findAllClientRenderEquationsInTextElement(
     const size = getSlideTextSize(renderOptions.size, renderOptions.defaultSize, equationRange);
     const colorRangeEnd = Math.max(equationOffsets.start + renderOptions.delim[4], equationOffsets.end);
     const textColor = getRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
-    const clientEquation = decodeURIComponent(equationOriginal).replace(/\\\\/g, "\\");
+    // REASON: collapse the encoded four-backslash newline marker in ENCODED space
+    // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
+    // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
+    // \hline" after a derender round-trip) and align/matrix row breaks.
+    const clientEquation = decodeURIComponent(equationOriginal.split("%5C%5C%5C%5C").join("%5C%5C"));
 
     results.push({
       size,
@@ -706,7 +710,11 @@ function findClientRenderEquationInTextElement(
     const size = getSlideTextSize(renderOptions.size, renderOptions.defaultSize, equationRange);
     const colorRangeEnd = Math.max(equationOffsets.start + renderOptions.delim[4], equationOffsets.end);
     const textColor = getRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
-    const clientEquation = decodeURIComponent(equationOriginal).replace(/\\\\/g, "\\");
+    // REASON: collapse the encoded four-backslash newline marker in ENCODED space
+    // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
+    // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
+    // \hline" after a derender round-trip) and align/matrix row breaks.
+    const clientEquation = decodeURIComponent(equationOriginal.split("%5C%5C%5C%5C").join("%5C%5C"));
 
     return {
       size,

@@ -827,8 +827,16 @@ function buildClientRenderResponse(
   coloredRenderOptions: AutoLatexCommon.RenderOptions & { r: number; g: number; b: number },
   size: number
 ): DocsEquationRenderResult {
-  // we don't need URL encoding or double escaping for client renderers
-  const clientEquation = decodeURIComponent(equationOriginal).replace(/\\\\/g, "\\");
+  // REASON: reEncode turns each in-equation newline into an encoded four-backslash
+  // marker ("%5C%5C%5C%5C%20"), which must collapse back to a "\\ " row break for the
+  // client renderer. Collapse it in ENCODED space (exactly like the Codecogs path in
+  // Common.getStyle) — a three-backslash run in real LaTeX (e.g. "\\\hline" = row
+  // break + \hline in tables) encodes to three %5C tokens and cannot false-match.
+  // The previous decoded-space `.replace(/\\\\/g, "\\")` halved EVERY backslash pair,
+  // silently merging align/matrix rows and degrading "\\\hline" -> "\\hline" ->
+  // (after a derender round-trip) a bare "\hline", which MathJax rejects as
+  // "Misplaced \hline".
+  const clientEquation = decodeURIComponent(equationOriginal.split("%5C%5C%5C%5C").join("%5C%5C"));
   const doc = DocumentApp.getActiveDocument();
   const range = doc.newRange()
     .addElement(textElement, startElement.getStartOffset(), startElement.getEndOffsetInclusive())
