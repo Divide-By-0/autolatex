@@ -40,11 +40,10 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     size = 0;
   }
   Common.reportDeltaTime(140);
-  const delim = Common.getDelimiters(delimiter);
+  const delimiterSet = Common.getDelimiterSet(delimiter);
   Common.savePrefs(sizeRaw, delimiter, renderer);
   let c = 0; //counter
   let defaultSize = 11;
-  let allEmpty = 0;
   Common.reportDeltaTime(146);
   let body: GoogleAppsScript.Document.Document;
   try {
@@ -57,24 +56,27 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
   let childCount = body.getBody().getParent().getNumChildren();
   Common.reportDeltaTime(156);
   for (var index = 0; index < childCount; index++) {
-    let failedStartElemIfIsEmpty = null;
-    while (true) {
-      // prevFailedStartElemIfIsEmpty is here so when $$$$ fails again and again, it doesn't get stuck there and moves on.
-      let [gotSize, returnedFailedStartElemIfIsEmpty] = findPos(index, delim, quality, size, defaultSize, isInline, failedStartElemIfIsEmpty); //or: "\\\$\\\$", "\\\$\\\$"
-      allEmpty = returnedFailedStartElemIfIsEmpty ? allEmpty + 1 : 0;
-      failedStartElemIfIsEmpty = returnedFailedStartElemIfIsEmpty;
+    for (const delim of delimiterSet) {
+      let failedStartElemIfIsEmpty = null;
+      let allEmpty = 0;
+      while (true) {
+        // prevFailedStartElemIfIsEmpty is here so when $$$$ fails again and again, it doesn't get stuck there and moves on.
+        let [gotSize, returnedFailedStartElemIfIsEmpty] = findPos(index, delim, quality, size, defaultSize, isInline, failedStartElemIfIsEmpty); //or: "\\\$\\\$", "\\\$\\\$"
+        allEmpty = returnedFailedStartElemIfIsEmpty ? allEmpty + 1 : 0;
+        failedStartElemIfIsEmpty = returnedFailedStartElemIfIsEmpty;
 
-      if (allEmpty > 10) break; //Assume we quit on 10 consecutive empty equations.
+        if (allEmpty > 10) break; //Assume we quit on 10 consecutive empty equations.
 
-      if (gotSize == -100000)
-        // means all renderers didn't return/bugged out.
-        return Common.encodeFlag(-2, c); // instead, return pair of number and bool flag in list but whatever
+        if (gotSize == -100000)
+          // means all renderers didn't return/bugged out.
+          return Common.encodeFlag(-2, c); // instead, return pair of number and bool flag in list but whatever
 
-      if (gotSize == 0) break; // finished with renders in this section
+        if (gotSize == 0) break; // finished with renders in this section
 
-      defaultSize = gotSize;
-      c = returnedFailedStartElemIfIsEmpty ? c : c + 1; // # of equations += 1 except empty equations
-      console.log("Rendered equations: " + c);
+        defaultSize = gotSize;
+        c = returnedFailedStartElemIfIsEmpty ? c : c + 1; // # of equations += 1 except empty equations
+        console.log("Rendered equations: " + c);
+      }
     }
   }
   return Common.encodeFlag(0, c);
@@ -161,7 +163,7 @@ function setSize(size: number, defaultSize: number, paragraph: GoogleAppsScript.
     // size = paragraph.getChild(childIndex).editAsText().getFontSize(start+1);//Fix later: Change from 3 to 1
     // console.log("New size is " + size); //Causes: Index (3) must be less than the content length (2).
     if (newSize == null || newSize <= 0) {
-      console.log("Null size! Assigned " + defaultSize);
+      Common.debugLog("Null size! Assigned " + defaultSize);
       newSize = defaultSize;
     }
   }
@@ -261,7 +263,7 @@ function repairImage(paragraph: GoogleAppsScript.Document.Paragraph, childIndex:
   if (textCopy.getText() != "") paragraph.insertText(childIndex + 2, textCopy); // reinsert deleted text after the image, with all the formatting
   const height = paragraph.getChild(childIndex + 1).asInlineImage().getHeight();
   const width = paragraph.getChild(childIndex + 1).asInlineImage().getWidth();
-  console.log("Pre-fixing size, width, height: " + size + ", " + width + ", " + height); //only a '1' is rendered as a 100 height (as of 10/20/19, now it is fetched as 90 height). putting an equationrendertime here just doesnt work
+  Common.debugLog("Pre-fixing size, width, height: " + size + ", " + width + ", " + height); //only a '1' is rendered as a 100 height (as of 10/20/19, now it is fetched as 90 height). putting an equationrendertime here just doesnt work
 
   //SET PROPERTIES OF IMAGE (Height, Width)
   const oldSize = size; // why use oldsize instead of new size

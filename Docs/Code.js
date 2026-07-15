@@ -138,9 +138,12 @@ function replaceEquations(sizeRaw, delimiter, renderer) {
     if (renderer === void 0) { renderer = "auto"; }
     var quality = 900;
     var clientRender = renderer === "mathjax";
-    // REASON: In auto mode, try Codecogs server-side first, then MathJax on client, then Texrendr/Sciweavers.
+    // REASON: In auto mode, start with MathJax on the client. If MathJax fails,
+    // the sidebar calls back to the server for Texrendr/Sciweavers. Avoid trying
+    // Codecogs before MathJax because a Codecogs outage can hang UrlFetchApp long
+    // enough for google.script.run to surface the generic "reload" error.
     var autoFallbackToClient = renderer === "auto";
-    if (clientRender) {
+    if (clientRender || autoFallbackToClient) {
         console.log("MathJax render requested.", JSON.stringify({ sizeRaw: sizeRaw, delimiter: delimiter }));
     }
     var size = Common.getSize(sizeRaw);
@@ -150,10 +153,9 @@ function replaceEquations(sizeRaw, delimiter, renderer) {
         size = 0;
     }
     Common.reportDeltaTime(140);
-    var delim = Common.getDelimiters(delimiter);
+    var delimiterSet = Common.getDelimiterSet(delimiter);
     Common.savePrefs(sizeRaw, delimiter, renderer);
     var c = 0; //counter
-    var allEmpty = 0;
     Common.reportDeltaTime(146);
     var body;
     try {
@@ -178,7 +180,7 @@ function replaceEquations(sizeRaw, delimiter, renderer) {
         size: size,
         defaultSize: 11,
         inline: isInline,
-        delim: delim,
+        delim: delimiterSet[0],
         clientRender: clientRender,
         autoFallbackToClient: autoFallbackToClient,
         // TODO: color support for Docs
@@ -187,74 +189,81 @@ function replaceEquations(sizeRaw, delimiter, renderer) {
         b: 0
     };
     // REASON: Collect equations that need client-side MathJax rendering instead of returning
-    // on the first one. This allows Codecogs to batch-process all equations it can handle,
-    // then send ALL remaining failures to the client for parallel MathJax rendering.
+    // on the first one. This allows the server scan to finish across the document, then send
+    // ALL MathJax work to the client for parallel rendering.
     var clientRenderBatch = [];
     var childCount = body.getBody().getParent().getNumChildren();
     Common.reportDeltaTime(156);
     for (var index = 0; index < childCount; index++) {
-        var failedStartElemIfIsEmpty = null;
-        while (true) {
-            // prevFailedStartElemIfIsEmpty is here so when $$$$ fails again and again, it doesn't get stuck there and moves on.
-            var findPosResult = findPos(index, baseRenderOptions, failedStartElemIfIsEmpty); //or: "\\\$\\\$", "\\\$\\\$"
-            var status_1 = findPosResult.status, equationSize = findPosResult.equationSize, nextStartElement = findPosResult.nextStartElement, clientRenderOptions = findPosResult.clientRenderOptions, failureDetail = findPosResult.failureDetail;
-            if (nextStartElement)
-                failedStartElemIfIsEmpty = nextStartElement;
-            // if we found an actual equation, update the default size
-            if (equationSize)
-                baseRenderOptions.defaultSize = equationSize;
-            // REASON: findPos signals an auto-fix by setting equationSize === -1 in addition to the
-            // regular status. We bump the count and re-run the same index from scratch since the doc
-            // structure changed (paragraphs merged) and any cached RangeElement is now stale.
-            if (status_1 === 8 /* DocsEquationRenderStatus.Success */ && equationSize === -1) {
-                autoFixedCount++;
-                failedStartElemIfIsEmpty = null;
-                continue;
+        for (var _i = 0, delimiterSet_1 = delimiterSet; _i < delimiterSet_1.length; _i++) {
+            var delim = delimiterSet_1[_i];
+            var failedStartElemIfIsEmpty = null;
+            var allEmpty = 0;
+            var renderOptions = __assign(__assign({}, baseRenderOptions), { delim: delim });
+            while (true) {
+                // prevFailedStartElemIfIsEmpty is here so when $$$$ fails again and again, it doesn't get stuck there and moves on.
+                var findPosResult = findPos(index, renderOptions, failedStartElemIfIsEmpty); //or: "\\\$\\\$", "\\\$\\\$"
+                var status_1 = findPosResult.status, equationSize = findPosResult.equationSize, nextStartElement = findPosResult.nextStartElement, clientRenderOptions = findPosResult.clientRenderOptions, failureDetail = findPosResult.failureDetail;
+                if (nextStartElement)
+                    failedStartElemIfIsEmpty = nextStartElement;
+                // if we found an actual equation, update the default size
+                if (equationSize) {
+                    baseRenderOptions.defaultSize = equationSize;
+                    renderOptions.defaultSize = equationSize;
+                }
+                // REASON: findPos signals an auto-fix by setting equationSize === -1 in addition to the
+                // regular status. We bump the count and re-run the same index from scratch since the doc
+                // structure changed (paragraphs merged) and any cached RangeElement is now stale.
+                if (status_1 === 8 /* DocsEquationRenderStatus.Success */ && equationSize === -1) {
+                    autoFixedCount++;
+                    failedStartElemIfIsEmpty = null;
+                    continue;
+                }
+                // count consecutive empty equations
+                if (status_1 == 3 /* DocsEquationRenderStatus.EmptyEquation */) {
+                    allEmpty++;
+                }
+                else {
+                    allEmpty = 0;
+                }
+                if (allEmpty > 10)
+                    break; //Assume we quit on 10 consecutive empty equations.
+                // quit if all renderers failed or if document failed to load (conflicting authorizations)
+                if (status_1 == 0 /* DocsEquationRenderStatus.AllRenderersFailed */ ||
+                    status_1 == 1 /* DocsEquationRenderStatus.AuthorizationFailed */ ||
+                    status_1 == 5 /* DocsEquationRenderStatus.NoDocument */) {
+                    return {
+                        lastStatus: status_1,
+                        successCount: c,
+                        autoFixedCount: autoFixedCount,
+                        failureDetails: failureDetails
+                    };
+                }
+                // REASON: Cross-element / cross-paragraph equations we couldn't auto-fix. Record for the
+                // sidebar and skip past so we don't infinite-loop on the same broken equation.
+                if (status_1 === 4 /* DocsEquationRenderStatus.MultiElementEquation */) {
+                    if (failureDetail)
+                        failureDetails.push(failureDetail);
+                    // failedStartElemIfIsEmpty was set above to nextStartElement (the end delimiter),
+                    // so the next findPos call will search after this broken equation.
+                    continue;
+                }
+                if (status_1 === 2 /* DocsEquationRenderStatus.ClientRender */ && clientRenderOptions) {
+                    // REASON: Collect for batch instead of returning immediately.
+                    // This lets MathJax handle all equations in parallel after the server scan finishes.
+                    clientRenderBatch.push(clientRenderOptions);
+                    continue;
+                }
+                // could not find next equation
+                // move to next delimiter/section
+                if (status_1 == 7 /* DocsEquationRenderStatus.NoStartDelimiter */ || status_1 == 6 /* DocsEquationRenderStatus.NoEndDelimiter */) {
+                    break;
+                }
+                if (status_1 != 3 /* DocsEquationRenderStatus.EmptyEquation */) {
+                    c++;
+                }
+                console.log("Rendered equations: " + c);
             }
-            // count consecutive empty equations
-            if (status_1 == 3 /* DocsEquationRenderStatus.EmptyEquation */) {
-                allEmpty++;
-            }
-            else {
-                allEmpty = 0;
-            }
-            if (allEmpty > 10)
-                break; //Assume we quit on 10 consecutive empty equations.
-            // quit if all renderers failed or if document failed to load (conflicting authorizations)
-            if (status_1 == 0 /* DocsEquationRenderStatus.AllRenderersFailed */ ||
-                status_1 == 1 /* DocsEquationRenderStatus.AuthorizationFailed */ ||
-                status_1 == 5 /* DocsEquationRenderStatus.NoDocument */) {
-                return {
-                    lastStatus: status_1,
-                    successCount: c,
-                    autoFixedCount: autoFixedCount,
-                    failureDetails: failureDetails
-                };
-            }
-            // REASON: Cross-element / cross-paragraph equations we couldn't auto-fix. Record for the
-            // sidebar and skip past so we don't infinite-loop on the same broken equation.
-            if (status_1 === 4 /* DocsEquationRenderStatus.MultiElementEquation */) {
-                if (failureDetail)
-                    failureDetails.push(failureDetail);
-                // failedStartElemIfIsEmpty was set above to nextStartElement (the end delimiter),
-                // so the next findPos call will search after this broken equation.
-                continue;
-            }
-            if (status_1 === 2 /* DocsEquationRenderStatus.ClientRender */ && clientRenderOptions) {
-                // REASON: Collect for batch instead of returning immediately.
-                // This lets Codecogs process all equations it can first, then MathJax handles the rest in parallel.
-                clientRenderBatch.push(clientRenderOptions);
-                continue;
-            }
-            // could not find next equation
-            // move to next section
-            if (status_1 == 7 /* DocsEquationRenderStatus.NoStartDelimiter */ || status_1 == 6 /* DocsEquationRenderStatus.NoEndDelimiter */) {
-                break;
-            }
-            if (status_1 != 3 /* DocsEquationRenderStatus.EmptyEquation */) {
-                c++;
-            }
-            console.log("Rendered equations: " + c);
         }
     }
     // If any equations need client-side MathJax rendering, send them all at once
@@ -579,7 +588,7 @@ function getSize(size, defaultSize, rangeElement) {
         // size = paragraph.getChild(childIndex).editAsText().getFontSize(start+1);//Fix later: Change from 3 to 1
         // console.log("New size is " + size); //Causes: Index (3) must be less than the content length (2).
         if (newSize == null || newSize <= 0) {
-            console.log("Null size! Assigned " + defaultSize);
+            Common.debugLog("Null size! Assigned " + defaultSize);
             newSize = defaultSize;
         }
     }
@@ -664,22 +673,9 @@ function findEquationAndPlaceImage(startElement, renderOptions) {
     var _a = getRgbFromHex(colorHex), r = _a[0], g = _a[1], b = _a[2];
     // add color info to render options
     var coloredRenderOptions = __assign(__assign({}, renderOptions), { r: r, g: g, b: b });
-    // send info to the client for rendering (explicit MathJax mode)
-    if (renderOptions.clientRender) {
-        return buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size);
-    }
-    // REASON: In auto mode, try Codecogs first. If Codecogs fails, fall back to MathJax on the client.
-    // If MathJax also fails, the client calls clientRenderFailed to try Texrendr/Sciweavers.
-    if (renderOptions.autoFallbackToClient) {
-        var codecogsResult = renderEquationWithCompatibility(equationOriginal, __assign(__assign({}, coloredRenderOptions), { allowedServerFamilies: ["Codecogs"] }));
-        if (codecogsResult.worked <= Common.capableRenderers && codecogsResult.resp && codecogsResult.renderer) {
-            // Codecogs succeeded
-            if (escape(codecogsResult.resp.getBlob().getDataAsString()).substring(0, 50) == Common.invalidEquationHashCodecogsFirst50) {
-                codecogsResult.renderer = Common.getRenderer(Common.rendererIds.CODECOGS);
-            }
-            return placeImage(startElement, codecogsResult.resp.getBlob(), codecogsResult.renderer, equationOriginal, size, renderOptions.delim);
-        }
-        // Codecogs failed - fall back to MathJax on client
+    // REASON: Explicit MathJax and Automatic both render on the client first.
+    // Automatic falls back to server renderers from the sidebar only if MathJax fails.
+    if (renderOptions.clientRender || renderOptions.autoFallbackToClient) {
         return buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size);
     }
     var _b = renderEquationWithCompatibility(equationOriginal, coloredRenderOptions), resp = _b.resp, renderer = _b.renderer, worked = _b.worked, authorizationError = _b.authorizationError;
@@ -738,7 +734,8 @@ function clientRenderFailed(equations) {
                 continue;
             }
             var equationOriginal = Common.reEncode(equation.options.equation, getDocsApp());
-            // REASON: Try Texrendr and Sciweavers only - Codecogs already failed, MathJax already failed.
+            // REASON: Try non-Codecogs server renderers only. MathJax has already failed, and
+            // retrying Codecogs here can reintroduce the outage hang auto mode is avoiding.
             var fallbackResult = renderEquationWithCompatibility(equationOriginal, {
                 size: equation.options.size,
                 defaultSize: equation.options.size,
@@ -865,7 +862,7 @@ function repairImage(paragraph, childIndex, size, renderer, delim, textCopy, res
         paragraph.insertText(childIndex + 2, textCopy); // reinsert deleted text after the image, with all the formatting
     var height = paragraph.getChild(childIndex + 1).asInlineImage().getHeight();
     var width = paragraph.getChild(childIndex + 1).asInlineImage().getWidth();
-    console.log("Pre-fixing size, width, height: " + size + ", " + width + ", " + height); //only a '1' is rendered as a 100 height (as of 10/20/19, now it is fetched as 90 height). putting an equationrendertime here just doesnt work
+    Common.debugLog("Pre-fixing size, width, height: " + size + ", " + width + ", " + height); //only a '1' is rendered as a 100 height (as of 10/20/19, now it is fetched as 90 height). putting an equationrendertime here just doesnt work
     //SET PROPERTIES OF IMAGE (Height, Width)
     var oldSize = size; // why use oldsize instead of new size
     if (escape(resp.getDataAsString()).substring(0, 50) == Common.invalidEquationHashCodecogsFirst50 || (size > 10 && width == 126 && height == 24)) {

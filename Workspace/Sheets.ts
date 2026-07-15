@@ -56,74 +56,76 @@ function replaceEquationsSheets(sizeRaw: string, delimiter: string, renderer: st
   const size = Common.getSize(sizeRaw);
   const isInline = size < 0;
   Common.reportDeltaTime(140);
-  const delim = Common.getDelimiters(delimiter);
+  const delimiterSet = Common.getDelimiterSet(delimiter);
   Common.savePrefs(sizeRaw, delimiter, renderer);
-  const regex = `${delim[2]}(.*)${delim[3]}`;
   // Search for all of the equations within the sheet, and iterate over all of them
-  const textFinder = SheetsApp.getActive().createTextFinder(regex)
-    .matchEntireCell(true)
-    .useRegularExpression(true);
-
   let counter = 0;
   
-  for (let match = textFinder.findNext(); match !== null; match = textFinder.findNext()) {
-    // Remove the delimiters
-    const matchValue = String(match.getValue());
-    const regexMatch = matchValue.match(regex);
-    if (!regexMatch) continue;
-    const [, equationOriginal] = regexMatch;
-    if (equationOriginal === "") continue;
+  for (const delim of delimiterSet) {
+    const regex = `${delim[2]}(.*)${delim[3]}`;
+    const textFinder = SheetsApp.getActive().createTextFinder(regex)
+      .matchEntireCell(true)
+      .useRegularExpression(true);
 
-    // Get the color
-    let color: [number, number, number] = [0, 0, 0];
-    const rangeColor = match.getTextStyle().getForegroundColorObject()?.asRgbColor();
-    if (rangeColor) {
-      color = [rangeColor.getRed(), rangeColor.getGreen(), rangeColor.getBlue()];
+    for (let match = textFinder.findNext(); match !== null; match = textFinder.findNext()) {
+      // Remove the delimiters
+      const matchValue = String(match.getValue());
+      const regexMatch = matchValue.match(regex);
+      if (!regexMatch) continue;
+      const [, equationOriginal] = regexMatch;
+      if (equationOriginal === "") continue;
+
+      // Get the color
+      let color: [number, number, number] = [0, 0, 0];
+      const rangeColor = match.getTextStyle().getForegroundColorObject()?.asRgbColor();
+      if (rangeColor) {
+        color = [rangeColor.getRed(), rangeColor.getGreen(), rangeColor.getBlue()];
+      }
+
+      const equationEncoded = Common.reEncode(equationOriginal, SheetsIntegratedApp);
+      let { renderer, worked, rendererType, resp } = Common.renderEquation(equationEncoded, quality, delim, isInline, ...color);
+      if (worked > Common.capableRenderers || !renderer || !resp) return Common.encodeFlag(-2, counter);
+
+      const titleJson = buildSheetImageAltText(color, renderer[2] + equationEncoded + "#" + delim[6]);
+
+      if (isInline) {
+        // An in-cell image. Resizes with the cell
+        const image = SpreadsheetApp.newCellImage()
+          .setSourceUrl(renderer[1])
+          .setAltTextDescription(titleJson)
+          .build();
+
+        match.setValue(image);
+
+        // This is so that we can easily find it when derendering everything
+        match.addDeveloperMetadata(SHEETS_INLINE_IMAGE_METADATA_KEY, GoogleAppsScript.Spreadsheet.DeveloperMetadataVisibility.PROJECT);
+      } else {
+        // An over-grid image
+        const newSize = size || match.getFontSize();
+
+        let scale = (newSize / 100.0);
+        if (rendererType.valueOf() === "Texrendr".valueOf())
+          //TexRendr
+          scale = (newSize / 42.0);
+        else if (rendererType.valueOf() === "Roger's renderer".valueOf())
+          //Rogers renderer
+          scale = (newSize / 200.0);
+        else if (rendererType.valueOf() === "Sciweavers".valueOf())
+          //Scieweavers
+          scale = (newSize / 98.0);
+        else if (rendererType.valueOf() === "Sciweavers_old".valueOf())
+          //C [75.4, 79.6] on width and height ratio
+          scale = (newSize / 76.0);
+
+        const image = SheetsApp.getBody().insertImage(resp.getBlob(), match.getColumn(), match.getRow());
+        image.setAltTextDescription(titleJson);
+        resizeSheetImage(image, scale);
+
+        match.clearContent();
+      }
+
+      counter++;
     }
-
-    const equationEncoded = Common.reEncode(equationOriginal, SheetsIntegratedApp);
-    let { renderer, worked, rendererType, resp } = Common.renderEquation(equationEncoded, quality, delim, isInline, ...color);
-    if (worked > Common.capableRenderers || !renderer || !resp) return Common.encodeFlag(-2, counter);
-
-    const titleJson = buildSheetImageAltText(color, renderer[2] + equationEncoded + "#" + delim[6]);
-
-    if (isInline) {
-      // An in-cell image. Resizes with the cell
-      const image = SpreadsheetApp.newCellImage()
-        .setSourceUrl(renderer[1])
-        .setAltTextDescription(titleJson)
-        .build();
-      
-      match.setValue(image);
-
-      // This is so that we can easily find it when derendering everything
-      match.addDeveloperMetadata(SHEETS_INLINE_IMAGE_METADATA_KEY, GoogleAppsScript.Spreadsheet.DeveloperMetadataVisibility.PROJECT);
-    } else {
-      // An over-grid image
-      const newSize = size || match.getFontSize();
-
-      let scale = (newSize / 100.0);
-      if (rendererType.valueOf() === "Texrendr".valueOf())
-        //TexRendr
-        scale = (newSize / 42.0);
-      else if (rendererType.valueOf() === "Roger's renderer".valueOf())
-        //Rogers renderer
-        scale = (newSize / 200.0);
-      else if (rendererType.valueOf() === "Sciweavers".valueOf())
-        //Scieweavers
-        scale = (newSize / 98.0);
-      else if (rendererType.valueOf() === "Sciweavers_old".valueOf())
-        //C [75.4, 79.6] on width and height ratio
-        scale = (newSize / 76.0);
-
-      const image = SheetsApp.getBody().insertImage(resp.getBlob(), match.getColumn(), match.getRow());
-      image.setAltTextDescription(titleJson);
-      resizeSheetImage(image, scale);
-
-      match.clearContent();
-    }
-
-    counter++;
   }
 
   /*

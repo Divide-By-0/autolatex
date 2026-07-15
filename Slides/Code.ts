@@ -149,7 +149,10 @@ function isTableCell(element: PageElement): element is GoogleAppsScript.Slides.T
 function replaceEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const quality = 900;
   const clientRender = renderer === "mathjax";
-  // REASON: In auto mode, try Codecogs server-side first, then MathJax on client, then Texrendr/Sciweavers.
+  // REASON: In auto mode, start with MathJax on the client. If MathJax fails,
+  // the sidebar calls back to the server for Texrendr/Sciweavers. Avoid trying
+  // Codecogs before MathJax because a Codecogs outage can hang UrlFetchApp long
+  // enough for google.script.run to surface the generic "reload" error.
   const autoFallback = renderer === "auto";
   let size = Common.getSize(sizeRaw);
   let isInline = false;
@@ -158,7 +161,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     size = 0;
   }
   Common.reportDeltaTime(140);
-  const delim = Common.getDelimiters(delimiter);
+  const delimiterSet = Common.getDelimiterSet(delimiter);
   Common.savePrefs(sizeRaw, delimiter, renderer);
   let c = 0; //counter
   const defaultSize = 11;
@@ -167,7 +170,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
   // base render options common to all equations rendered
   const renderOptions: AutoLatexCommon.RenderOptions = {
     r: 0, g: 0, b: 0,
-    delim,
+    delim: delimiterSet[0],
     defaultSize,
     size,
     inline: isInline,
@@ -189,7 +192,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
   }
 
   if (clientRender) {
-    const clientEquation = findClientRenderEquation(renderOptions);
+    const clientEquation = findClientRenderEquationForDelimiters(renderOptions, delimiterSet);
     if (!clientEquation) {
       return {
         lastStatus: SlidesEquationRenderStatus.Success,
@@ -203,27 +206,12 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     };
   }
 
-  // REASON: Auto mode batches Codecogs first (fast, parallelized), then sends ALL
-  // remaining equations to the client for MathJax rendering in parallel.
+  // REASON: Auto mode sends all equations to client MathJax first. The old
+  // Codecogs-first phase could block the entire action during a Codecogs outage,
+  // preventing the MathJax fallback from ever running.
   if (autoFallback) {
-    // Phase 1: Batch render all equations with Codecogs only
-    const slides = IntegratedApp.getBody();
-    const childCount = slides.length;
-    for (let slideNum = 0; slideNum < childCount; slideNum++) {
-      const elements = slides[slideNum].getPageElements();
-      for (const element of elements) {
-        const castedElement = castElement(element);
-        if (castedElement === null) continue;
-        c += renderElement(slideNum, castedElement, {
-          ...renderOptions,
-          allowedServerFamilies: ["Codecogs"]
-        });
-      }
-    }
-
-    // Phase 2: Find ALL remaining equations (failed Codecogs) and send to client for parallel MathJax
-    const remainingEquations = findAllClientRenderEquations(renderOptions);
-    if (remainingEquations.length === 0) {
+    const clientEquations = findAllClientRenderEquationsForDelimiters(renderOptions, delimiterSet);
+    if (clientEquations.length === 0) {
       return {
         lastStatus: SlidesEquationRenderStatus.Success,
         successCount: c
@@ -232,24 +220,45 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     return {
       lastStatus: SlidesEquationRenderStatus.ClientRender,
       successCount: c,
-      clientEquations: remainingEquations
+      clientEquations
     };
   }
 
-  const slides = IntegratedApp.getBody();
-  const childCount = slides.length;
-  for (let slideNum = 0; slideNum < childCount; slideNum++) {
-    const elements = slides[slideNum].getPageElements();
-    Common.debugLog("Slide Num: " + slideNum + " Num of shapes: " + elements.length);
-    for (const element of elements) {
-      const castedElement = castElement(element);
-      // if we don't recognize this element
-      if (castedElement === null) continue;
+  for (const delim of delimiterSet) {
+    const slides = IntegratedApp.getBody();
+    const childCount = slides.length;
+    for (let slideNum = 0; slideNum < childCount; slideNum++) {
+      const elements = slides[slideNum].getPageElements();
+      Common.debugLog("Slide Num: " + slideNum + " Num of shapes: " + elements.length);
+      for (const element of elements) {
+        const castedElement = castElement(element);
+        // if we don't recognize this element
+        if (castedElement === null) continue;
 
-      c += renderElement(slideNum, castedElement, renderOptions);
+        c += renderElement(slideNum, castedElement, {
+          ...renderOptions,
+          delim
+        });
+      }
     }
   }
   return Common.encodeFlag(0, c);
+}
+
+function findClientRenderEquationForDelimiters(
+  renderOptions: AutoLatexCommon.RenderOptions,
+  delimiterSet: AutoLatexCommon.Delimiter[]
+): SlidesClientRenderOptions | null {
+  for (const delim of delimiterSet) {
+    const clientEquation = findClientRenderEquation({
+      ...renderOptions,
+      delim
+    });
+    if (clientEquation) {
+      return clientEquation;
+    }
+  }
+  return null;
 }
 
 function findClientRenderEquation(renderOptions: AutoLatexCommon.RenderOptions): SlidesClientRenderOptions | null {
@@ -285,6 +294,20 @@ function findAllClientRenderEquations(renderOptions: AutoLatexCommon.RenderOptio
       if (!castedElement) continue;
       findAllClientRenderEquationsInElement(slideNum, slide, castedElement, renderOptions, results);
     }
+  }
+  return results;
+}
+
+function findAllClientRenderEquationsForDelimiters(
+  renderOptions: AutoLatexCommon.RenderOptions,
+  delimiterSet: AutoLatexCommon.Delimiter[]
+): SlidesClientRenderOptions[] {
+  const results: SlidesClientRenderOptions[] = [];
+  for (const delim of delimiterSet) {
+    results.push(...findAllClientRenderEquations({
+      ...renderOptions,
+      delim
+    }));
   }
   return results;
 }
@@ -1030,7 +1053,8 @@ function clientRenderFailed(equations: { options: SlidesClientRenderOptions }[])
       const equationRange = target.textRange.getRange(equation.options.rangeStart, safeEnd);
       const slideNum = IntegratedApp.getBody().findIndex(s => s.getObjectId() === equation.options.slideId);
 
-      // REASON: Try Texrendr and Sciweavers only - Codecogs already failed, MathJax already failed.
+      // REASON: Try non-Codecogs server renderers only. MathJax has already failed, and
+      // retrying Codecogs here can reintroduce the outage hang auto mode is avoiding.
       const result = placeImage(slideNum, target.textElement, equationRange, {
         size: equation.options.size,
         defaultSize: equation.options.size,

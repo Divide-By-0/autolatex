@@ -21,6 +21,7 @@ function generateWorkspaceHomepage(status: string, error: string | null = null) 
 
   const delims = [
     ["$$ ... $$", "$$"],
+    ["All supported delimiters", "all"],
     ["\\[ ... \\]", "["],
     ["\\( ... \\)", "("],
     ["$ ... $", "$"]

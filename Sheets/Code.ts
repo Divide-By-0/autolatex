@@ -158,7 +158,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     isInline = true;
     size = 0;
   }
-  const delim = Common.getDelimiters(delimiter);
+  const delimiterSet = Common.getDelimiterSet(delimiter);
   Common.savePrefs(sizeRaw, delimiter, renderer);
   const defaultSize = 11;
   Common.reportDeltaTime(140);
@@ -178,7 +178,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
   // user's chosen renderer narrows which server families Common tries.
   const renderOptions: AutoLatexCommon.RenderOptions = {
     r: 0, g: 0, b: 0,
-    delim,
+    delim: delimiterSet[0],
     defaultSize,
     size,
     inline: isInline,
@@ -207,14 +207,25 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
       for (let c = 0; c < values[r].length; c++) {
         const cellRaw = values[r][c];
         if (typeof cellRaw !== "string") continue;
-        const latex = parseEquationCell(cellRaw, delim);
+        let latex: string | null = null;
+        let delim = delimiterSet[0];
+        for (const candidateDelim of delimiterSet) {
+          latex = parseEquationCell(cellRaw, candidateDelim);
+          if (latex) {
+            delim = candidateDelim;
+            break;
+          }
+        }
         if (!latex) continue;
 
         // REASON: Pre-encode the equation here the same way Docs does so that Common's
         // renderEquation receives a URL-safe payload with the correct newline glyph for
         // this surface (Sheets's \n → %0A vs Docs's paragraph-break → %0D).
         const equationEncoded = Common.reEncode(latex, SheetsApp);
-        const result = Common.renderEquation(equationEncoded, renderOptions);
+        const result = Common.renderEquation(equationEncoded, {
+          ...renderOptions,
+          delim
+        });
 
         if (result.worked > Common.capableRenderers || !result.resp || !result.renderer) {
           if (result.authorizationError) authorizationError = true;

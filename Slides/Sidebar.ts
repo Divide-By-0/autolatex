@@ -238,7 +238,10 @@ function loadPreferences(choicePrefs: {size: string, delim: string, renderer: st
     $('#custom-size').hide();
   }
   $('#delimit').val(choicePrefs.delim);
-  const savedRenderer = ["auto", "codecogs", "mathjax", "texrendr", "sciweavers"].includes(choicePrefs.renderer) ? choicePrefs.renderer : "auto";
+  // REASON: Older users may have Codecogs saved from when it was the practical default.
+  // Open the sidebar on Automatic so Codecogs outages don't keep affecting them.
+  const rendererPreference = choicePrefs.renderer === "codecogs" ? "auto" : choicePrefs.renderer;
+  const savedRenderer = ["auto", "mathjax", "texrendr", "sciweavers"].includes(rendererPreference) ? rendererPreference : "auto";
   $('#renderer').val(savedRenderer);
   $('#insert-text').prop("disabled", false);
   $('#edit-text').prop("disabled", false);
@@ -332,7 +335,7 @@ function insertText(){
         return;
       }
 
-      // REASON: In auto mode, count any server-side successes (Codecogs) in the total.
+      // REASON: Carry forward any successes the server included with this ClientRender batch.
       mathJaxRenderedCount += result.successCount;
 
       // REASON: Render ALL equations with concurrency limit to avoid freezing the browser.

@@ -416,7 +416,10 @@ function loadPreferences(choicePrefs: {size: string, delim: string, renderer: st
     $('#custom-size').hide();
   }
   $('#delimit').val(choicePrefs.delim);
-  const savedRenderer = ["auto", "codecogs", "mathjax", "texrendr", "sciweavers"].includes(choicePrefs.renderer) ? choicePrefs.renderer : "auto";
+  // REASON: Older users may have Codecogs saved from when it was the practical default.
+  // Open the sidebar on Automatic so Codecogs outages don't keep affecting them.
+  const rendererPreference = choicePrefs.renderer === "codecogs" ? "auto" : choicePrefs.renderer;
+  const savedRenderer = ["auto", "mathjax", "texrendr", "sciweavers"].includes(rendererPreference) ? rendererPreference : "auto";
   $('#renderer').val(savedRenderer);
   enableSidebarButtons();
   setRenderButtonState(false);
@@ -487,10 +490,11 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
 
   if (lastStatus === google.script.DocsEquationRenderStatus.ClientRender) {
     // REASON: In auto mode, enable chaining lazily when we first need client rendering.
-    // This avoids an unnecessary extra round-trip when all equations succeed with Codecogs.
+    // This keeps the sidebar idle until the server has actually found equations that
+    // need MathJax work.
     if (!isMathJaxRenderChaining) {
       isMathJaxRenderChaining = true;
-      mathJaxRenderedCount = successCount; // count any server-side (Codecogs) successes
+      mathJaxRenderedCount = successCount; // count any server-side successes already completed before this batch
       setRenderButtonState(true);
     }
 
