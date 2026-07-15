@@ -12,6 +12,15 @@
        max-width:40%;
        max-height:40%;
     }
+
+    /* REASON: a select sizes itself to its widest option, so the "All supported
+       delimiters" option added in 2026-07 stretched the delimiter dropdown (and
+       everything aligned with it) across the sidebar. Cap the closed control;
+       the native dropdown list still shows full option text when opened. */
+    #delimit,
+    #renderer {
+      max-width: 180px;
+    }
     /* Dropdown Button */
     .dropbtn {
         background-color: #4CAF50;
