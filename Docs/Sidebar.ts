@@ -268,6 +268,17 @@ async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRender
   if (!svg) {
     throw new Error("MathJax did not return an SVG element.");
   }
+
+  // REASON: tex2svgPromise RESOLVES on TeX syntax errors, embedding the message as a
+  // red merror node — so bad equations were silently inserted as error images with no
+  // trace in Cloud Logging. Report them (with the equation) so they're debuggable;
+  // rendering still proceeds so one bad equation can't fail the whole batch.
+  const mjxErrorNode = svg.querySelector("[data-mjx-error]");
+  if (mjxErrorNode) {
+    reportMathJaxClientError("mathjax.merror", mjxErrorNode.getAttribute("data-mjx-error") || "unknown TeX error", {
+      equation: renderOptions.equation.substring(0, 300),
+    });
+  }
   
   // calculate width and height by rendering this svg with the specified font size
   svg.classList.add("mathjax-equation-hidden-render");
@@ -512,7 +523,11 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
           .clientRenderComplete(rendered);
       })
       .catch(err => {
-        reportMathJaxClientError("clientRenderBatch", err, { equationCount: equationsToRender.length });
+        reportMathJaxClientError("clientRenderBatch", err, {
+          equationCount: equationsToRender.length,
+          // first few equations so the failure is debuggable from logs alone
+          equations: equationsToRender.slice(0, 3).map(c => c.equation.substring(0, 200)),
+        });
         // REASON: In auto mode, if MathJax fails, try remaining server renderers (Texrendr/Sciweavers)
         // instead of showing an error immediately.
         if (getCurrentSettings().renderer === "auto") {

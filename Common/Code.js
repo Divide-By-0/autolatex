@@ -475,7 +475,11 @@ function renderEquation(equationOriginal, renderOptionsOrQuality, legacyDelim, l
             if (isUrlFetchAuthorizationError(err)) {
                 authorizationError = true;
             }
-            console.log(rendererType + " Error! - " + err);
+            // REASON: DEBUG=false silenced the per-render "Raw equation" debugLog, which
+            // was the only place the equation appeared — leaving failure logs undebuggable.
+            // Attach a truncated equation to the (rare) error path only, so failures stay
+            // diagnosable without reintroducing per-render ingestion cost.
+            console.log(rendererType + " Error! - " + err + " | eqn(trunc): " + String(equationOriginal).substring(0, 300));
             var failedEquationLinkLength = renderer ? renderer[1].length : -1;
             deltaTime = reportDeltaTime(533, " failed equation link length " + failedEquationLinkLength + " and renderer  " + rendererType);
             if (rendererType == "Texrendr") {

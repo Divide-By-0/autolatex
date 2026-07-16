@@ -16,6 +16,30 @@ interface Window {
 
 declare const MathJax: MathJaxApi;
 
+// REASON: mirrors the Docs sidebar's client-error reporting so MathJax failures in
+// Slides reach Cloud Logging with the offending equation; without it they vanished
+// in the sandboxed iframe. Deduped per session to keep error-path ingestion tiny.
+const reportedMathJaxErrors = new Set<string>();
+function reportMathJaxClientError(context: string, error: unknown, extra: Record<string, unknown> = {}) {
+  const message = error instanceof Error ? error.message : String(error);
+  const dedupeKey = `${context}:${message}`;
+  if (reportedMathJaxErrors.has(dedupeKey)) {
+    return;
+  }
+  reportedMathJaxErrors.add(dedupeKey);
+  const payload = {
+    context,
+    error: { message, stack: error instanceof Error ? error.stack || "" : "" },
+    extra,
+    href: window.location.href,
+    userAgent: navigator.userAgent,
+    timestamp: new Date().toISOString(),
+  };
+  (google.script.run as any)
+    .withFailureHandler((logError: unknown) => console.error("Failed to report MathJax client error.", logError))
+    .logMathJaxClientError(JSON.stringify(payload));
+}
+
 interface SlidesClientRenderOptions {
   size: number;
   inline: boolean;
@@ -105,6 +129,17 @@ async function renderMathJaxEquation(renderOptions: SlidesClientRenderOptions) {
   const svg: SVGSVGElement | null = result.querySelector("svg");
   if (!svg) {
     throw new Error("MathJax did not return an SVG element.");
+  }
+
+  // REASON: tex2svgPromise RESOLVES on TeX syntax errors, embedding the message as a
+  // red merror node — so bad equations were silently inserted as error images with no
+  // trace in Cloud Logging. Report them (with the equation) so they're debuggable;
+  // rendering still proceeds so one bad equation can't fail the whole batch.
+  const mjxErrorNode = svg.querySelector("[data-mjx-error]");
+  if (mjxErrorNode) {
+    reportMathJaxClientError("mathjax.merror", mjxErrorNode.getAttribute("data-mjx-error") || "unknown TeX error", {
+      equation: renderOptions.equation.substring(0, 300),
+    });
   }
 
   svg.classList.add("mathjax-equation-hidden-render");
@@ -353,6 +388,11 @@ function insertText(){
             .clientRenderComplete(rendered);
         })
         .catch(error => {
+          reportMathJaxClientError("clientRenderBatch", error, {
+            equationCount: equationsToRender.length,
+            // first few equations so the failure is debuggable from logs alone
+            equations: equationsToRender.slice(0, 3).map(eq => eq.equation.substring(0, 200)),
+          });
           // REASON: In auto mode, if MathJax fails, try remaining server renderers (Texrendr/Sciweavers)
           if (renderer === "auto") {
             const scriptRun = google.script.run as any;

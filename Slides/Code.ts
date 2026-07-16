@@ -120,6 +120,13 @@ function getPrefs() {
 /**
  * @public
  */
+function logMathJaxClientError(payloadJson: string) {
+  console.error("MathJax client error:", payloadJson);
+}
+
+/**
+ * @public
+ */
 function getKey() {
   return Common.getKey();
 }
