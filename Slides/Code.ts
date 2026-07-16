@@ -156,10 +156,12 @@ function isTableCell(element: PageElement): element is GoogleAppsScript.Slides.T
 function replaceEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const quality = 900;
   const clientRender = renderer === "mathjax";
-  // REASON: In auto mode, start with MathJax on the client. If MathJax fails,
-  // the sidebar calls back to the server for Texrendr/Sciweavers. Avoid trying
-  // Codecogs before MathJax because a Codecogs outage can hang UrlFetchApp long
-  // enough for google.script.run to surface the generic "reload" error.
+  // REASON: In auto mode, start with MathJax on the client (never Codecogs first —
+  // both because a Codecogs outage can hang UrlFetchApp long enough for
+  // google.script.run to surface the generic "reload" error, and because it avoids
+  // sending equation contents to external renderer APIs unless MathJax hard-fails;
+  // PR #61 wanted no server fallback at all, but keeping Texrendr/Sciweavers as the
+  // sidebar-invoked fallback preserves rendering when MathJax can't load).
   const autoFallback = renderer === "auto";
   let size = Common.getSize(sizeRaw);
   let isInline = false;

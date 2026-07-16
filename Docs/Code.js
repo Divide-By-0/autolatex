@@ -138,10 +138,12 @@ function replaceEquations(sizeRaw, delimiter, renderer) {
     if (renderer === void 0) { renderer = "auto"; }
     var quality = 900;
     var clientRender = renderer === "mathjax";
-    // REASON: In auto mode, start with MathJax on the client. If MathJax fails,
-    // the sidebar calls back to the server for Texrendr/Sciweavers. Avoid trying
-    // Codecogs before MathJax because a Codecogs outage can hang UrlFetchApp long
-    // enough for google.script.run to surface the generic "reload" error.
+    // REASON: In auto mode, start with MathJax on the client (never Codecogs first —
+    // both because a Codecogs outage can hang UrlFetchApp long enough for
+    // google.script.run to surface the generic "reload" error, and because it avoids
+    // sending equation contents to external renderer APIs unless MathJax hard-fails;
+    // PR #61 wanted no server fallback at all, but keeping Texrendr/Sciweavers as the
+    // sidebar-invoked fallback preserves rendering when MathJax can't load).
     var autoFallbackToClient = renderer === "auto";
     if (clientRender || autoFallbackToClient) {
         console.log("MathJax render requested.", JSON.stringify({ sizeRaw: sizeRaw, delimiter: delimiter }));

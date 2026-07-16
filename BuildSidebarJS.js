@@ -21,9 +21,9 @@ function getMathJaxSetup() {
   // both user-reported table equations plus align/plain-math regressions all render.
   return `
 window.MathJax = {
-  loader: { load: ['tex-svg', '[tex]/color'] },
+  loader: { load: ['tex-svg', '[tex]/color', '[tex]/textmacros'] },
   tex: {
-    packages: { '[+]': ['color'] },
+    packages: { '[+]': ['color', 'textmacros'] },
     macros: {
       centering: '',
       caption: ['\\\\\\\\[0.5em]\\\\text{#1}', 1],
@@ -74,7 +74,7 @@ ${sidebarJS}</script>${mathJaxScript}`;
 }
 
 async function compileTS() {
-  await execPromise("npx tsc --preserveConstEnums Sidebar.ts -t es2020 --lib es2020,dom --skipLibCheck");
+  await execPromise("npx tsc --preserveConstEnums Sidebar.ts -t es2020 --lib es2020,dom --types google-apps-script,jquery --skipLibCheck");
 }
 
 async function buildSidebarJS() {
