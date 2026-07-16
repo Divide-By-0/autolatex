@@ -409,6 +409,14 @@ function renderEquation(equationOriginal, renderOptionsOrQuality, legacyDelim, l
             debugLog("Cached equation: " + renderer[2] + renderer[6] + equation);
             reportDeltaTime(453);
             debugLog("Fetching ", renderer[1], " and ", renderer[2] + renderer[6] + equation);
+            // REASON: GET-based renderers 400 (Codecogs) or hang on very long URLs, and the
+            // sidebar could only guess "the equation was too long". Skip the fetch with an
+            // explicit error so the log states the real cause (with the equation, via the
+            // catch below) and the next renderer is tried. 8000 chars is beyond every
+            // observed successful render but under the point where Codecogs starts 400ing.
+            if (renderer[1].length > 8000) {
+                throw new Error("Equation URL too long for " + rendererType + " (" + renderer[1].length + " chars > 8000)");
+            }
             var _createFileInCache = UrlFetchApp.fetch(renderer[2] + renderer[6] + equation);
             // simulates putting text into text renderer => creates link for cached image which is accessed later
             // needed for codecogs to generate equation properly, need to figure out which other renderers need this. to test, use align* equations.
