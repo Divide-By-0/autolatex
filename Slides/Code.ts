@@ -120,6 +120,13 @@ function getPrefs() {
 /**
  * @public
  */
+function logMathJaxClientError(payloadJson: string) {
+  console.error("MathJax client error:", payloadJson);
+}
+
+/**
+ * @public
+ */
 function getKey() {
   return Common.getKey();
 }
@@ -148,10 +155,14 @@ function isTableCell(element: PageElement): element is GoogleAppsScript.Slides.T
  */
 function replaceEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const quality = 900;
-  // REASON: Default auto rendering uses MathJax in the sidebar. This avoids sending
-  // equation contents to legacy external renderer APIs such as Codecogs/Texrendr.
-  const clientRender = renderer === "mathjax" || renderer === "auto";
-  const autoFallback = false;
+  const clientRender = renderer === "mathjax";
+  // REASON: In auto mode, start with MathJax on the client (never Codecogs first —
+  // both because a Codecogs outage can hang UrlFetchApp long enough for
+  // google.script.run to surface the generic "reload" error, and because it avoids
+  // sending equation contents to external renderer APIs unless MathJax hard-fails;
+  // PR #61 wanted no server fallback at all, but keeping Texrendr/Sciweavers as the
+  // sidebar-invoked fallback preserves rendering when MathJax can't load).
+  const autoFallback = renderer === "auto";
   let size = Common.getSize(sizeRaw);
   let isInline = false;
   if (size < 0) {
@@ -159,7 +170,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     size = 0;
   }
   Common.reportDeltaTime(140);
-  const delim = Common.getDelimiters(delimiter);
+  const delimiterSet = Common.getDelimiterSet(delimiter);
   Common.savePrefs(sizeRaw, delimiter, renderer);
   let c = 0; //counter
   const defaultSize = 11;
@@ -168,7 +179,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
   // base render options common to all equations rendered
   const renderOptions: AutoLatexCommon.RenderOptions = {
     r: 0, g: 0, b: 0,
-    delim,
+    delim: delimiterSet[0],
     defaultSize,
     size,
     inline: isInline,
@@ -190,7 +201,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
   }
 
   if (clientRender) {
-    const clientEquation = findClientRenderEquation(renderOptions);
+    const clientEquation = findClientRenderEquationForDelimiters(renderOptions, delimiterSet);
     if (!clientEquation) {
       return {
         lastStatus: SlidesEquationRenderStatus.Success,
@@ -204,27 +215,12 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     };
   }
 
-  // REASON: Auto mode batches Codecogs first (fast, parallelized), then sends ALL
-  // remaining equations to the client for MathJax rendering in parallel.
+  // REASON: Auto mode sends all equations to client MathJax first. The old
+  // Codecogs-first phase could block the entire action during a Codecogs outage,
+  // preventing the MathJax fallback from ever running.
   if (autoFallback) {
-    // Phase 1: Batch render all equations with Codecogs only
-    const slides = IntegratedApp.getBody();
-    const childCount = slides.length;
-    for (let slideNum = 0; slideNum < childCount; slideNum++) {
-      const elements = slides[slideNum].getPageElements();
-      for (const element of elements) {
-        const castedElement = castElement(element);
-        if (castedElement === null) continue;
-        c += renderElement(slideNum, castedElement, {
-          ...renderOptions,
-          allowedServerFamilies: ["Codecogs"]
-        });
-      }
-    }
-
-    // Phase 2: Find ALL remaining equations (failed Codecogs) and send to client for parallel MathJax
-    const remainingEquations = findAllClientRenderEquations(renderOptions);
-    if (remainingEquations.length === 0) {
+    const clientEquations = findAllClientRenderEquationsForDelimiters(renderOptions, delimiterSet);
+    if (clientEquations.length === 0) {
       return {
         lastStatus: SlidesEquationRenderStatus.Success,
         successCount: c
@@ -233,24 +229,45 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     return {
       lastStatus: SlidesEquationRenderStatus.ClientRender,
       successCount: c,
-      clientEquations: remainingEquations
+      clientEquations
     };
   }
 
-  const slides = IntegratedApp.getBody();
-  const childCount = slides.length;
-  for (let slideNum = 0; slideNum < childCount; slideNum++) {
-    const elements = slides[slideNum].getPageElements();
-    Common.debugLog("Slide Num: " + slideNum + " Num of shapes: " + elements.length);
-    for (const element of elements) {
-      const castedElement = castElement(element);
-      // if we don't recognize this element
-      if (castedElement === null) continue;
+  for (const delim of delimiterSet) {
+    const slides = IntegratedApp.getBody();
+    const childCount = slides.length;
+    for (let slideNum = 0; slideNum < childCount; slideNum++) {
+      const elements = slides[slideNum].getPageElements();
+      Common.debugLog("Slide Num: " + slideNum + " Num of shapes: " + elements.length);
+      for (const element of elements) {
+        const castedElement = castElement(element);
+        // if we don't recognize this element
+        if (castedElement === null) continue;
 
-      c += renderElement(slideNum, castedElement, renderOptions);
+        c += renderElement(slideNum, castedElement, {
+          ...renderOptions,
+          delim
+        });
+      }
     }
   }
   return Common.encodeFlag(0, c);
+}
+
+function findClientRenderEquationForDelimiters(
+  renderOptions: AutoLatexCommon.RenderOptions,
+  delimiterSet: AutoLatexCommon.Delimiter[]
+): SlidesClientRenderOptions | null {
+  for (const delim of delimiterSet) {
+    const clientEquation = findClientRenderEquation({
+      ...renderOptions,
+      delim
+    });
+    if (clientEquation) {
+      return clientEquation;
+    }
+  }
+  return null;
 }
 
 function findClientRenderEquation(renderOptions: AutoLatexCommon.RenderOptions): SlidesClientRenderOptions | null {
@@ -286,6 +303,20 @@ function findAllClientRenderEquations(renderOptions: AutoLatexCommon.RenderOptio
       if (!castedElement) continue;
       findAllClientRenderEquationsInElement(slideNum, slide, castedElement, renderOptions, results);
     }
+  }
+  return results;
+}
+
+function findAllClientRenderEquationsForDelimiters(
+  renderOptions: AutoLatexCommon.RenderOptions,
+  delimiterSet: AutoLatexCommon.Delimiter[]
+): SlidesClientRenderOptions[] {
+  const results: SlidesClientRenderOptions[] = [];
+  for (const delim of delimiterSet) {
+    results.push(...findAllClientRenderEquations({
+      ...renderOptions,
+      delim
+    }));
   }
   return results;
 }
@@ -348,7 +379,11 @@ function findAllClientRenderEquationsInTextElement(
     const size = getSlideTextSize(renderOptions.size, renderOptions.defaultSize, equationRange);
     const colorRangeEnd = Math.max(equationOffsets.start + renderOptions.delim[4], equationOffsets.end);
     const textColor = getRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
-    const clientEquation = decodeURIComponent(equationOriginal).replace(/\\\\/g, "\\");
+    // REASON: collapse the encoded four-backslash newline marker in ENCODED space
+    // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
+    // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
+    // \hline" after a derender round-trip) and align/matrix row breaks.
+    const clientEquation = decodeURIComponent(equationOriginal.split("%5C%5C%5C%5C").join("%5C%5C"));
 
     results.push({
       size,
@@ -684,7 +719,11 @@ function findClientRenderEquationInTextElement(
     const size = getSlideTextSize(renderOptions.size, renderOptions.defaultSize, equationRange);
     const colorRangeEnd = Math.max(equationOffsets.start + renderOptions.delim[4], equationOffsets.end);
     const textColor = getRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
-    const clientEquation = decodeURIComponent(equationOriginal).replace(/\\\\/g, "\\");
+    // REASON: collapse the encoded four-backslash newline marker in ENCODED space
+    // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
+    // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
+    // \hline" after a derender round-trip) and align/matrix row breaks.
+    const clientEquation = decodeURIComponent(equationOriginal.split("%5C%5C%5C%5C").join("%5C%5C"));
 
     return {
       size,
@@ -1031,7 +1070,8 @@ function clientRenderFailed(equations: { options: SlidesClientRenderOptions }[])
       const equationRange = target.textRange.getRange(equation.options.rangeStart, safeEnd);
       const slideNum = IntegratedApp.getBody().findIndex(s => s.getObjectId() === equation.options.slideId);
 
-      // REASON: Try Texrendr and Sciweavers only - Codecogs already failed, MathJax already failed.
+      // REASON: Try non-Codecogs server renderers only. MathJax has already failed, and
+      // retrying Codecogs here can reintroduce the outage hang auto mode is avoiding.
       const result = placeImage(slideNum, target.textElement, equationRange, {
         size: equation.options.size,
         defaultSize: equation.options.size,
@@ -1086,7 +1126,22 @@ function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoL
   // debugLog("Left: " + positionX)
   const positionY = image.getTop(); // returns vertical position
   
-  let derenderData: DerenderData | [number, number, number, string, number] = JSON.parse(image.getTitle());
+  // REASON: image.getTitle() is empty for images that weren't placed by Auto-LaTeX
+  // (e.g. user-pasted screenshots, charts, other add-ons' images). JSON.parse("") throws
+  // SyntaxError: Unexpected end of JSON input — we used to surface that to the user as a
+  // raw crash from removeAll. Treat empty / unparseable titles as "not our image" and
+  // bail out cleanly so the iteration in removeAll just skips this one.
+  const rawTitle = image.getTitle();
+  if (!rawTitle || !rawTitle.trim()) {
+    return Common.DerenderResult.InvalidUrl;
+  }
+  let derenderData: DerenderData | [number, number, number, string, number];
+  try {
+    derenderData = JSON.parse(rawTitle);
+  } catch (err) {
+    console.log("derenderImage: image title is not Auto-LaTeX JSON; skipping.", rawTitle, err);
+    return Common.DerenderResult.InvalidUrl;
+  }
   
   if (Array.isArray(derenderData)) { 
     // backwards-compatibility - we use an object now

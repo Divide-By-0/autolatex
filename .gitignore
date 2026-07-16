@@ -3,11 +3,13 @@
 *.DS_Store
 Slides/Sidebar.js
 Docs/Sidebar.js
+Sheets/Sidebar.js
 SidebarJS.html
 Common/Code.js
 Common/Unicode.js
 Docs/Code.js
 Slides/Code.js
+Sheets/Code.js
 Workspace/Code.js
 Workspace/Docs.js
 Workspace/Sheets.js

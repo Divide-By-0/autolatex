@@ -16,6 +16,30 @@ interface Window {
 
 declare const MathJax: MathJaxApi;
 
+// REASON: mirrors the Docs sidebar's client-error reporting so MathJax failures in
+// Slides reach Cloud Logging with the offending equation; without it they vanished
+// in the sandboxed iframe. Deduped per session to keep error-path ingestion tiny.
+const reportedMathJaxErrors = new Set<string>();
+function reportMathJaxClientError(context: string, error: unknown, extra: Record<string, unknown> = {}) {
+  const message = error instanceof Error ? error.message : String(error);
+  const dedupeKey = `${context}:${message}`;
+  if (reportedMathJaxErrors.has(dedupeKey)) {
+    return;
+  }
+  reportedMathJaxErrors.add(dedupeKey);
+  const payload = {
+    context,
+    error: { message, stack: error instanceof Error ? error.stack || "" : "" },
+    extra,
+    href: window.location.href,
+    userAgent: navigator.userAgent,
+    timestamp: new Date().toISOString(),
+  };
+  (google.script.run as any)
+    .withFailureHandler((logError: unknown) => console.error("Failed to report MathJax client error.", logError))
+    .logMathJaxClientError(JSON.stringify(payload));
+}
+
 interface SlidesClientRenderOptions {
   size: number;
   inline: boolean;
@@ -112,6 +136,17 @@ async function renderMathJaxEquation(renderOptions: SlidesClientRenderOptions) {
   const svg: SVGSVGElement | null = result.querySelector("svg");
   if (!svg) {
     throw new Error("MathJax did not return an SVG element.");
+  }
+
+  // REASON: tex2svgPromise RESOLVES on TeX syntax errors, embedding the message as a
+  // red merror node — so bad equations were silently inserted as error images with no
+  // trace in Cloud Logging. Report them (with the equation) so they're debuggable;
+  // rendering still proceeds so one bad equation can't fail the whole batch.
+  const mjxErrorNode = svg.querySelector("[data-mjx-error]");
+  if (mjxErrorNode) {
+    reportMathJaxClientError("mathjax.merror", mjxErrorNode.getAttribute("data-mjx-error") || "unknown TeX error", {
+      equation: renderOptions.equation,
+    });
   }
 
   svg.classList.add("mathjax-equation-hidden-render");
@@ -245,7 +280,10 @@ function loadPreferences(choicePrefs: {size: string, delim: string, renderer: st
     $('#custom-size').hide();
   }
   $('#delimit').val(choicePrefs.delim);
-  const savedRenderer = ["auto", "codecogs", "mathjax", "texrendr", "sciweavers"].includes(choicePrefs.renderer) ? choicePrefs.renderer : "auto";
+  // REASON: Older users may have Codecogs saved from when it was the practical default.
+  // Open the sidebar on Automatic so Codecogs outages don't keep affecting them.
+  const rendererPreference = choicePrefs.renderer === "codecogs" ? "auto" : choicePrefs.renderer;
+  const savedRenderer = ["auto", "mathjax", "texrendr", "sciweavers"].includes(rendererPreference) ? rendererPreference : "auto";
   $('#renderer').val(savedRenderer);
   $('#insert-text').prop("disabled", false);
   $('#edit-text').prop("disabled", false);
@@ -339,7 +377,7 @@ function insertText(){
         return;
       }
 
-      // REASON: In auto mode, count any server-side successes (Codecogs) in the total.
+      // REASON: Carry forward any successes the server included with this ClientRender batch.
       mathJaxRenderedCount += result.successCount;
 
       // REASON: Render equations independently. A single MathJax failure should not force
@@ -354,7 +392,10 @@ function insertText(){
             }
           };
         } catch (error) {
-          console.error("MathJax equation render failed.", error, eq.equation);
+          reportMathJaxClientError("clientRenderEquation", error, {
+            equation: eq.equation,
+            equationLength: eq.equation.length
+          });
           return {
             ok: false as const,
             options: eq
@@ -368,13 +409,31 @@ function insertText(){
           const failed = results
             .filter(result => !result.ok)
             .map(result => ({ options: result.options }));
-          const scriptRun = google.script.run as any;
+          // REASON: In auto mode, equations MathJax couldn't render fall back to the
+          // server-side renderers (Texrendr/Sciweavers) per equation, so one bad
+          // equation neither kills the batch (PR #61's concern) nor resends already-
+          // rendered equations to the server (the pre-#61 whole-batch fallback).
+          const handleFailedSet = () => {
+            if (renderer === "auto") {
+              (google.script.run as any)
+                .withSuccessHandler((response: SlidesClientEquationRenderResult, userObject: HTMLButtonElement) => handleMathJaxResponse(response, userObject))
+                .withFailureHandler((msg: unknown, userObject: HTMLButtonElement) => handleFailure(msg, userObject))
+                .withUserObject(element)
+                .clientRenderFailed(failed);
+            } else {
+              handleFailure(new Error(`MathJax failed to render ${failed.length} equation(s).`), element);
+            }
+          };
 
           if (rendered.length > 0) {
-            scriptRun
+            (google.script.run as any)
               .withSuccessHandler((response: SlidesClientEquationRenderResult, userObject: HTMLButtonElement) => {
                 if (failed.length > 0) {
-                  handleFailure(new Error(`MathJax failed to render ${failed.length} equation(s).`), element);
+                  // REASON: This round's response won't pass through handleMathJaxResponse
+                  // (the failed subset still needs the server round-trip), so fold its
+                  // successes into the running count to keep the final summary accurate.
+                  mathJaxRenderedCount += response.successCount || 0;
+                  handleFailedSet();
                   return;
                 }
                 handleMathJaxResponse(response, userObject);
@@ -386,13 +445,20 @@ function insertText(){
           }
 
           if (failed.length > 0) {
-            handleFailure(new Error(`MathJax failed to render ${failed.length} equation(s).`), element);
+            handleFailedSet();
             return;
           }
 
           handleFailure(new Error("MathJax did not render any equations."), element);
         })
         .catch(error => {
+          // Unexpected machinery failure — per-equation render errors are already
+          // caught and reported above, so don't retry anything here.
+          reportMathJaxClientError("clientRenderBatch", error, {
+            equationCount: equationsToRender.length,
+            // full equations so the failure is reproducible from logs alone
+            equations: equationsToRender.map(eq => eq.equation),
+          });
           handleFailure(error, element);
         });
       return;

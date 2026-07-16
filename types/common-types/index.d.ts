@@ -23,6 +23,8 @@ declare namespace AutoLatexCommon {
          */
         getDelimiters(delimiters: string): Delimiter;
 
+        getDelimiterSet(delimiters: string): Delimiter[];
+
         getKey(): string;
 
         getPrefs(): {delim: string, renderer: string, size: string};

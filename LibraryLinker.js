@@ -6,7 +6,7 @@ const path = require("path");
 program
   .description("Links Apps Script projects to the Common library")
   .argument("<link|unlink>", "Link or unlink the Apps Script project from the library")
-  .argument("<Docs|Slides|Workspace|>", "The Apps Script project to link to")
+  .argument("<Docs|Slides|Sheets|Workspace>", "The Apps Script project to link to")
   .argument("[number]", "The version of the Common library to link to. Omit to use HEAD")
   .parse(process.argv);
 
@@ -21,8 +21,8 @@ function getCommonScriptId() {
 }
 
 /**
- * @param {"Docs"|"Slides"|"Workspace"} addonName The name of the addon to put the library ID in
- * @param {string} libraryId The ID of the common library 
+ * @param {"Docs"|"Slides"|"Sheets"|"Workspace"} addonName The name of the addon to put the library ID in
+ * @param {string} libraryId The ID of the common library
  */
 function setLibraryId(addonName, libraryId, libraryVersion) {
   const appscriptJsonPath = path.join(__dirname, addonName, "appsscript.json");

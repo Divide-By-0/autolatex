@@ -190,6 +190,20 @@ function requestNextMathJaxBatch(element: HTMLButtonElement, actionId: number) {
 }
 
 window.addEventListener("error", event => {
+  // REASON: Browsers blank the message to "Script error." with empty filename/lineno
+  // when a cross-origin script throws without CORS. We now load MathJax with
+  // crossorigin="anonymous" (see BuildSidebarJS.js) so real errors come through,
+  // but third-party scripts injected by Chrome extensions / corporate proxies will
+  // still emit this opaque shape — and there is nothing actionable in those rows.
+  // Drop them at the source so Cloud Logging shows real bugs instead of noise.
+  const isOpaqueCorsError =
+    (event.message === "Script error." || event.message === "Script error") &&
+    !event.filename &&
+    !event.lineno &&
+    !event.colno;
+  if (isOpaqueCorsError) {
+    return;
+  }
   if (event.error || shouldLogMathJaxErrors()) {
     reportMathJaxClientError("window.error", event.error || event.message, {
       filename: event.filename,
@@ -260,6 +274,17 @@ async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRender
   const svg: SVGSVGElement = result.querySelector("svg");
   if (!svg) {
     throw new Error("MathJax did not return an SVG element.");
+  }
+
+  // REASON: tex2svgPromise RESOLVES on TeX syntax errors, embedding the message as a
+  // red merror node — so bad equations were silently inserted as error images with no
+  // trace in Cloud Logging. Report them (with the equation) so they're debuggable;
+  // rendering still proceeds so one bad equation can't fail the whole batch.
+  const mjxErrorNode = svg.querySelector("[data-mjx-error]");
+  if (mjxErrorNode) {
+    reportMathJaxClientError("mathjax.merror", mjxErrorNode.getAttribute("data-mjx-error") || "unknown TeX error", {
+      equation: renderOptions.equation,
+    });
   }
   
   // calculate width and height by rendering this svg with the specified font size
@@ -409,7 +434,10 @@ function loadPreferences(choicePrefs: {size: string, delim: string, renderer: st
     $('#custom-size').hide();
   }
   $('#delimit').val(choicePrefs.delim);
-  const savedRenderer = ["auto", "codecogs", "mathjax", "texrendr", "sciweavers"].includes(choicePrefs.renderer) ? choicePrefs.renderer : "auto";
+  // REASON: Older users may have Codecogs saved from when it was the practical default.
+  // Open the sidebar on Automatic so Codecogs outages don't keep affecting them.
+  const rendererPreference = choicePrefs.renderer === "codecogs" ? "auto" : choicePrefs.renderer;
+  const savedRenderer = ["auto", "mathjax", "texrendr", "sciweavers"].includes(rendererPreference) ? rendererPreference : "auto";
   $('#renderer').val(savedRenderer);
   enableSidebarButtons();
   setRenderButtonState(false);
@@ -480,10 +508,11 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
 
   if (lastStatus === google.script.DocsEquationRenderStatus.ClientRender) {
     // REASON: In auto mode, enable chaining lazily when we first need client rendering.
-    // This avoids an unnecessary extra round-trip when all equations succeed with Codecogs.
+    // This keeps the sidebar idle until the server has actually found equations that
+    // need MathJax work.
     if (!isMathJaxRenderChaining) {
       isMathJaxRenderChaining = true;
-      mathJaxRenderedCount = successCount; // count any server-side (Codecogs) successes
+      mathJaxRenderedCount = successCount; // count any server-side successes already completed before this batch
       setRenderButtonState(true);
     }
 
@@ -520,17 +549,47 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
           .filter(result => !result.ok)
           .map(result => ({ options: result.options }));
 
+        // REASON: In auto mode, equations MathJax couldn't render fall back to the
+        // server-side renderers (Texrendr/Sciweavers) per equation, so one bad
+        // equation neither kills the batch (PR #61's concern) nor resends already-
+        // rendered equations to the server (the pre-#61 whole-batch fallback).
+        const handleFailed = () => {
+          if (isStaleSidebarAction(actionId)) {
+            return;
+          }
+          if (getCurrentSettings().renderer === "auto") {
+            google.script.run
+              .withSuccessHandler((result, userObject) => successHandler(result, userObject, actionId))
+              .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
+              .withUserObject(element)
+              .clientRenderFailed(failed);
+          } else {
+            errorHandler(new Error(`MathJax failed to render ${failed.length} equation(s).`), element, actionId);
+          }
+        };
+
         if (rendered.length > 0) {
           google.script.run
-            .withSuccessHandler((result: ReplaceEquationsResult) => {
+            .withSuccessHandler((result: ReplaceEquationsResult, userObject) => {
               if (isStaleSidebarAction(actionId)) {
                 return;
               }
               if (failed.length > 0) {
-                errorHandler(new Error(`MathJax failed to render ${failed.length} equation(s).`), element, actionId);
+                // REASON: This round's result doesn't go through successHandler (the
+                // failed subset still needs the server round-trip), so fold its
+                // successes/notes into the chain accumulators manually — otherwise the
+                // final "N equations rendered" summary undercounts.
+                mathJaxRenderedCount += result.successCount || 0;
+                if (typeof result.autoFixedCount === "number" && result.autoFixedCount > 0) {
+                  lastReplaceAutoFixedCount += result.autoFixedCount;
+                }
+                if (result.failureDetails && result.failureDetails.length > 0) {
+                  lastReplaceFailureDetails = lastReplaceFailureDetails.concat(result.failureDetails);
+                }
+                handleFailed();
                 return;
               }
-              successHandler(result, element, actionId);
+              successHandler(result, userObject, actionId);
             })
             .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
             .withUserObject(element)
@@ -539,14 +598,20 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
         }
 
         if (failed.length > 0) {
-          errorHandler(new Error(`MathJax failed to render ${failed.length} equation(s).`), element, actionId);
+          handleFailed();
           return;
         }
 
         errorHandler(new Error("MathJax did not render any equations."), element, actionId);
       })
       .catch(err => {
-        reportMathJaxClientError("clientRenderBatch", err, { equationCount: equationsToRender.length });
+        // Unexpected machinery failure — per-equation render errors are already
+        // caught and reported above, so don't retry anything here.
+        reportMathJaxClientError("clientRenderBatch", err, {
+          equationCount: equationsToRender.length,
+          // full equations so the failure is reproducible from logs alone
+          equations: equationsToRender.map(c => c.equation),
+        });
         errorHandler(err, element, actionId);
       });
   } else {
@@ -607,6 +672,41 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
   }
 }
 
+// REASON: Match the server-side "Exception: You do not have permission to call …"
+// message across the languages we've actually observed in prod logs
+// (en, es, fr, it, ko, uk). Looser than parsing the link because the link text is
+// stable but the prose around it varies. If a user hits this in a locale we
+// haven't enumerated, they fall through to the generic message — harmless.
+function isAuthorizationError(msg: unknown): boolean {
+  const text = typeof msg === "string" ? msg : (msg && typeof msg === "object" && "message" in msg ? String((msg as { message: unknown }).message) : "");
+  if (!text) return false;
+  return /permission to call|Authorization is required|Authori[sz]ation is required|необхідн[аі] [^ ]* дозвол|необходим|권한이 없|permiso para llamar|autorisations requises|autorizzazione|disposer des autorisations/i.test(text);
+}
+
+function showAuthorizationPrompt(statusText: string) {
+  google.script.run
+    .withSuccessHandler((authUrl: string | null) => {
+      if (authUrl) {
+        showError(
+          `<strong>Auto-LaTeX needs your permission to read this document.</strong> <a href="${authUrl}" target="_blank" rel="noopener">Click here to authorize</a>, then come back and try again.`,
+          statusText
+        );
+      } else {
+        showError(
+          "<strong>Authorization is required.</strong> Try reloading the document or signing out of any other Google accounts in this tab. If that doesn't help, reinstall the add-on and click 'Select all' on the permissions screen.",
+          statusText
+        );
+      }
+    })
+    .withFailureHandler(() => {
+      showError(
+        "<strong>Authorization is required.</strong> Reload the document or reinstall the add-on (click 'Select all' on the permissions screen).",
+        statusText
+      );
+    })
+    .getAuthorizationUrl();
+}
+
 function errorHandler(msg, element, actionId: number) {
   if (isStaleSidebarAction(actionId)) {
     return;
@@ -625,6 +725,14 @@ function errorHandler(msg, element, actionId: number) {
   const failureHtml = buildFailureDetailsHtml(lastReplaceFailureDetails);
   lastReplaceFailureDetails = [];
   lastReplaceAutoFixedCount = 0;
+
+  if (isAuthorizationError(msg)) {
+    // REASON: Don't dump the stack trace at the user when they just haven't granted
+    // documents.currentonly yet. Get the OAuth URL from the server and show a clean
+    // "Click here to authorize" link.
+    showAuthorizationPrompt("Status: Authorization required");
+    return;
+  }
 
   showError("<strong>Ensure you clicked 'Select all' on the permissions screen. If not, try uninstalling and reinstalling the add-on to redo permissions.</strong> Please ensure your equations are surrounded by $$ on both sides (or \\[ and an \\]), without any enters in between (use Shift+Enter for line breaks inside an equation), or reload the page. If authorization required, try signing out of other google accounts." + autoFixHtml + failureHtml, "Status: Error, please reload.");
 }

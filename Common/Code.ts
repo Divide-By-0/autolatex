@@ -1,4 +1,8 @@
-const DEBUG = true; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
+// REASON: DEBUG gates all per-equation diagnostic console.logs (debugLog()). Left on, every render by every
+// user worldwide ingests ~15-25 log lines into Cloud Logging, which quadrupled ingestion (~3.5->14 GB/day,
+// ~$25->$185/mo) after the 2026-05-12 deploy. Keep false in prod; flip to true + redeploy only when actively
+// debugging. Errors and metric-feeding logs (reportDeltaTime, "Worked with renderer") stay on raw console.log.
+const DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
 
 /**
  * An array which defines a renderer
@@ -35,12 +39,13 @@ interface RenderOptions extends CommonRenderOptions {
   // The default/previous size of the text, in case size is null.
   defaultSize: number;
   clientRender: boolean;
-  // REASON: When true, Codecogs is tried server-side first in auto mode.
-  // If Codecogs fails, the equation is sent to the client for MathJax rendering.
-  // This enables the fallback order: Codecogs -> MathJax (client) -> Texrendr/Sciweavers.
+  // REASON: When true, auto mode starts with client-side MathJax instead of
+  // touching server renderers first. Codecogs outages can make UrlFetchApp hang
+  // long enough for the sidebar to report "Error, please reload" before fallback.
+  // If MathJax fails, the sidebar calls the server-only fallback path below.
   autoFallbackToClient?: boolean;
   // REASON: When set, only server-side renderers whose family name is in this list will be attempted.
-  // Used to implement staged fallback: first try Codecogs only, then Texrendr/Sciweavers only.
+  // Used to implement explicit renderer choices and the post-MathJax fallback to Texrendr/Sciweavers.
   allowedServerFamilies?: string[];
 }
 
@@ -454,10 +459,18 @@ function savePrefs(size: string, delim: string, renderer: string = defaultRender
  */
 function getPrefs() {
   const userProperties = PropertiesService.getUserProperties();
+  let renderer = normalizeRendererPreference(userProperties.getProperty("renderer"));
+  if (renderer === "codecogs") {
+    // REASON: Older installs could have Codecogs saved as their effective default.
+    // During Codecogs outages that makes the first render path block before auto
+    // fallback can help, so migrate saved Codecogs preferences back to Automatic.
+    renderer = defaultRendererPreference;
+    userProperties.setProperty("renderer", renderer);
+  }
   const savedPrefs = {
     size: userProperties.getProperty("size"),
     delim: userProperties.getProperty("delim"),
-    renderer: normalizeRendererPreference(userProperties.getProperty("renderer")),
+    renderer,
   };
   activeRendererPreference = savedPrefs.renderer;
   debugLog("Got prefs size:" + savedPrefs.size + " renderer:" + savedPrefs.renderer);
@@ -509,7 +522,8 @@ function renderEquation(
   // if failed codecogs and texrendr, probably shitty equation and the codecogs error is more descriptive so show it
 
   // REASON: allowedServerFamilies restricts which server renderers are attempted in this call.
-  // In auto mode, the first pass tries only Codecogs; the fallback pass tries Texrendr/Sciweavers.
+  // Explicit renderer choices use this to narrow the family. Auto's post-MathJax fallback
+  // also uses it to avoid retrying Codecogs when the client-side path needs server backup.
   let rendererOrder = getRendererOrder();
   if (renderOptions.allowedServerFamilies) {
     rendererOrder = rendererOrder.filter(idx => {
@@ -547,7 +561,7 @@ function renderEquation(
       debugLog("Title Alt Text " + renderer[2] + equationOriginal + "#" + renderOptions.delim[6]);
       debugLog("Cached equation: " + renderer[2] + renderer[6] + equation);
       reportDeltaTime(453);
-      console.log("Fetching ", renderer[1], " and ", renderer[2] + renderer[6] + equation);
+      debugLog("Fetching ", renderer[1], " and ", renderer[2] + renderer[6] + equation);
 
       const _createFileInCache = UrlFetchApp.fetch(renderer[2] + renderer[6] + equation);
       // simulates putting text into text renderer => creates link for cached image which is accessed later
@@ -558,9 +572,11 @@ function renderEquation(
         Utilities.sleep(50); // sleep 50ms to let codecogs put the equation in its cache
       }
       resp = UrlFetchApp.fetch(renderer[1]);
-      debugLog(resp, resp.getBlob(), escape(resp.getBlob().getDataAsString()).substring(0, 50));
+      // REASON: removed `debugLog(resp, resp.getBlob(), ...)` here — dumping the HTTPResponse and Blob objects
+      // printed ~25 lines of `{ method: [Function], ... }` per equation and was the single largest Cloud Logging
+      // cost. The meaningful part (the hash prefix) is already logged below; re-add only if truly needed.
       deltaTime = reportDeltaTime(470, " equation link length " + renderer[1].length + " and renderer  " + rendererType);
-      console.log("Hash ", escape(resp.getBlob().getDataAsString()).substring(0, 50));
+      debugLog("Hash ", escape(resp.getBlob().getDataAsString()).substring(0, 50));
       if (!escape(resp.getBlob().getDataAsString())) {
         // if there is no hash, codecogs failed
         throw new Error("Saw NO Codecogs equation hash! Renderer likely down!");
@@ -613,7 +629,11 @@ function renderEquation(
       if (isUrlFetchAuthorizationError(err)) {
         authorizationError = true;
       }
-      console.log(rendererType + " Error! - " + err);
+      // REASON: DEBUG=false silenced the per-render "Raw equation" debugLog, which
+      // was the only place the equation appeared — leaving failure logs undebuggable.
+      // Attach a truncated equation to the (rare) error path only, so failures stay
+      // diagnosable without reintroducing per-render ingestion cost.
+      console.log(rendererType + " Error! - " + err + " | eqn: " + equationOriginal);
       const failedEquationLinkLength = renderer ? renderer[1].length : -1;
       deltaTime = reportDeltaTime(533, " failed equation link length " + failedEquationLinkLength + " and renderer  " + rendererType);
       if (rendererType == "Texrendr") {
@@ -661,7 +681,7 @@ function sizeImage(app: IntegratedApp, paragraph: GoogleAppsScript.Document.Para
   if (width > maxWidth) {
     height = Math.round((height * maxWidth) / width);
     width = maxWidth;
-    console.log("Rescaled in page.");
+    debugLog("Rescaled in page.");
   }
   if (childIndex == null || width == 0 || height == 0) {
     console.log("none or 0 width hight");
@@ -823,7 +843,7 @@ function getRenderer(worked: number): Renderer {
 
 function getDelimiters(delimiters: string): Delimiter {
   // Todo - fix hardcoded delimiters. Potentially do escape(escape(original)) or something like that.
-  if (delimiters == "$$") {
+  if (delimiters == "$$" || delimiters == "all") {
     return ["$$", "$$", "\\$\\$", "\\$\\$", 2, 1, 0];
   } //raw begin, raw end, escaped begin, escaped end, # of chars, idk, renderer type #
   if (delimiters == "[") {
@@ -836,6 +856,18 @@ function getDelimiters(delimiters: string): Delimiter {
     return ["\\(", "\\)", "\\\\\\(", "\\\\\\)", 2, 1, 3];
   }
   return ["\\[", "\\]", "\\\\\\[", "\\\\\\]", 2, 1, 1];
+}
+
+/**
+ * @public
+ */
+function getDelimiterSet(delimiters: string): Delimiter[] {
+  if (delimiters == "all") {
+    // REASON: `$$` must be checked before `$` so the single-dollar finder does not
+    // consider the two characters inside a block delimiter as separate inline delimiters.
+    return [getDelimiters("$$"), getDelimiters("["), getDelimiters("("), getDelimiters("$")];
+  }
+  return [getDelimiters(delimiters)];
 }
 
 function getNumDelimiters(delimiters: string | number) {
