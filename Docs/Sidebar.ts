@@ -283,7 +283,7 @@ async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRender
   const mjxErrorNode = svg.querySelector("[data-mjx-error]");
   if (mjxErrorNode) {
     reportMathJaxClientError("mathjax.merror", mjxErrorNode.getAttribute("data-mjx-error") || "unknown TeX error", {
-      equation: renderOptions.equation.substring(0, 300),
+      equation: renderOptions.equation,
     });
   }
   
@@ -529,7 +529,7 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
         };
       } catch (err) {
         reportMathJaxClientError("clientRenderEquation", err, {
-          equation: c.equation.substring(0, 300),
+          equation: c.equation,
           equationLength: c.equation.length
         });
         return {
@@ -609,8 +609,8 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
         // caught and reported above, so don't retry anything here.
         reportMathJaxClientError("clientRenderBatch", err, {
           equationCount: equationsToRender.length,
-          // first few equations so the failure is debuggable from logs alone
-          equations: equationsToRender.slice(0, 3).map(c => c.equation.substring(0, 200)),
+          // full equations so the failure is reproducible from logs alone
+          equations: equationsToRender.map(c => c.equation),
         });
         errorHandler(err, element, actionId);
       });
