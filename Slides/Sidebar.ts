@@ -123,7 +123,16 @@ async function renderMathJaxEquation(renderOptions: SlidesClientRenderOptions) {
   const equationForMathJax = renderOptions.equation
     .replace(/\\mbox\s*\{([^{}]*)\}/g, (match, text) => hasNonAsciiText(text) ? `\\text{${text}}` : match)
     .replace(/\\mathrm\s*\{([^{}]*)\}/g, (match, text) => hasNonAsciiText(text) ? `\\text{${text}}` : match);
-  const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + equationForMathJax.replace(/\n|\r|\r\n/g, "\\\\");
+  let equationBody = equationForMathJax.replace(/\n|\r|\r\n/g, "\\\\");
+  // REASON: MathJax v3 ignores \\ outside an environment, so shift+enter multi-line
+  // equations (which the sidebar instructions promise, and which Codecogs honors)
+  // silently rendered on one line. Wrap top-level \\ in gathered to restore the
+  // promised line breaks. Equations that already use an environment (align, table,
+  // gathered, ...) are left alone — their \\ belongs to that environment.
+  if (/\\\\/.test(equationBody) && !/\\begin\s*\{/.test(equationBody)) {
+    equationBody = `\\begin{gathered}${equationBody}\\end{gathered}`;
+  }
+  const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + equationBody;
 
   if (!window.MathJax || typeof window.MathJax.tex2svgPromise !== "function") {
     throw new Error("MathJax is still loading. Please try again in a moment.");
