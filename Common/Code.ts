@@ -76,6 +76,13 @@ interface ClientRenderOptions extends CommonRenderOptions {
   rangeId: string;
   equation: string;
   equationLinkEncoded: string;
+  // REASON: equations inside highlighted (background-colored) text render as
+  // transparent PNGs, which show the white page through the highlight band.
+  // When the doc text carries a background color, it's sampled here so the
+  // client can bake it into the image. Absent -> transparent (unchanged).
+  bgR?: number;
+  bgG?: number;
+  bgB?: number;
 }
 
 /**

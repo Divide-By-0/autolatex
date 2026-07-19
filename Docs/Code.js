@@ -673,8 +673,15 @@ function findEquationAndPlaceImage(startElement, renderOptions) {
     var colorHex = textElement.getForegroundColor(startElement.getStartOffset());
     // Docs can return null or malformed colors in some edge cases. Fall back to black.
     var _a = getRgbFromHex(colorHex), r = _a[0], g = _a[1], b = _a[2];
+    // REASON: users build dark documents by highlighting text with a dark background
+    // color; the transparent equation PNG then shows the white page through the
+    // highlight band, making light-colored equations invisible. Sample the text's
+    // background color so the client bakes it into the image. No highlight (null)
+    // keeps the image transparent, exactly as before.
+    var bgHex = textElement.getBackgroundColor(startElement.getStartOffset());
+    var bgColor = bgHex ? getRgbFromHex(bgHex) : null;
     // add color info to render options
-    var coloredRenderOptions = __assign(__assign({}, renderOptions), { r: r, g: g, b: b });
+    var coloredRenderOptions = __assign(__assign(__assign({}, renderOptions), { r: r, g: g, b: b }), (bgColor ? { bgR: bgColor[0], bgG: bgColor[1], bgB: bgColor[2] } : {}));
     // REASON: Explicit MathJax and Automatic both render on the client first.
     // Automatic falls back to server renderers from the sidebar only if MathJax fails.
     if (renderOptions.clientRender || renderOptions.autoFallbackToClient) {
@@ -966,10 +973,80 @@ function removeAll(defaultDelimRaw) {
  * @param {string} sizeRaw     Sidebar-selected size.
  * @public
  */
+// Derender one equation image in place: insert the recovered LaTeX text at the
+// image's position in its parent and remove the image.
+function derenderInlineImage(image, defaultDelim) {
+    var origURL = image.getLinkUrl();
+    if (!origURL) {
+        return 4 /* Common.DerenderResult.NullUrl */;
+    }
+    var result = Common.derenderEquation(origURL, getDocsApp());
+    if (!result)
+        return 2 /* Common.DerenderResult.InvalidUrl */;
+    var newDelim = result.delim, origEq = result.origEq;
+    var delim = newDelim || defaultDelim;
+    if (origEq.length <= 0) {
+        console.log("Empty equation derender.");
+        return 1 /* Common.DerenderResult.EmptyEquation */;
+    }
+    var parent = image.getParent();
+    var imageIndex = parent.getChildIndex(image);
+    parent.insertText(imageIndex, delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
+    image.removeFromParent();
+    return 5 /* Common.DerenderResult.Success */;
+}
+// Collect equation-candidate inline images from the user's selection, in document
+// order. Handles both a directly selected image and selections that span
+// paragraphs/list items containing images.
+function collectSelectedInlineImages(selection) {
+    var images = [];
+    for (var _i = 0, _a = selection.getRangeElements(); _i < _a.length; _i++) {
+        var rangeElement = _a[_i];
+        var el = rangeElement.getElement();
+        var elType = el.getType();
+        if (elType === DocumentApp.ElementType.INLINE_IMAGE) {
+            images.push(el.asInlineImage());
+        }
+        else if (elType === DocumentApp.ElementType.PARAGRAPH || elType === DocumentApp.ElementType.LIST_ITEM) {
+            var container = el;
+            for (var i = 0; i < container.getNumChildren(); i++) {
+                var child = container.getChild(i);
+                if (child.getType() === DocumentApp.ElementType.INLINE_IMAGE) {
+                    images.push(child.asInlineImage());
+                }
+            }
+        }
+    }
+    return images;
+}
 function editEquations(sizeRaw, delimiter, renderer) {
     if (renderer === void 0) { renderer = "auto"; }
     var defaultDelim = Common.getDelimiters(delimiter);
     Common.savePrefs(sizeRaw, delimiter, renderer);
+    // REASON: users naturally click/select the equation image itself and hit
+    // De-render; the cursor-only flow returned CursorNotFound for that (a selection
+    // means there is no cursor). Derender every equation image in the selection —
+    // in reverse document order so earlier removals can't shift later indices.
+    var selection = DocumentApp.getActiveDocument().getSelection();
+    if (selection) {
+        var images = collectSelectedInlineImages(selection);
+        if (images.length === 0) {
+            return 3 /* Common.DerenderResult.NonExistentElement */;
+        }
+        var successCount = 0;
+        var lastFailureResult = 2 /* Common.DerenderResult.InvalidUrl */;
+        for (var _i = 0, _a = images.reverse(); _i < _a.length; _i++) {
+            var image_1 = _a[_i];
+            var result = derenderInlineImage(image_1, defaultDelim);
+            if (result === 5 /* Common.DerenderResult.Success */) {
+                successCount++;
+            }
+            else {
+                lastFailureResult = result;
+            }
+        }
+        return successCount > 0 ? 5 /* Common.DerenderResult.Success */ : lastFailureResult;
+    }
     var cursor = DocumentApp.getActiveDocument().getCursor();
     if (!cursor) {
         return 0 /* Common.DerenderResult.CursorNotFound */;
@@ -1004,21 +1081,5 @@ function editEquations(sizeRaw, delimiter, renderer) {
     }
     var image = childAtCursor.asInlineImage();
     Common.debugLog("Image height", image.getHeight());
-    var origURL = image.getLinkUrl();
-    if (!origURL) {
-        return 4 /* Common.DerenderResult.NullUrl */;
-    }
-    Common.debugLog("Original URL from image", origURL);
-    var result = Common.derenderEquation(origURL, getDocsApp());
-    if (!result)
-        return 2 /* Common.DerenderResult.InvalidUrl */;
-    var newDelim = result.delim, origEq = result.origEq;
-    var delim = newDelim || defaultDelim;
-    if (origEq.length <= 0) {
-        console.log("Empty equation derender.");
-        return 1 /* Common.DerenderResult.EmptyEquation */;
-    }
-    cursor.insertText(delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
-    element.getChild(position + 1).removeFromParent();
-    return 5 /* Common.DerenderResult.Success */;
+    return derenderInlineImage(image, defaultDelim);
 }

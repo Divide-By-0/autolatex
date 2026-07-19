@@ -795,11 +795,20 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
   const colorHex = textElement.getForegroundColor(startElement.getStartOffset());
   // Docs can return null or malformed colors in some edge cases. Fall back to black.
   const [r, g, b] = getRgbFromHex(colorHex);
-  
+
+  // REASON: users build dark documents by highlighting text with a dark background
+  // color; the transparent equation PNG then shows the white page through the
+  // highlight band, making light-colored equations invisible. Sample the text's
+  // background color so the client bakes it into the image. No highlight (null)
+  // keeps the image transparent, exactly as before.
+  const bgHex = textElement.getBackgroundColor(startElement.getStartOffset());
+  const bgColor = bgHex ? getRgbFromHex(bgHex) : null;
+
   // add color info to render options
   const coloredRenderOptions = {
     ...renderOptions,
     r, g, b,
+    ...(bgColor ? { bgR: bgColor[0], bgG: bgColor[1], bgB: bgColor[2] } : {}),
   };
   
   // REASON: Explicit MathJax and Automatic both render on the client first.
@@ -1126,9 +1135,81 @@ function removeAll(defaultDelimRaw: string) {
  * @public
  */
 
+// Derender one equation image in place: insert the recovered LaTeX text at the
+// image's position in its parent and remove the image.
+function derenderInlineImage(
+  image: GoogleAppsScript.Document.InlineImage,
+  defaultDelim: AutoLatexCommon.Delimiter
+) {
+  const origURL = image.getLinkUrl();
+  if (!origURL) {
+    return Common.DerenderResult.NullUrl;
+  }
+  const result = Common.derenderEquation(origURL, getDocsApp());
+  if (!result) return Common.DerenderResult.InvalidUrl;
+  const { delim: newDelim, origEq } = result;
+  const delim = newDelim || defaultDelim;
+  if (origEq.length <= 0) {
+    console.log("Empty equation derender.");
+    return Common.DerenderResult.EmptyEquation;
+  }
+  const parent = image.getParent() as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph;
+  const imageIndex = parent.getChildIndex(image);
+  parent.insertText(imageIndex, delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
+  image.removeFromParent();
+  return Common.DerenderResult.Success;
+}
+
+// Collect equation-candidate inline images from the user's selection, in document
+// order. Handles both a directly selected image and selections that span
+// paragraphs/list items containing images.
+function collectSelectedInlineImages(selection: GoogleAppsScript.Document.Range) {
+  const images: GoogleAppsScript.Document.InlineImage[] = [];
+  for (const rangeElement of selection.getRangeElements()) {
+    const el = rangeElement.getElement();
+    const elType = el.getType();
+    if (elType === DocumentApp.ElementType.INLINE_IMAGE) {
+      images.push(el.asInlineImage());
+    } else if (elType === DocumentApp.ElementType.PARAGRAPH || elType === DocumentApp.ElementType.LIST_ITEM) {
+      const container = el as GoogleAppsScript.Document.Paragraph | GoogleAppsScript.Document.ListItem;
+      for (let i = 0; i < container.getNumChildren(); i++) {
+        const child = container.getChild(i);
+        if (child.getType() === DocumentApp.ElementType.INLINE_IMAGE) {
+          images.push(child.asInlineImage());
+        }
+      }
+    }
+  }
+  return images;
+}
+
 function editEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const defaultDelim = Common.getDelimiters(delimiter);
   Common.savePrefs(sizeRaw, delimiter, renderer);
+
+  // REASON: users naturally click/select the equation image itself and hit
+  // De-render; the cursor-only flow returned CursorNotFound for that (a selection
+  // means there is no cursor). Derender every equation image in the selection —
+  // in reverse document order so earlier removals can't shift later indices.
+  const selection = DocumentApp.getActiveDocument().getSelection();
+  if (selection) {
+    const images = collectSelectedInlineImages(selection);
+    if (images.length === 0) {
+      return Common.DerenderResult.NonExistentElement;
+    }
+    let successCount = 0;
+    let lastFailureResult = Common.DerenderResult.InvalidUrl;
+    for (const image of images.reverse()) {
+      const result = derenderInlineImage(image, defaultDelim);
+      if (result === Common.DerenderResult.Success) {
+        successCount++;
+      } else {
+        lastFailureResult = result;
+      }
+    }
+    return successCount > 0 ? Common.DerenderResult.Success : lastFailureResult;
+  }
+
   const cursor = DocumentApp.getActiveDocument().getCursor();
   if (!cursor) {
     return Common.DerenderResult.CursorNotFound;
@@ -1169,20 +1250,5 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
 
   const image = childAtCursor.asInlineImage();
   Common.debugLog("Image height", image.getHeight());
-  const origURL = image.getLinkUrl();
-  if (!origURL) {
-    return Common.DerenderResult.NullUrl;
-  }
-  Common.debugLog("Original URL from image", origURL);
-  const result = Common.derenderEquation(origURL, getDocsApp());
-  if (!result) return Common.DerenderResult.InvalidUrl;
-  const { delim: newDelim, origEq } = result;
-  const delim = newDelim || defaultDelim;
-  if (origEq.length <= 0) {
-    console.log("Empty equation derender.");
-    return Common.DerenderResult.EmptyEquation;
-  }
-  cursor.insertText(delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
-  element.getChild(position + 1).removeFromParent();
-  return Common.DerenderResult.Success;
+  return derenderInlineImage(image, defaultDelim);
 }

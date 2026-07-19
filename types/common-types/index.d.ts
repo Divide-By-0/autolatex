@@ -82,6 +82,13 @@ declare namespace AutoLatexCommon {
 
         b: number;
 
+        /** Sampled text background (highlight) color; absent -> transparent image. */
+        bgR?: number;
+
+        bgG?: number;
+
+        bgB?: number;
+
         delim: Delimiter;
 
         equation: string;

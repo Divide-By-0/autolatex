@@ -319,7 +319,16 @@ async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRender
   if (!ctx) {
     throw new Error("Could not initialize a 2D canvas for MathJax rendering.");
   }
-  
+
+  // REASON: when the equation text carries a highlight (background color), the
+  // server samples it into bgR/bgG/bgB; bake it into the PNG so the image matches
+  // the highlight band instead of showing the white page through a transparent
+  // background. Absent -> transparent, exactly the previous behavior.
+  if (typeof renderOptions.bgR === "number") {
+    ctx.fillStyle = `rgb(${renderOptions.bgR},${renderOptions.bgG},${renderOptions.bgB})`;
+    ctx.fillRect(0, 0, width, height);
+  }
+
   try {
     // load this svg on an image
     const svgImage = new Image(width, height);
