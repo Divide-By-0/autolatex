@@ -16,6 +16,9 @@ interface Window {
 
 declare const MathJax: MathJaxApi;
 
+// implemented in ../SidebarMathJaxShared.ts, injected ahead of this file by BuildSidebarJS.js
+declare function prepareEquationForMathJax(equation: string): string;
+
 // REASON: mirrors the Docs sidebar's client-error reporting so MathJax failures in
 // Slides reach Cloud Logging with the offending equation; without it they vanished
 // in the sandboxed iframe. Deduped per session to keep error-path ingestion tiny.
@@ -115,73 +118,10 @@ async function blobToB64(blob: Blob) {
   return dataUrl.substring(dataUrl.indexOf(",") + 1);
 }
 
-function hasNonAsciiText(value: string) {
-  return value.split("").some(char => char.charCodeAt(0) > 0x7F);
-}
-
-// REASON: Newlines inside a \begin{...}\end{...} environment are cosmetic (pasted
-// LaTeX formatting) — turning them into \\ injected phantom rows into bmatrix/align
-// content. Depth-0 newlines adjacent to \begin/\end are also layout (pasted LaTeX
-// puts environments on their own lines). Only the remaining depth-0 newlines mean
-// "new output line" — the sidebar's shift+enter contract. An explicit \\ followed
-// by a newline collapses to a single row break instead of adding an empty line.
-function replaceNewlinesDepthAware(equation: string) {
-  let depth = 0;
-  let result = "";
-  for (let i = 0; i < equation.length; i++) {
-    const ch = equation.charAt(i);
-    if (ch === "\\") {
-      if (equation.startsWith("\\begin", i)) {
-        depth++;
-      } else if (equation.startsWith("\\end", i)) {
-        depth = Math.max(0, depth - 1);
-      }
-      // copy escape pairs atomically so \\ never half-matches the checks above
-      result += ch;
-      if (i + 1 < equation.length) {
-        result += equation.charAt(i + 1);
-        i++;
-      }
-      continue;
-    }
-    if (ch === "\n" || ch === "\r" || ch === "\u000B") {
-      const upcoming = equation.slice(i + 1).replace(/^[\s\u000B]+/, "");
-      const cosmeticBoundary =
-        depth > 0 ||
-        upcoming.startsWith("\\begin") ||
-        /\\end\s*\{[^{}]*\}\s*$/.test(result);
-      if (cosmeticBoundary) {
-        result += " ";
-      } else if (/\\\\\s*$/.test(result)) {
-        result += " "; // already ends with an explicit row break; don't double it
-      } else {
-        result += "\\\\";
-      }
-      continue;
-    }
-    result += ch;
-  }
-  return result;
-}
-
 async function renderMathJaxEquation(renderOptions: SlidesClientRenderOptions) {
-  const equationForMathJax = renderOptions.equation
-    .replace(/\\mbox\s*\{([^{}]*)\}/g, (match, text) => hasNonAsciiText(text) ? `\\text{${text}}` : match)
-    .replace(/\\mathrm\s*\{([^{}]*)\}/g, (match, text) => hasNonAsciiText(text) ? `\\text{${text}}` : match)
-    // REASON: renders/derenders performed while the pre-2026-07 backslash collapse
-    // was live permanently stripped one backslash from "\\\hline" in user docs,
-    // leaving the exact 2-backslash signature "\\hline" (row break + literal
-    // "hline" text). Repair it; a pristine 3-backslash run can't match this regex.
-    .replace(/(^|[^\\])\\\\hline/g, "$1\\\\ \\hline");
-  let equationBody = replaceNewlinesDepthAware(equationForMathJax);
-  // REASON: MathJax v3 ignores \\ outside an environment, so shift+enter multi-line
-  // equations (which the sidebar instructions promise, and which Codecogs honors)
-  // silently rendered on one line. Wrap top-level \\ in gathered to restore the
-  // promised line breaks. Equations that already use an environment (align, table,
-  // gathered, ...) are left alone — their \\ belongs to that environment.
-  if (/\\\\/.test(equationBody) && !/\\begin\s*\{/.test(equationBody)) {
-    equationBody = `\\begin{gathered}${equationBody}\\end{gathered}`;
-  }
+  // preprocessing (mbox/mathrm unicode, damaged-hline repair, depth-aware
+  // newlines, gathered wrap) lives in ../SidebarMathJaxShared.ts
+  const equationBody = prepareEquationForMathJax(renderOptions.equation);
   const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + equationBody;
 
   if (!window.MathJax || typeof window.MathJax.tex2svgPromise !== "function") {

@@ -838,16 +838,7 @@ function buildClientRenderResponse(
   // silently merging align/matrix rows and degrading "\\\hline" -> "\\hline" ->
   // (after a derender round-trip) a bare "\hline", which MathJax rejects as
   // "Misplaced \hline".
-  const clientEquation = decodeURIComponent(
-    equationOriginal
-      // REASON: restore the reEncode newline marker to a literal \r (what the doc
-      // actually contained) instead of pre-converting to "\\". The client decides
-      // per-position whether a newline is a row break or cosmetic paste formatting
-      // (inside environments), and derender round-trips stay byte-identical.
-      .split("%5C%5C%5C%5C%20").join("%0D")
-      // legacy doubled row breaks, same collapse as the Codecogs path
-      .split("%5C%5C%5C%5C").join("%5C%5C")
-  );
+  const clientEquation = Common.getClientEquation(equationOriginal, getDocsApp());
   const doc = DocumentApp.getActiveDocument();
   const range = doc.newRange()
     .addElement(textElement, startElement.getStartOffset(), startElement.getEndOffsetInclusive())

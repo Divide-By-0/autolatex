@@ -256,6 +256,24 @@ function reEncode(equation, app) {
     return getCustomEncode(encodeURIComponent(equation), 0, 0, app); //escape deprecated
 }
 /**
+ * Decode a reEncoded equation for the client-side (MathJax) renderer.
+ *
+ * REASON: reEncode turns each in-equation newline into an encoded four-backslash
+ * marker ("%5C%5C%5C%5C%20"). Restore it to the app's literal newline character
+ * (Docs \r, Slides \v, Sheets \n) so the sidebar can decide per-position whether
+ * a newline is a row break or cosmetic paste formatting, and collapse legacy
+ * doubled row breaks in ENCODED space exactly like the Codecogs path — a
+ * three-backslash run (e.g. "\\\hline") encodes to three %5C tokens and cannot
+ * false-match. Never collapse pairs in decoded space: that halving corrupted
+ * tables and align/matrix row breaks (fixed 2026-07).
+ * @public
+ */
+function getClientEquation(equationOriginal, app) {
+    return decodeURIComponent(equationOriginal
+        .split("%5C%5C%5C%5C%20").join(app.newlineCharacter)
+        .split("%5C%5C%5C%5C").join("%5C%5C"));
+}
+/**
  * returns the deencoded equation as a string.
  */
 function deEncode(equation, app) {

@@ -383,16 +383,7 @@ function findAllClientRenderEquationsInTextElement(
     // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
     // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
     // \hline" after a derender round-trip) and align/matrix row breaks.
-    const clientEquation = decodeURIComponent(
-      equationOriginal
-        // REASON: restore the reEncode newline marker to a literal \v (Slides'
-        // shift-enter character) instead of pre-converting to "\\". The client
-        // decides per-position whether a newline is a row break or cosmetic paste
-        // formatting (inside environments), and derender round-trips stay intact.
-        .split("%5C%5C%5C%5C%20").join("%0B")
-        // legacy doubled row breaks, same collapse as the Codecogs path
-        .split("%5C%5C%5C%5C").join("%5C%5C")
-    );
+    const clientEquation = Common.getClientEquation(equationOriginal, IntegratedApp);
 
     results.push({
       size,
@@ -732,16 +723,7 @@ function findClientRenderEquationInTextElement(
     // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
     // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
     // \hline" after a derender round-trip) and align/matrix row breaks.
-    const clientEquation = decodeURIComponent(
-      equationOriginal
-        // REASON: restore the reEncode newline marker to a literal \v (Slides'
-        // shift-enter character) instead of pre-converting to "\\". The client
-        // decides per-position whether a newline is a row break or cosmetic paste
-        // formatting (inside environments), and derender round-trips stay intact.
-        .split("%5C%5C%5C%5C%20").join("%0B")
-        // legacy doubled row breaks, same collapse as the Codecogs path
-        .split("%5C%5C%5C%5C").join("%5C%5C")
-    );
+    const clientEquation = Common.getClientEquation(equationOriginal, IntegratedApp);
 
     return {
       size,

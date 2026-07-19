@@ -44,6 +44,11 @@ declare namespace AutoLatexCommon {
          */
         reEncode(equation: string, app: IntegratedApp): string;
 
+        /**
+         * Decode a reEncoded equation for the client-side (MathJax) renderer.
+         */
+        getClientEquation(equationOriginal: string, app: IntegratedApp): string;
+
         renderEquation(equationOriginal: string, renderOptions: RenderOptions): RenderEquationResult;
 
         renderEquation(equationOriginal: string, quality: number, delim: Delimiter, isInline: boolean, red: number, green: number, blue: number): RenderEquationResult;
