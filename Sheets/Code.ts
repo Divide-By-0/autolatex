@@ -139,7 +139,23 @@ function parseEquationCell(rawText: string, delim: AutoLatexCommon.Delimiter): s
   if (!trimmed.startsWith(startToken) || !trimmed.endsWith(endToken)) return null;
   const inner = trimmed.substring(startToken.length, trimmed.length - endToken.length);
   if (!inner) return null;
+  // REASON: with the single-$ delimiter, a cell holding "$$x$$" would otherwise parse
+  // as the equation "$x$" (dollars included). The "all" set tries $$ before $, but a
+  // user who explicitly selected "$ ... $" still needs this guard.
+  if (delim[4] === 1 && startToken === "$" && (inner.startsWith("$") || inner.endsWith("$"))) return null;
   return inner;
+}
+
+// Parse a "#rrggbb" hex color into [r, g, b]; anything malformed falls back to black.
+function getRgbFromHex(colorHex: string | null): [number, number, number] {
+  if (!colorHex || !/^#[0-9a-fA-F]{6}$/.test(colorHex)) {
+    return [0, 0, 0];
+  }
+  const channels = [1, 3, 5].map(index => parseInt(colorHex.slice(index, index + 2), 16));
+  if (channels.some(channel => isNaN(channel))) {
+    return [0, 0, 0];
+  }
+  return channels as [number, number, number];
 }
 
 /**
@@ -193,7 +209,17 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
   let authorizationError = false;
   const failureDetails: SheetsFailureDetail[] = [];
 
+  // REASON: Apps Script kills executions at 6 minutes. A sheet full of equations
+  // rendered sequentially through server fetches can exceed that; stop cleanly with
+  // budget to spare so completed work is kept, and tell the user to run again —
+  // already-rendered cells no longer parse as equations, so the next run resumes
+  // where this one stopped.
+  const RENDER_TIME_BUDGET_MS = 270000;
+  const renderStartTime = Date.now();
+  let timeBudgetExceeded = false;
+
   for (const sheet of spreadsheet.getSheets()) {
+    if (timeBudgetExceeded) break;
     const lastRow = sheet.getLastRow();
     const lastColumn = sheet.getLastColumn();
     if (lastRow === 0 || lastColumn === 0) continue;
@@ -203,7 +229,10 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     // per cell.
     const dataRange = sheet.getRange(1, 1, lastRow, lastColumn);
     const values = dataRange.getValues();
-    for (let r = 0; r < values.length; r++) {
+    // REASON: one bulk read per sheet; equations render in the cell's font color so
+    // colored/dark-themed sheets keep their equations visible (parity with Docs).
+    const fontColors = dataRange.getFontColors();
+    for (let r = 0; r < values.length && !timeBudgetExceeded; r++) {
       for (let c = 0; c < values[r].length; c++) {
         const cellRaw = values[r][c];
         if (typeof cellRaw !== "string") continue;
@@ -218,13 +247,24 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
         }
         if (!latex) continue;
 
+        if (Date.now() - renderStartTime > RENDER_TIME_BUDGET_MS) {
+          timeBudgetExceeded = true;
+          failureCount++;
+          failureDetails.push(buildFailureDetail(sheet, r + 1, c + 1, cellRaw,
+            "Stopped before the execution time limit — click Render Equations again to continue from here"));
+          break;
+        }
+
+        const [fontR, fontG, fontB] = getRgbFromHex(fontColors[r][c]);
+
         // REASON: Pre-encode the equation here the same way Docs does so that Common's
         // renderEquation receives a URL-safe payload with the correct newline glyph for
         // this surface (Sheets's \n → %0A vs Docs's paragraph-break → %0D).
         const equationEncoded = Common.reEncode(latex, SheetsApp);
         const result = Common.renderEquation(equationEncoded, {
           ...renderOptions,
-          delim
+          delim,
+          r: fontR, g: fontG, b: fontB
         });
 
         if (result.worked > Common.capableRenderers || !result.resp || !result.renderer) {
@@ -289,10 +329,16 @@ function insertRenderedImage(
   image.setAltTextTitle("Auto-LaTeX equation");
 
   // REASON: If the user requested an explicit pixel size via the sidebar's "Custom"
-  // option, apply it here. Default behavior leaves the image at its renderer-returned
-  // dimensions so the user can resize manually if needed.
+  // option, apply it here. Scale the width by the same factor — setHeight alone
+  // stretches the image because OverGridImage does not preserve aspect ratio.
   if (preferredSize > 0) {
-    image.setHeight(preferredSize * 4);
+    const currentHeight = image.getHeight();
+    const currentWidth = image.getWidth();
+    const targetHeight = preferredSize * 4;
+    image.setHeight(targetHeight);
+    if (currentHeight > 0 && currentWidth > 0) {
+      image.setWidth(Math.max(1, Math.round(currentWidth * targetHeight / currentHeight)));
+    }
   }
 
   // REASON: Clear the cell value AFTER inserting the image. If we cleared first and
@@ -391,6 +437,14 @@ function restoreEquationFromImage(image: GoogleAppsScript.Spreadsheet.OverGridIm
     return false;
   }
   const anchor = image.getAnchorCell();
+  // REASON: if the user typed a new value into the cell after rendering, restoring
+  // the LaTeX would silently destroy their data. Leave both the cell and the image
+  // alone; they can clear the cell and derender again if the restore is wanted.
+  const existingValue = anchor.getValue();
+  if (existingValue !== "" && existingValue !== null && existingValue !== undefined) {
+    console.warn("Skipping derender into non-empty cell " + anchor.getA1Notation());
+    return false;
+  }
   anchor.setValue(originalCellValue);
   image.remove();
   return true;
