@@ -39,6 +39,26 @@ interface SheetsRenderResult {
   authorizationError: boolean;
   noSpreadsheet: boolean;
   failureDetails?: SheetsFailureDetail[];
+  // present when the sidebar should render these client-side via MathJax and
+  // call clientRenderComplete / clientRenderFailed with the results
+  clientEquations?: SheetsClientRenderOptions[];
+}
+
+// One cell's equation handed to the sidebar for client-side MathJax rendering.
+// Cells are addressed by sheetId + row/col (Sheets needs no named-range machinery:
+// the anchor cell is the identity), and the original cell value rides along so the
+// completion path can build the round-trip alt text and detect stale cells.
+interface SheetsClientRenderOptions {
+  sheetId: number;
+  row: number;
+  col: number;
+  equation: string;
+  originalCellValue: string;
+  size: number;
+  inline: boolean;
+  r: number;
+  g: number;
+  b: number;
 }
 
 interface SheetsFailureDetail {
@@ -189,9 +209,24 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     return { successCount: 0, failureCount: 0, authorizationError: false, noSpreadsheet: true };
   }
 
-  // REASON: The renderer param mirrors Docs's; in Sheets we only run the server
-  // renderers today (no MathJax client fallback), so clientRender is always false. The
-  // user's chosen renderer narrows which server families Common tries.
+  // REASON: MathJax (best) and Automatic render on the client like Docs/Slides —
+  // that's the only path that supports tables, long equations, and the rest of the
+  // MathJax feature set. Scan the sheet, hand the equations to the sidebar, and let
+  // clientRenderComplete place the PNGs. Explicit server-renderer choices keep the
+  // in-process loop below.
+  if (renderer === "mathjax" || renderer === "auto") {
+    const clientEquations = collectClientEquations(spreadsheet, delimiterSet, size, isInline);
+    return {
+      successCount: 0,
+      failureCount: 0,
+      authorizationError: false,
+      noSpreadsheet: false,
+      clientEquations,
+    };
+  }
+
+  // REASON: The renderer param mirrors Docs's; the user chose an explicit server
+  // renderer, which narrows which families Common tries.
   const renderOptions: AutoLatexCommon.RenderOptions = {
     r: 0, g: 0, b: 0,
     delim: delimiterSet[0],
@@ -275,7 +310,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
         }
 
         try {
-          insertRenderedImage(sheet, r + 1, c + 1, cellRaw, result, size);
+          insertRenderedImage(sheet, r + 1, c + 1, cellRaw, result.resp!.getBlob(), size);
           successCount++;
         } catch (err) {
           console.error("insertRenderedImage failed:", err);
@@ -309,15 +344,161 @@ function mapRendererToServerFamilies(renderer: string): string[] | undefined {
   }
 }
 
+/**
+ * Scan every sheet for whole-cell equations and package them for client-side
+ * MathJax rendering. Fast (bulk reads only, no fetches), so no time budget needed.
+ */
+function collectClientEquations(
+  spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet,
+  delimiterSet: AutoLatexCommon.Delimiter[],
+  size: number,
+  isInline: boolean
+): SheetsClientRenderOptions[] {
+  const clientEquations: SheetsClientRenderOptions[] = [];
+  for (const sheet of spreadsheet.getSheets()) {
+    const lastRow = sheet.getLastRow();
+    const lastColumn = sheet.getLastColumn();
+    if (lastRow === 0 || lastColumn === 0) continue;
+    const dataRange = sheet.getRange(1, 1, lastRow, lastColumn);
+    const values = dataRange.getValues();
+    const fontColors = dataRange.getFontColors();
+    for (let r = 0; r < values.length; r++) {
+      for (let c = 0; c < values[r].length; c++) {
+        const cellRaw = values[r][c];
+        if (typeof cellRaw !== "string") continue;
+        let latex: string | null = null;
+        for (const candidateDelim of delimiterSet) {
+          latex = parseEquationCell(cellRaw, candidateDelim);
+          if (latex) break;
+        }
+        if (!latex) continue;
+        const [fontR, fontG, fontB] = getRgbFromHex(fontColors[r][c]);
+        // REASON: round-trip through reEncode + getClientEquation like Docs so cell
+        // newlines (\n) survive as literal newlines for the depth-aware client
+        // transform, and unicode gets the same normalization as every other surface.
+        const clientEquation = Common.getClientEquation(Common.reEncode(latex, SheetsApp), SheetsApp);
+        clientEquations.push({
+          sheetId: sheet.getSheetId(),
+          row: r + 1,
+          col: c + 1,
+          equation: clientEquation,
+          originalCellValue: cellRaw,
+          size,
+          inline: isInline,
+          r: fontR, g: fontG, b: fontB,
+        });
+      }
+    }
+  }
+  return clientEquations;
+}
+
+function findSheetById(spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet, sheetId: number) {
+  for (const sheet of spreadsheet.getSheets()) {
+    if (sheet.getSheetId() === sheetId) return sheet;
+  }
+  return null;
+}
+
+// Place one client- or server-rendered equation image, verifying the cell hasn't
+// changed since the scan (rendering happens asynchronously in the sidebar).
+function placeEquationImageAtCell(
+  options: SheetsClientRenderOptions,
+  blob: GoogleAppsScript.Base.Blob,
+  failureDetails: SheetsFailureDetail[]
+): boolean {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet ? findSheetById(spreadsheet, options.sheetId) : null;
+  if (!sheet) return false;
+  const cell = sheet.getRange(options.row, options.col);
+  // REASON: the user may have edited the cell while the client was rendering; only
+  // replace it if it still holds the exact equation we scanned.
+  if (cell.getValue() !== options.originalCellValue) {
+    failureDetails.push(buildFailureDetail(sheet, options.row, options.col, String(cell.getValue() || ""),
+      "Cell changed while rendering — run Render again"));
+    return false;
+  }
+  insertRenderedImage(sheet, options.row, options.col, options.originalCellValue, blob, options.size);
+  return true;
+}
+
+/**
+ * Called by the sidebar with client-rendered PNGs. Inserts each image at its cell.
+ * @public
+ */
+function clientRenderComplete(rendered: { options: SheetsClientRenderOptions, renderedEquationB64: string }[]): SheetsRenderResult {
+  let successCount = 0;
+  let failureCount = 0;
+  const failureDetails: SheetsFailureDetail[] = [];
+  for (const item of rendered) {
+    try {
+      const blob = Utilities.newBlob(Utilities.base64Decode(item.renderedEquationB64), "image/png", "equation.png");
+      if (placeEquationImageAtCell(item.options, blob, failureDetails)) {
+        successCount++;
+      } else {
+        failureCount++;
+      }
+    } catch (err) {
+      console.error("clientRenderComplete insertion failed:", err);
+      failureCount++;
+    }
+  }
+  return { successCount, failureCount, authorizationError: false, noSpreadsheet: false,
+    failureDetails: failureDetails.length ? failureDetails : undefined };
+}
+
+/**
+ * Called by the sidebar when MathJax couldn't render some equations (auto mode).
+ * Tries the non-Codecogs server renderers for just those cells, mirroring Docs.
+ * @public
+ */
+function clientRenderFailed(equations: { options: SheetsClientRenderOptions }[]): SheetsRenderResult {
+  let successCount = 0;
+  let failureCount = 0;
+  let authorizationError = false;
+  const failureDetails: SheetsFailureDetail[] = [];
+  console.log("MathJax client render failed, trying server fallback for", equations.length, "equations");
+  for (const { options } of equations) {
+    try {
+      // options.equation is the decoded client equation (delimiters already stripped
+      // at scan time); re-encode it for the server renderers.
+      const equationEncoded = Common.reEncode(options.equation, SheetsApp);
+      const result = Common.renderEquation(equationEncoded, {
+        r: options.r, g: options.g, b: options.b,
+        delim: Common.getDelimiters("$$"),
+        defaultSize: 11,
+        size: options.size,
+        inline: options.inline,
+        clientRender: false,
+        allowedServerFamilies: ["Texrendr", "Sciweavers", "Sciweavers_old", "Roger's renderer", "Number empire"],
+      });
+      if (result.worked > Common.capableRenderers || !result.resp || !result.renderer) {
+        if (result.authorizationError) authorizationError = true;
+        failureCount++;
+        continue;
+      }
+      if (placeEquationImageAtCell(options, result.resp.getBlob(), failureDetails)) {
+        successCount++;
+      } else {
+        failureCount++;
+      }
+    } catch (err) {
+      console.error("Server fallback render failed:", err);
+      failureCount++;
+    }
+  }
+  return { successCount, failureCount, authorizationError, noSpreadsheet: false,
+    failureDetails: failureDetails.length ? failureDetails : undefined };
+}
+
 function insertRenderedImage(
   sheet: GoogleAppsScript.Spreadsheet.Sheet,
   row: number,
   col: number,
   originalCellValue: string,
-  result: AutoLatexCommon.RenderEquationResult,
+  blob: GoogleAppsScript.Base.Blob,
   preferredSize: number
 ) {
-  const blob = result.resp!.getBlob();
   const image = sheet.insertImage(blob, col, row);
   // REASON: Anchor exactly to the cell so reflows/inserts that shift the cell carry the
   // image with them. Without setAnchorCell, OverGridImage uses absolute pixel coords.

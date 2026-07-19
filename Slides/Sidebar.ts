@@ -16,8 +16,6 @@ interface Window {
 
 declare const MathJax: MathJaxApi;
 
-// implemented in ../SidebarMathJaxShared.ts, injected ahead of this file by BuildSidebarJS.js
-declare function prepareEquationForMathJax(equation: string): string;
 
 // REASON: mirrors the Docs sidebar's client-error reporting so MathJax failures in
 // Slides reach Cloud Logging with the offending equation; without it they vanished
@@ -89,115 +87,19 @@ function makeSlidesRenderStatusText(renderCount: number) {
   return `Status: ${renderCount} equations rendered`;
 }
 
-// REASON: MathJax rendering is CPU-heavy (SVG → canvas → PNG). Running too many in parallel
-// (e.g. 1000 equations) would freeze the browser. This limits concurrency to a safe number.
-const MATHJAX_CONCURRENCY_LIMIT = 4;
-
-async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let nextIndex = 0;
-
-  async function worker() {
-    while (nextIndex < items.length) {
-      const index = nextIndex++;
-      results[index] = await fn(items[index]);
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
-  return results;
-}
-
-async function blobToB64(blob: Blob) {
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = err => reject(err);
-    reader.readAsDataURL(blob);
-  });
-  return dataUrl.substring(dataUrl.indexOf(",") + 1);
-}
+// Shared MathJax machinery (mapWithConcurrency, blobToB64, MATHJAX_CONCURRENCY_LIMIT,
+// renderEquationPngWithMathJax) is implemented in ../SidebarMathJaxShared.ts and
+// injected ahead of this file by BuildSidebarJS.js.
+declare const MATHJAX_CONCURRENCY_LIMIT: number;
+declare function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]>;
+declare function blobToB64(blob: Blob): Promise<string>;
+declare function renderEquationPngWithMathJax(
+  renderOptions: { equation: string; inline: boolean; size: number; r: number; g: number; b: number; bgR?: number; bgG?: number; bgB?: number },
+  reportError?: (context: string, error: unknown, extra?: Record<string, unknown>) => void
+): Promise<Blob>;
 
 async function renderMathJaxEquation(renderOptions: SlidesClientRenderOptions) {
-  // preprocessing (mbox/mathrm unicode, damaged-hline repair, depth-aware
-  // newlines, gathered wrap) lives in ../SidebarMathJaxShared.ts
-  const equationBody = prepareEquationForMathJax(renderOptions.equation);
-  const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + equationBody;
-
-  if (!window.MathJax || typeof window.MathJax.tex2svgPromise !== "function") {
-    throw new Error("MathJax is still loading. Please try again in a moment.");
-  }
-
-  const result = await window.MathJax.tex2svgPromise(equation, {
-    display: !renderOptions.inline,
-    em: renderOptions.size
-  });
-  const svg: SVGSVGElement | null = result.querySelector("svg");
-  if (!svg) {
-    throw new Error("MathJax did not return an SVG element.");
-  }
-
-  // REASON: tex2svgPromise RESOLVES on TeX syntax errors, embedding the message as a
-  // red merror node — so bad equations were silently inserted as error images with no
-  // trace in Cloud Logging. Report them (with the equation) so they're debuggable;
-  // rendering still proceeds so one bad equation can't fail the whole batch.
-  const mjxErrorNode = svg.querySelector("[data-mjx-error]");
-  if (mjxErrorNode) {
-    reportMathJaxClientError("mathjax.merror", mjxErrorNode.getAttribute("data-mjx-error") || "unknown TeX error", {
-      equation: renderOptions.equation,
-    });
-  }
-
-  svg.classList.add("mathjax-equation-hidden-render");
-  svg.style.fontSize = `${renderOptions.size}px`;
-  document.body.appendChild(svg);
-
-  const width = svg.clientWidth * 5;
-  const height = svg.clientHeight * 5;
-
-  svg.remove();
-  svg.setAttribute("width", `${width}px`);
-  svg.setAttribute("height", `${height}px`);
-
-  const styles = MathJax.svgStylesheet().outerHTML;
-  const svgString = new XMLSerializer().serializeToString(svg).replace("</svg>", styles + "</svg>");
-  const svgBlob = new Blob([svgString], {
-    type: "image/svg+xml"
-  });
-  const svgUrl = URL.createObjectURL(svgBlob);
-
-  const canvas = typeof OffscreenCanvas !== "undefined"
-    ? new OffscreenCanvas(width, height)
-    : Object.assign(document.createElement("canvas"), { width, height });
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    throw new Error("Could not initialize a 2D canvas for MathJax rendering.");
-  }
-
-  try {
-    const svgImage = new Image(width, height);
-    svgImage.src = svgUrl;
-    await new Promise<void>((resolve, reject) => {
-      svgImage.onload = () => resolve();
-      svgImage.onerror = err => reject(err);
-    });
-
-    ctx.drawImage(svgImage, 0, 0);
-
-    return "convertToBlob" in canvas
-      ? await canvas.convertToBlob({ type: "image/png" })
-      : await new Promise<Blob>((resolve, reject) => {
-          (canvas as HTMLCanvasElement).toBlob(blob => {
-            if (blob) {
-              resolve(blob);
-            } else {
-              reject(new Error("Could not convert MathJax canvas to a PNG blob."));
-            }
-          }, "image/png");
-        });
-  } finally {
-    URL.revokeObjectURL(svgUrl);
-  }
+  return renderEquationPngWithMathJax(renderOptions, reportMathJaxClientError);
 }
 
 /**

@@ -25,6 +25,53 @@ interface SheetsRenderResult {
   authorizationError: boolean;
   noSpreadsheet: boolean;
   failureDetails?: SheetsFailureDetail[];
+  clientEquations?: SheetsClientRenderOptions[];
+}
+
+interface SheetsClientRenderOptions {
+  sheetId: number;
+  row: number;
+  col: number;
+  equation: string;
+  originalCellValue: string;
+  size: number;
+  inline: boolean;
+  r: number;
+  g: number;
+  b: number;
+}
+
+// Shared MathJax machinery from ../SidebarMathJaxShared.ts, injected ahead of this
+// file by BuildSidebarJS.js.
+declare const MATHJAX_CONCURRENCY_LIMIT: number;
+declare function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]>;
+declare function blobToB64(blob: Blob): Promise<string>;
+declare function renderEquationPngWithMathJax(
+  renderOptions: { equation: string; inline: boolean; size: number; r: number; g: number; b: number },
+  reportError?: (context: string, error: unknown, extra?: Record<string, unknown>) => void
+): Promise<Blob>;
+
+// REASON: mirrors the Docs/Slides client-error reporting so MathJax failures in
+// Sheets reach Cloud Logging with the offending equation. Deduped per session.
+const reportedMathJaxErrors = new Set<string>();
+function reportMathJaxClientError(context: string, error: unknown, extra: Record<string, unknown> = {}) {
+  const message = error instanceof Error ? error.message : String(error);
+  const dedupeKey = `${context}:${message}`;
+  if (reportedMathJaxErrors.has(dedupeKey)) {
+    return;
+  }
+  reportedMathJaxErrors.add(dedupeKey);
+  const payload = {
+    context,
+    error: { message, stack: error instanceof Error ? error.stack || "" : "" },
+    extra,
+    href: window.location.href,
+    userAgent: navigator.userAgent,
+    timestamp: new Date().toISOString(),
+  };
+  (google.script.run as any)
+    .withFailureHandler((logError: unknown) => console.error("Failed to report client error.", logError))
+    .logMathJaxClientError(JSON.stringify(payload));
 }
 
 interface SheetsDerenderResult {
@@ -100,7 +147,7 @@ function loadPreferences(choicePrefs: { size: string; delim: string; renderer: s
   // REASON: Older users may have Codecogs saved from when it was the practical default.
   // Open the sidebar on Automatic so Codecogs outages don't keep affecting them.
   const rendererPreference = choicePrefs.renderer === "codecogs" ? "auto" : choicePrefs.renderer;
-  const savedRenderer = ["auto", "texrendr", "sciweavers"].includes(rendererPreference) ? rendererPreference : "auto";
+  const savedRenderer = ["auto", "mathjax", "texrendr", "sciweavers"].includes(rendererPreference) ? rendererPreference : "auto";
   $('#renderer').val(savedRenderer);
   $('#insert-text').prop("disabled", false);
   $('#edit-text').prop("disabled", false);
@@ -155,6 +202,30 @@ function buildFailureDetailsHtml(failures: SheetsFailureDetail[] | undefined): s
   return html;
 }
 
+function showRenderResult(result: SheetsRenderResult) {
+  if (result.noSpreadsheet) {
+    showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", "Status: No spreadsheet.");
+    return;
+  }
+  if (result.authorizationError && result.successCount === 0) {
+    showError(
+      "<strong>Auto-LaTeX is missing permission to call external renderers.</strong> Try uninstalling and reinstalling the add-on, then click 'Select all' on the permissions screen.",
+      "Status: Authorization required"
+    );
+    return;
+  }
+  const failureHtml = buildFailureDetailsHtml(result.failureDetails);
+  if (result.successCount === 0 && result.failureCount === 0) {
+    $("#loading").html("Status: No equations found. Each equation must be the only content of its cell.");
+  } else if (result.successCount > 0 && result.failureCount === 0) {
+    $("#loading").html(`Status: ${result.successCount} equation${result.successCount === 1 ? "" : "s"} rendered.`);
+  } else if (result.successCount > 0 && result.failureCount > 0) {
+    showError(`Rendered ${result.successCount}, but ${result.failureCount} failed.${failureHtml}`, `Status: ${result.successCount} rendered, ${result.failureCount} failed.`);
+  } else {
+    showError(`All ${result.failureCount} equations failed.${failureHtml}`, "Status: All renderers failed.");
+  }
+}
+
 function insertText(this: HTMLButtonElement) {
   this.disabled = true;
   $('#error').remove();
@@ -165,29 +236,80 @@ function insertText(this: HTMLButtonElement) {
 
   google.script.run
     .withSuccessHandler(function (result: SheetsRenderResult) {
+      // REASON: MathJax (best) / Automatic return the scanned equations for
+      // client-side rendering: render them here (bounded concurrency, per-equation
+      // failure isolation), upload successes via clientRenderComplete, and in auto
+      // mode send only the failed subset to the server fallback.
+      if (result.clientEquations && result.clientEquations.length > 0) {
+        const equationsToRender = result.clientEquations;
+        $("#loading").html(`Status: Rendering ${equationsToRender.length} equation${equationsToRender.length === 1 ? "" : "s"}...`);
+        mapWithConcurrency(equationsToRender, MATHJAX_CONCURRENCY_LIMIT, async eq => {
+          try {
+            return {
+              ok: true as const,
+              rendered: { options: eq, renderedEquationB64: await renderEquationPngWithMathJax(eq, reportMathJaxClientError).then(b => blobToB64(b)) }
+            };
+          } catch (err) {
+            reportMathJaxClientError("clientRenderEquation", err, { equation: eq.equation, equationLength: eq.equation.length });
+            return { ok: false as const, options: eq };
+          }
+        }).then(results => {
+          const rendered = results.filter(x => x.ok).map(x => (x as { ok: true, rendered: object }).rendered);
+          const failed = results.filter(x => !x.ok).map(x => ({ options: (x as { ok: false, options: SheetsClientRenderOptions }).options }));
+
+          const finish = (finalResult: SheetsRenderResult, extraFailures: number) => {
+            clearInterval(runDots);
+            element.disabled = false;
+            finalResult.failureCount += extraFailures;
+            showRenderResult(finalResult);
+          };
+
+          const handleFailedSet = (baseResult: SheetsRenderResult) => {
+            if (failed.length === 0) {
+              finish(baseResult, 0);
+              return;
+            }
+            if (renderer === "auto") {
+              (google.script.run as any)
+                .withSuccessHandler((fallbackResult: SheetsRenderResult) => {
+                  fallbackResult.successCount += baseResult.successCount;
+                  fallbackResult.failureCount += baseResult.failureCount;
+                  if (baseResult.failureDetails) {
+                    fallbackResult.failureDetails = (fallbackResult.failureDetails || []).concat(baseResult.failureDetails);
+                  }
+                  finish(fallbackResult, 0);
+                })
+                .withFailureHandler(() => finish(baseResult, failed.length))
+                .clientRenderFailed(failed);
+            } else {
+              finish(baseResult, failed.length);
+            }
+          };
+
+          if (rendered.length > 0) {
+            (google.script.run as any)
+              .withSuccessHandler((completeResult: SheetsRenderResult) => handleFailedSet(completeResult))
+              .withFailureHandler(function (msg: unknown) {
+                clearInterval(runDots);
+                element.disabled = false;
+                showError("Sorry, inserting rendered equations failed. " + ((msg as { message?: string })?.message ?? ""), "Status: Error.");
+              })
+              .clientRenderComplete(rendered);
+          } else {
+            handleFailedSet({ successCount: 0, failureCount: 0, authorizationError: false, noSpreadsheet: false });
+          }
+        }).catch(err => {
+          clearInterval(runDots);
+          element.disabled = false;
+          reportMathJaxClientError("clientRenderBatch", err, { equationCount: equationsToRender.length });
+          showError("Sorry, MathJax rendering failed. " + String((err as Error)?.message ?? err), "Status: Error.");
+        });
+        return;
+      }
+
       clearInterval(runDots);
       element.disabled = false;
-      if (result.noSpreadsheet) {
-        showError("Sorry, the script has conflicting authorizations. Try signing out of other active Gsuite accounts.", "Status: No spreadsheet.");
-        return;
-      }
-      if (result.authorizationError && result.successCount === 0) {
-        showError(
-          "<strong>Auto-LaTeX is missing permission to call external renderers.</strong> Try uninstalling and reinstalling the add-on, then click 'Select all' on the permissions screen.",
-          "Status: Authorization required"
-        );
-        return;
-      }
-      const failureHtml = buildFailureDetailsHtml(result.failureDetails);
-      if (result.successCount === 0 && result.failureCount === 0) {
-        $("#loading").html("Status: No equations found. Each equation must be the only content of its cell.");
-      } else if (result.successCount > 0 && result.failureCount === 0) {
-        $("#loading").html(`Status: ${result.successCount} equation${result.successCount === 1 ? "" : "s"} rendered.`);
-      } else if (result.successCount > 0 && result.failureCount > 0) {
-        showError(`Rendered ${result.successCount}, but ${result.failureCount} failed.${failureHtml}`, `Status: ${result.successCount} rendered, ${result.failureCount} failed.`);
-      } else {
-        showError(`All ${result.failureCount} equations failed.${failureHtml}`, "Status: All renderers failed.");
-      }
+      showRenderResult(result);
     })
     .withFailureHandler(function (msg) {
       clearInterval(runDots);
