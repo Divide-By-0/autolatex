@@ -382,7 +382,7 @@ function findAllClientRenderEquationsInTextElement(
     const size = getSlideTextSize(renderOptions.size, renderOptions.defaultSize, equationRange);
     const colorRangeEnd = Math.max(equationOffsets.start + renderOptions.delim[4], equationOffsets.end);
     const textColor = getRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
-    const bgColor = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
+    const bgColor = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum) || getShapeFillRgbColor(textElement, slideNum);
     // REASON: collapse the encoded four-backslash newline marker in ENCODED space
     // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
     // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
@@ -602,6 +602,34 @@ function getBgRgbColor(textRange: GoogleAppsScript.Slides.TextRange, slideNum: n
   ];
 }
 
+// REASON: rendering deletes the equation's text box when the equation was its only
+// content — taking the box's fill with it — and oversized equations overflow the
+// box anyway (user report: image doesn't fit, box gone, background lost). Bake the
+// box/cell SOLID fill into the image when the text has no explicit highlight.
+// Gradient/image fills can't be represented by one color; those stay transparent.
+function getShapeFillRgbColor(element: PageElement, slideNum: number): [number, number, number] | null {
+  try {
+    const fill = element.getFill();
+    if (!fill) return null;
+    const solid = fill.getSolidFill();
+    if (!solid) return null;
+    let color = solid.getColor();
+    if (color.getColorType() !== SlidesApp.ColorType.RGB) {
+      const slide = IntegratedApp.getBody()[slideNum];
+      color = slide.getColorScheme().getConcreteColor(color.asThemeColor().getThemeColorType());
+    }
+    return [
+      color.asRgbColor().getRed(),
+      color.asRgbColor().getGreen(),
+      color.asRgbColor().getBlue(),
+    ];
+  } catch (err) {
+    // elements without a fill API (or transparent fills) simply stay transparent
+    console.log("getShapeFillRgbColor: no usable fill; keeping transparent.", String(err));
+    return null;
+  }
+}
+
 function unwrapEQ(element: PageElement) {
   let textValue: GoogleAppsScript.Slides.TextRange | null = null;
   // test if it's a text box (table cells work)
@@ -745,7 +773,7 @@ function findClientRenderEquationInTextElement(
     const size = getSlideTextSize(renderOptions.size, renderOptions.defaultSize, equationRange);
     const colorRangeEnd = Math.max(equationOffsets.start + renderOptions.delim[4], equationOffsets.end);
     const textColor = getRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
-    const bgColor = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
+    const bgColor = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum) || getShapeFillRgbColor(textElement, slideNum);
     // REASON: collapse the encoded four-backslash newline marker in ENCODED space
     // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
     // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
