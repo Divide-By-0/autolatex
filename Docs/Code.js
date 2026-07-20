@@ -444,8 +444,12 @@ function findPos(index, renderOptions, prevFailedStartElemIfIsEmpty) {
     Common.reportDeltaTime(195);
     var docBody = getBodyFromIndex(index);
     if (docBody == null) {
+        // REASON: an unrecognized section type means "nothing to scan here", not "the
+        // document failed to load". Returning NoDocument here aborted the whole render
+        // with a misleading auth error for any doc containing such a section (silently —
+        // this path logged nothing, which is why user reports were undiagnosable).
         return {
-            status: 5 /* DocsEquationRenderStatus.NoDocument */
+            status: 7 /* DocsEquationRenderStatus.NoStartDelimiter */
         };
     }
     var startElement = findNextDelimiter(docBody, renderOptions, prevFailedStartElemIfIsEmpty, 2);
@@ -923,10 +927,19 @@ function getBodyFromIndex(index) {
     Common.assert(index < all, "index < all");
     var body = p.getChild(index);
     var type = body.getType();
-    if (type === DocumentApp.ElementType.BODY_SECTION || type === DocumentApp.ElementType.HEADER_SECTION || type === DocumentApp.ElementType.FOOTER_SECTION) {
+    // REASON: FOOTNOTE_SECTION included — academic docs commonly have footnotes, and
+    // before 2026-07 hitting one aborted the entire render with a misleading
+    // "conflicting authorizations" error (the section walker returned null and findPos
+    // mapped null to NoDocument). Footnote equations render fine: FootnoteSection
+    // supports findText/getImages, and placeImage already walks up to it.
+    if (type === DocumentApp.ElementType.BODY_SECTION ||
+        type === DocumentApp.ElementType.HEADER_SECTION ||
+        type === DocumentApp.ElementType.FOOTER_SECTION ||
+        type === DocumentApp.ElementType.FOOTNOTE_SECTION) {
         // handles alternating footers etc.
         return body;
     }
+    console.log("Skipping non-scannable document section", index, String(type));
     return null;
 }
 /**
@@ -938,7 +951,9 @@ function removeAll(defaultDelimRaw) {
     var defaultDelim = Common.getDelimiters(defaultDelimRaw);
     for (var index = 0; index < getDocsApp().getBody().getParent().getNumChildren(); index++) {
         var body = getBodyFromIndex(index);
-        var img = body === null || body === void 0 ? void 0 : body.getImages(); //places all InlineImages from the active document into the array img
+        // REASON: FootnoteSection has findText (so rendering works there) but no
+        // getImages; De-render All just skips footnote sections.
+        var img = body && "getImages" in body ? body.getImages() : undefined; //places all InlineImages from the active document into the array img
         for (var i = 0; i < ((img === null || img === void 0 ? void 0 : img.length) || 0); i++) {
             var image = img[i];
             var origURL = new String(image.getLinkUrl()).toString(); //becomes "null", not null, if no equation link
