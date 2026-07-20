@@ -1210,7 +1210,7 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
   if (selection) {
     const images = collectSelectedInlineImages(selection);
     if (images.length === 0) {
-      return Common.DerenderResult.NonExistentElement;
+      return { result: Common.DerenderResult.NonExistentElement, successCount: 0 };
     }
     let successCount = 0;
     let lastFailureResult = Common.DerenderResult.InvalidUrl;
@@ -1222,17 +1222,19 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
         lastFailureResult = result;
       }
     }
-    return successCount > 0 ? Common.DerenderResult.Success : lastFailureResult;
+    return successCount > 0
+      ? { result: Common.DerenderResult.Success, successCount }
+      : { result: lastFailureResult, successCount: 0 };
   }
 
   const cursor = DocumentApp.getActiveDocument().getCursor();
   if (!cursor) {
-    return Common.DerenderResult.CursorNotFound;
+    return { result: Common.DerenderResult.CursorNotFound, successCount: 0 };
   }
 
   const elementRaw = cursor.getElement();
   if (!elementRaw) {
-    return Common.DerenderResult.NonExistentElement;
+    return { result: Common.DerenderResult.NonExistentElement, successCount: 0 };
   }
 
   // REASON: Cursor.getElement() can return any Element subtype (Table, TableOfContents,
@@ -1243,7 +1245,7 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
   const elementType = elementRaw.getType();
   if (elementType !== DocumentApp.ElementType.PARAGRAPH && elementType !== DocumentApp.ElementType.LIST_ITEM) {
     console.log("editEquations: cursor is in unsupported element type", elementType);
-    return Common.DerenderResult.NonExistentElement;
+    return { result: Common.DerenderResult.NonExistentElement, successCount: 0 };
   }
 
   const element = elementRaw as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph;
@@ -1251,7 +1253,7 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
 
   const position = cursor.getOffset(); //offset
   if (position >= element.getNumChildren()) {
-    return Common.DerenderResult.CursorNotFound;
+    return { result: Common.DerenderResult.CursorNotFound, successCount: 0 };
   }
 
   // REASON: getChild(position).asInlineImage() throws "TEXT can't be cast to INLINE_IMAGE"
@@ -1260,10 +1262,14 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
   const childAtCursor = element.getChild(position);
   if (childAtCursor.getType() !== DocumentApp.ElementType.INLINE_IMAGE) {
     console.log("editEquations: child at cursor is not an inline image", childAtCursor.getType());
-    return Common.DerenderResult.NonExistentElement;
+    return { result: Common.DerenderResult.NonExistentElement, successCount: 0 };
   }
 
   const image = childAtCursor.asInlineImage();
   Common.debugLog("Image height", image.getHeight());
-  return derenderInlineImage(image, defaultDelim);
+  const cursorResult = derenderInlineImage(image, defaultDelim);
+  return {
+    result: cursorResult,
+    successCount: cursorResult === Common.DerenderResult.Success ? 1 : 0
+  };
 }

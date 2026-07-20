@@ -650,17 +650,14 @@ function editText(){
   const {sizeRaw, delimiter, renderer} = getCurrentSettings();
   google.script.run
     .withSuccessHandler(
-      function(returnSuccess: AutoLatexCommon.DerenderResult, element) {
+      function(returnSuccess: { result: AutoLatexCommon.DerenderResult, successCount: number }, element) {
         if (isStaleSidebarAction(actionId)) {
           return;
         }
         $("#loading").html('');
         restoreIdleSidebarControls();
-        $("#loading").html("Status: " + "1"             + " equation replaced.");
-        if(returnSuccess < 0)
-          $("#loading").html("Status: " + "No"          + " equations replaced.");
 
-        switch (returnSuccess) {
+        switch (returnSuccess.result) {
           case AutoLatexCommon.DerenderResult.InvalidUrl:
             showError("Cannot retrieve equation. The equation may not have been rendered by Auto-LaTeX.", "Status: Error, please ensure link is still on equation.");
             break;
@@ -676,15 +673,17 @@ function editText(){
             // (b) the cursor is inside an unsupported element type (table cell, footnote,
             // table of contents). Both used to crash with a TypeError. The combined hint
             // covers both without forcing a new enum value.
-            showError("Place your cursor immediately before the rendered equation image and try again. De-render only works on equations rendered by Auto-LaTeX inside a normal paragraph - it doesn't work inside tables, footnotes, or on plain text.", "Status: Error, please move cursor before the equation image.");
+            showError("Click (or select) the rendered equation image and try again \u2014 selection-based de-render works anywhere, including headers and footers. The cursor-before-the-image flow only works in normal paragraphs.", "Status: Error, please select the equation image.");
             break;
           case AutoLatexCommon.DerenderResult.CursorNotFound:
             showError("Cannot find a cursor/equation. Please click before an equation.", "Status: Error, please move cursor before equation.");
             break;
           case AutoLatexCommon.DerenderResult.Success:
-          default:
-            $("#loading").html("Status: 1 equation de-rendered.");
+          default: {
+            const n = returnSuccess.successCount || 1;
+            $("#loading").html(`Status: ${n} equation${n === 1 ? "" : "s"} de-rendered.`);
             break;
+          }
         }
       })
     .withFailureHandler(

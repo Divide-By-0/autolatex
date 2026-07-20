@@ -1046,7 +1046,7 @@ function editEquations(sizeRaw, delimiter, renderer) {
     if (selection) {
         var images = collectSelectedInlineImages(selection);
         if (images.length === 0) {
-            return 3 /* Common.DerenderResult.NonExistentElement */;
+            return { result: 3 /* Common.DerenderResult.NonExistentElement */, successCount: 0 };
         }
         var successCount = 0;
         var lastFailureResult = 2 /* Common.DerenderResult.InvalidUrl */;
@@ -1060,15 +1060,17 @@ function editEquations(sizeRaw, delimiter, renderer) {
                 lastFailureResult = result;
             }
         }
-        return successCount > 0 ? 5 /* Common.DerenderResult.Success */ : lastFailureResult;
+        return successCount > 0
+            ? { result: 5 /* Common.DerenderResult.Success */, successCount: successCount }
+            : { result: lastFailureResult, successCount: 0 };
     }
     var cursor = DocumentApp.getActiveDocument().getCursor();
     if (!cursor) {
-        return 0 /* Common.DerenderResult.CursorNotFound */;
+        return { result: 0 /* Common.DerenderResult.CursorNotFound */, successCount: 0 };
     }
     var elementRaw = cursor.getElement();
     if (!elementRaw) {
-        return 3 /* Common.DerenderResult.NonExistentElement */;
+        return { result: 3 /* Common.DerenderResult.NonExistentElement */, successCount: 0 };
     }
     // REASON: Cursor.getElement() can return any Element subtype (Table, TableOfContents,
     // FootnoteSection, etc.) - not just Paragraph/ListItem. The previous code did an unchecked
@@ -1078,13 +1080,13 @@ function editEquations(sizeRaw, delimiter, renderer) {
     var elementType = elementRaw.getType();
     if (elementType !== DocumentApp.ElementType.PARAGRAPH && elementType !== DocumentApp.ElementType.LIST_ITEM) {
         console.log("editEquations: cursor is in unsupported element type", elementType);
-        return 3 /* Common.DerenderResult.NonExistentElement */;
+        return { result: 3 /* Common.DerenderResult.NonExistentElement */, successCount: 0 };
     }
     var element = elementRaw;
     console.log("Valid cursor.");
     var position = cursor.getOffset(); //offset
     if (position >= element.getNumChildren()) {
-        return 0 /* Common.DerenderResult.CursorNotFound */;
+        return { result: 0 /* Common.DerenderResult.CursorNotFound */, successCount: 0 };
     }
     // REASON: getChild(position).asInlineImage() throws "TEXT can't be cast to INLINE_IMAGE"
     // when the user's cursor is on text instead of an equation image. Check the child type
@@ -1092,9 +1094,13 @@ function editEquations(sizeRaw, delimiter, renderer) {
     var childAtCursor = element.getChild(position);
     if (childAtCursor.getType() !== DocumentApp.ElementType.INLINE_IMAGE) {
         console.log("editEquations: child at cursor is not an inline image", childAtCursor.getType());
-        return 3 /* Common.DerenderResult.NonExistentElement */;
+        return { result: 3 /* Common.DerenderResult.NonExistentElement */, successCount: 0 };
     }
     var image = childAtCursor.asInlineImage();
     Common.debugLog("Image height", image.getHeight());
-    return derenderInlineImage(image, defaultDelim);
+    var cursorResult = derenderInlineImage(image, defaultDelim);
+    return {
+        result: cursorResult,
+        successCount: cursorResult === 5 /* Common.DerenderResult.Success */ ? 1 : 0
+    };
 }
