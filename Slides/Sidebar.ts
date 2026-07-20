@@ -47,6 +47,9 @@ interface SlidesClientRenderOptions {
   r: number;
   g: number;
   b: number;
+  bgR?: number;
+  bgG?: number;
+  bgB?: number;
   delim: AutoLatexCommon.Delimiter;
   equation: string;
   equationLinkEncoded: string;
@@ -400,15 +403,12 @@ function editText(){
   const {sizeRaw, delimiter, renderer} = getCurrentSettings();
   google.script.run
     .withSuccessHandler(
-      function(returnSuccess, element) {
+      function(returnSuccess: { result: AutoLatexCommon.DerenderResult, successCount: number }, element) {
         $("#loading").html('');
         clearInterval(runDots);
         element.disabled = false;
-        $("#loading").html("Status: " + "1"             + " equation replaced.");
-        if(returnSuccess < 0)
-          $("#loading").html("Status: " + "No"          + " equations replaced.");
-          
-          switch (returnSuccess) {
+
+          switch (returnSuccess.result) {
             case AutoLatexCommon.DerenderResult.InvalidUrl:
               showError("Cannot retrieve equation. The equation may not have been rendered by Auto-LaTeX.", "Status: Error, please ensure link is still on equation.");
               break;
@@ -419,15 +419,17 @@ function editText(){
               showError("Cannot retrieve equation. Is your cursor before an Auto-LaTeX rendered equation?", "Status: Error, please move cursor before inline equation.");
               break;
             case AutoLatexCommon.DerenderResult.NonExistentElement:
-              showError("Cannot insert text here. Is your cursor before an equation?", "Status: Error, please move cursor before equation.");
+              showError("No image found in your selection. Click the rendered equation image (shift-click to select several) and try again.", "Status: Error, please select the equation image.");
               break;
             case AutoLatexCommon.DerenderResult.CursorNotFound:
-              showError("Cannot find a cursor/equation. Please click before an equation.", "Status: Error, please move cursor before equation.");
+              showError("Nothing is selected. Click the rendered equation image (shift-click to select several) and try again.", "Status: Error, please select the equation image.");
               break;
             case AutoLatexCommon.DerenderResult.Success:
-            default:
-              $("#loading").html("Status: 1 equation de-rendered.");
+            default: {
+              const n = returnSuccess.successCount || 1;
+              $("#loading").html(`Status: ${n} equation${n === 1 ? "" : "s"} de-rendered.`);
               break;
+            }
           }
       })
     .withFailureHandler(
