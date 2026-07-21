@@ -1226,7 +1226,15 @@ function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoL
   if (!origURL) return Common.DerenderResult.NullUrl;
 
   Common.debugLog("Original URL from image", origURL);
-  const result = Common.derenderEquation(origURL, IntegratedApp);
+  // REASON: same escape()-era %uXXXX guard as Docs — decodeURIComponent rejects those
+  // legacy URLs (URIError) and an uncaught throw crashed the whole derender pass.
+  let result: ReturnType<typeof Common.derenderEquation>;
+  try {
+    result = Common.derenderEquation(origURL, IntegratedApp);
+  } catch (err) {
+    console.error("derenderImage: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
+    return Common.DerenderResult.InvalidUrl;
+  }
   if (!result) return Common.DerenderResult.InvalidUrl;
   const { delim: newDelim, origEq } = result;
   const delim = newDelim || defaultDelim;

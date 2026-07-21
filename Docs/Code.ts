@@ -723,6 +723,7 @@ function getSize(size: number, defaultSize: number, rangeElement: GoogleAppsScri
 function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRenderOptions, renderedEquationB64: string }[]) {
   const mathjaxRenderer = Common.getRenderer(Common.rendererIds.MATHJAX);
   let c = 0;
+  let alreadyRenderedCount = 0;
   console.log("MathJax client render completion received equations:", equations.length);
   
   // Go backwards so that the named ranges for multiple equations in the same paragraph don't get removed
@@ -743,6 +744,15 @@ function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRender
         continue;
       }
 
+      // REASON: if the range element is no longer Text (most commonly it's already an
+      // INLINE_IMAGE from a double-click render or an overlapping batch), placeImage's
+      // asText() threw a locale-dependent cast error — thousands of ERROR lines/day for
+      // what is a benign "already done" state. Skip quietly instead.
+      if (rangeElements[0].getElement().getType() !== DocumentApp.ElementType.TEXT) {
+        alreadyRenderedCount++;
+        continue;
+      }
+
       const equationBlob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
       const result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equationLinkEncoded, equation.options.size, equation.options.delim);
 
@@ -756,6 +766,9 @@ function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRender
     }
   }
   
+  if (alreadyRenderedCount > 0) {
+    console.log("MathJax client render completion skipped already-rendered ranges:", alreadyRenderedCount);
+  }
   return {
     lastStatus: DocsEquationRenderStatus.Success,
     successCount: c
@@ -970,17 +983,51 @@ function findInsertableAncestor(element: GoogleAppsScript.Document.Element) {
   return null;
 }
 
+// REASON: a doc with several unplaceable equations logged the same failure for every
+// equation on every retry (observed: one stuck user emitted ~2300 ERROR lines/day).
+// Log each distinct container type once per execution; the thrown error still carries
+// the message for the per-equation failure details.
+const reportedPlaceImageFailureTypes = new Set<string>();
+
 function placeImage(startElement: GoogleAppsScript.Document.RangeElement, renderedEquation: GoogleAppsScript.Base.Blob, renderer: AutoLatexCommon.Renderer, equation: string, size: number, delim: AutoLatexCommon.Delimiter) {
   // GET VARIABLES
-  const textElement = startElement.getElement().asText();
-  const text = textElement.getText();
-  const ancestor = findInsertableAncestor(textElement);
+  let textElement = startElement.getElement().asText();
+  const startOffset = startElement.getStartOffset();
+  const endOffsetInclusive = startElement.getEndOffsetInclusive();
+  let ancestor = findInsertableAncestor(textElement);
+  if (!ancestor) {
+    // REASON: prod logs show Text elements living DIRECTLY under a section
+    // (directParentType=BODY_SECTION) — no Paragraph wrapper, so no ancestor exposes
+    // insertInlineImage and rendering hard-failed for those docs. Sections do expose
+    // insertParagraph, so wrap the text in a fresh Paragraph at the same position and
+    // continue normally. The equations themselves are valid; only the container is odd.
+    const directParent = textElement.getParent();
+    const sectionLike = directParent as unknown as {
+      insertParagraph?: (index: number, text: string) => GoogleAppsScript.Document.Paragraph;
+      getChildIndex?: (child: GoogleAppsScript.Document.Element) => number;
+      removeChild?: (child: GoogleAppsScript.Document.Element) => unknown;
+    };
+    if (directParent && typeof sectionLike.insertParagraph === "function" &&
+        typeof sectionLike.getChildIndex === "function" && typeof sectionLike.removeChild === "function") {
+      const idx = sectionLike.getChildIndex(textElement);
+      const wrapper = sectionLike.insertParagraph(idx, "");
+      const movedText = wrapper.appendText(textElement.getText());
+      sectionLike.removeChild(textElement);
+      textElement = movedText;
+      ancestor = { container: wrapper as unknown as GoogleAppsScript.Document.ContainerElement, directChild: movedText as unknown as GoogleAppsScript.Document.Element };
+      console.log("placeImage: wrapped section-level text in a paragraph to place the equation.");
+    }
+  }
   if (!ancestor) {
     const directParent = textElement.getParent();
     const parentType = directParent && typeof directParent.getType === "function" ? String(directParent.getType()) : "<unknown>";
-    console.error("placeImage: no ancestor within 6 levels supports insertInlineImage. directParentType=", parentType, " equation=", equation);
+    if (!reportedPlaceImageFailureTypes.has(parentType)) {
+      reportedPlaceImageFailureTypes.add(parentType);
+      console.error("placeImage: no ancestor within 6 levels supports insertInlineImage. directParentType=", parentType, " equation=", equation);
+    }
     throw new Error(`Cannot place image: equation is in an unsupported container (direct parent type ${parentType}). Inline images can't be inserted here.`);
   }
+  const text = textElement.getText();
   // REASON: TypeScript's union of insertable containers (Body, TableCell, FootnoteSection,
   // Paragraph, ListItem, ...) is wide; the methods we actually call (insertInlineImage,
   // insertText, getChild, getChildIndex) exist on all of them at runtime. Cast to the
@@ -989,11 +1036,11 @@ function placeImage(startElement: GoogleAppsScript.Document.RangeElement, render
   const paragraph = ancestor.container as unknown as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph;
   const childIndex = paragraph.getChildIndex(ancestor.directChild as GoogleAppsScript.Document.Element); //gets index of found text (or its containing wrapper) in the insertable ancestor
   const textCopy = textElement.asText().copy();
-  let endLimit = startElement.getEndOffsetInclusive();
+  let endLimit = endOffsetInclusive;
   if (text.length - 1 < endLimit) endLimit = text.length - 1;
   textCopy.asText().editAsText().deleteText(0, endLimit); // the copy only has the stuff after the equation
   Common.reportDeltaTime(522);
-  textElement.editAsText().deleteText(startElement.getStartOffset(), text.length - 1); // from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
+  textElement.editAsText().deleteText(startOffset, text.length - 1); // from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
   Common.reportDeltaTime(526);
   
   // try inserting twice
@@ -1123,7 +1170,15 @@ function removeAll(defaultDelimRaw: string) {
       }
       // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
       // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
-      const result = Common.derenderEquation(origURL, getDocsApp());
+      // REASON: same escape()-era %uXXXX guard as derenderInlineImage — one ancient
+      // image must not crash De-render All for the whole document.
+      let result: ReturnType<typeof Common.derenderEquation>;
+      try {
+        result = Common.derenderEquation(origURL, getDocsApp());
+      } catch (err) {
+        console.error("removeAll: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
+        continue;
+      }
       if (!result) continue;
       const { origEq, delim: newDelim } = result;
       const delim = newDelim || defaultDelim;
@@ -1160,7 +1215,17 @@ function derenderInlineImage(
   if (!origURL) {
     return Common.DerenderResult.NullUrl;
   }
-  const result = Common.derenderEquation(origURL, getDocsApp());
+  // REASON: images rendered in the escape()-encoding era carry %uXXXX sequences that
+  // decodeURIComponent rejects (URIError: URI malformed). Uncaught, one ancient image
+  // crashed the whole De-render run. Log WITH the URL so the offending encoding is
+  // visible, and skip just this image.
+  let result: ReturnType<typeof Common.derenderEquation>;
+  try {
+    result = Common.derenderEquation(origURL, getDocsApp());
+  } catch (err) {
+    console.error("derenderInlineImage: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
+    return Common.DerenderResult.InvalidUrl;
+  }
   if (!result) return Common.DerenderResult.InvalidUrl;
   const { delim: newDelim, origEq } = result;
   const delim = newDelim || defaultDelim;

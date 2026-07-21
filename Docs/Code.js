@@ -610,6 +610,7 @@ function getSize(size, defaultSize, rangeElement) {
 function clientRenderComplete(equations) {
     var mathjaxRenderer = Common.getRenderer(Common.rendererIds.MATHJAX);
     var c = 0;
+    var alreadyRenderedCount = 0;
     console.log("MathJax client render completion received equations:", equations.length);
     // Go backwards so that the named ranges for multiple equations in the same paragraph don't get removed
     equations.reverse();
@@ -627,6 +628,14 @@ function clientRenderComplete(equations) {
                 console.warn("MathJax client render range is empty:", equation.options.rangeId);
                 continue;
             }
+            // REASON: if the range element is no longer Text (most commonly it's already an
+            // INLINE_IMAGE from a double-click render or an overlapping batch), placeImage's
+            // asText() threw a locale-dependent cast error — thousands of ERROR lines/day for
+            // what is a benign "already done" state. Skip quietly instead.
+            if (rangeElements[0].getElement().getType() !== DocumentApp.ElementType.TEXT) {
+                alreadyRenderedCount++;
+                continue;
+            }
             var equationBlob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
             var result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equationLinkEncoded, equation.options.size, equation.options.delim);
             if (result.status === 8 /* DocsEquationRenderStatus.Success */) {
@@ -639,6 +648,9 @@ function clientRenderComplete(equations) {
         finally {
             namedRange === null || namedRange === void 0 ? void 0 : namedRange.remove();
         }
+    }
+    if (alreadyRenderedCount > 0) {
+        console.log("MathJax client render completion skipped already-rendered ranges:", alreadyRenderedCount);
     }
     return {
         lastStatus: 8 /* DocsEquationRenderStatus.Success */,
@@ -818,17 +830,46 @@ function findInsertableAncestor(element) {
     }
     return null;
 }
+// REASON: a doc with several unplaceable equations logged the same failure for every
+// equation on every retry (observed: one stuck user emitted ~2300 ERROR lines/day).
+// Log each distinct container type once per execution; the thrown error still carries
+// the message for the per-equation failure details.
+var reportedPlaceImageFailureTypes = new Set();
 function placeImage(startElement, renderedEquation, renderer, equation, size, delim) {
     // GET VARIABLES
     var textElement = startElement.getElement().asText();
-    var text = textElement.getText();
+    var startOffset = startElement.getStartOffset();
+    var endOffsetInclusive = startElement.getEndOffsetInclusive();
     var ancestor = findInsertableAncestor(textElement);
+    if (!ancestor) {
+        // REASON: prod logs show Text elements living DIRECTLY under a section
+        // (directParentType=BODY_SECTION) — no Paragraph wrapper, so no ancestor exposes
+        // insertInlineImage and rendering hard-failed for those docs. Sections do expose
+        // insertParagraph, so wrap the text in a fresh Paragraph at the same position and
+        // continue normally. The equations themselves are valid; only the container is odd.
+        var directParent = textElement.getParent();
+        var sectionLike = directParent;
+        if (directParent && typeof sectionLike.insertParagraph === "function" &&
+            typeof sectionLike.getChildIndex === "function" && typeof sectionLike.removeChild === "function") {
+            var idx = sectionLike.getChildIndex(textElement);
+            var wrapper = sectionLike.insertParagraph(idx, "");
+            var movedText = wrapper.appendText(textElement.getText());
+            sectionLike.removeChild(textElement);
+            textElement = movedText;
+            ancestor = { container: wrapper, directChild: movedText };
+            console.log("placeImage: wrapped section-level text in a paragraph to place the equation.");
+        }
+    }
     if (!ancestor) {
         var directParent = textElement.getParent();
         var parentType = directParent && typeof directParent.getType === "function" ? String(directParent.getType()) : "<unknown>";
-        console.error("placeImage: no ancestor within 6 levels supports insertInlineImage. directParentType=", parentType, " equation=", equation);
+        if (!reportedPlaceImageFailureTypes.has(parentType)) {
+            reportedPlaceImageFailureTypes.add(parentType);
+            console.error("placeImage: no ancestor within 6 levels supports insertInlineImage. directParentType=", parentType, " equation=", equation);
+        }
         throw new Error("Cannot place image: equation is in an unsupported container (direct parent type ".concat(parentType, "). Inline images can't be inserted here."));
     }
+    var text = textElement.getText();
     // REASON: TypeScript's union of insertable containers (Body, TableCell, FootnoteSection,
     // Paragraph, ListItem, ...) is wide; the methods we actually call (insertInlineImage,
     // insertText, getChild, getChildIndex) exist on all of them at runtime. Cast to the
@@ -837,12 +878,12 @@ function placeImage(startElement, renderedEquation, renderer, equation, size, de
     var paragraph = ancestor.container;
     var childIndex = paragraph.getChildIndex(ancestor.directChild); //gets index of found text (or its containing wrapper) in the insertable ancestor
     var textCopy = textElement.asText().copy();
-    var endLimit = startElement.getEndOffsetInclusive();
+    var endLimit = endOffsetInclusive;
     if (text.length - 1 < endLimit)
         endLimit = text.length - 1;
     textCopy.asText().editAsText().deleteText(0, endLimit); // the copy only has the stuff after the equation
     Common.reportDeltaTime(522);
-    textElement.editAsText().deleteText(startElement.getStartOffset(), text.length - 1); // from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
+    textElement.editAsText().deleteText(startOffset, text.length - 1); // from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
     Common.reportDeltaTime(526);
     // try inserting twice
     for (var tryNum = 1; tryNum <= 2; tryNum++) {
@@ -962,7 +1003,16 @@ function removeAll(defaultDelimRaw) {
             }
             // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
             // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
-            var result = Common.derenderEquation(origURL, getDocsApp());
+            // REASON: same escape()-era %uXXXX guard as derenderInlineImage — one ancient
+            // image must not crash De-render All for the whole document.
+            var result = void 0;
+            try {
+                result = Common.derenderEquation(origURL, getDocsApp());
+            }
+            catch (err) {
+                console.error("removeAll: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
+                continue;
+            }
             if (!result)
                 continue;
             var origEq = result.origEq, newDelim = result.delim;
@@ -995,7 +1045,18 @@ function derenderInlineImage(image, defaultDelim) {
     if (!origURL) {
         return 4 /* Common.DerenderResult.NullUrl */;
     }
-    var result = Common.derenderEquation(origURL, getDocsApp());
+    // REASON: images rendered in the escape()-encoding era carry %uXXXX sequences that
+    // decodeURIComponent rejects (URIError: URI malformed). Uncaught, one ancient image
+    // crashed the whole De-render run. Log WITH the URL so the offending encoding is
+    // visible, and skip just this image.
+    var result;
+    try {
+        result = Common.derenderEquation(origURL, getDocsApp());
+    }
+    catch (err) {
+        console.error("derenderInlineImage: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
+        return 2 /* Common.DerenderResult.InvalidUrl */;
+    }
     if (!result)
         return 2 /* Common.DerenderResult.InvalidUrl */;
     var newDelim = result.delim, origEq = result.origEq;
