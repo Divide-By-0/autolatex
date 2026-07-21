@@ -414,6 +414,21 @@ function getClientEquation(equationOriginal: string, app: IntegratedApp) {
   );
 }
 
+// REASON: equation URLs written before the encodeURIComponent migration were encoded
+// with escape(), whose %uXXXX (non-Latin-1) and lone Latin-1 %XX byte sequences
+// decodeURIComponent rejects with "URIError: URI malformed" — making every ancient
+// image containing a non-ASCII character underenderable. unescape() still decodes
+// both legacy forms, so fall back to it on failure and recover the equation. Never
+// try unescape() first: it mangles valid modern UTF-8 pairs (%C3%A9 -> "Ã©").
+function decodeEquationComponent(encoded: string) {
+  try {
+    return decodeURIComponent(encoded);
+  } catch (err) {
+    console.log("decodeEquationComponent: legacy escape()-era encoding; decoding with unescape().", String(err));
+    return unescape(encoded);
+  }
+}
+
 /**
  * returns the deencoded equation as a string.
  */
@@ -421,7 +436,7 @@ function deEncode(equation: string, app: IntegratedApp) {
   reportDeltaTime(269);
   debugLog("Equation to derender", equation);
   // First decode pass - handles newlines, #, and +
-  const decoded = decodeURIComponent(getCustomEncode(getFilenameEncode(equation, 1), 1, 0, app));
+  const decoded = decodeEquationComponent(getCustomEncode(getFilenameEncode(equation, 1), 1, 0, app));
   debugLog("First decode pass", decoded);
   reportDeltaTime(274);
   // Second pass - handles quotes and other characters
