@@ -390,13 +390,17 @@ function findAllClientRenderEquationsInTextElement(
     const size = getSlideTextSize(renderOptions.size, renderOptions.defaultSize, equationRange);
     const colorRangeEnd = Math.max(equationOffsets.start + renderOptions.delim[4], equationOffsets.end);
     const textColor = getRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
-    const bgColor = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum) || getShapeFillRgbColor(textElement, slideNum);
+    const bgColorRaw = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum) || getShapeFillRgbColor(textElement, slideNum);
+    // REASON: a white / near-white background should render as transparent, not a baked white box.
+    // Otherwise every equation on a normal white slide gets an opaque rectangle. Only a genuinely
+    // colored highlight/fill is baked in.
+    const bgColor = bgColorRaw && !isNearWhite(bgColorRaw) ? bgColorRaw : null;
     // REASON: collapse the encoded four-backslash newline marker in ENCODED space
     // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
     // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
     // \hline" after a derender round-trip) and align/matrix row breaks.
     const clientEquation = Common.getClientEquation(equationOriginal, IntegratedApp);
-    const eqOffset = estimateInBoxOffset(renderedText.substring(0, equationOffsets.start), size, getBounds(textElement).width);
+    const eqOffset = estimateInBoxOffset(renderedText.substring(0, equationOffsets.start), size, getBounds(textElement).width - 2 * BOX_LEFT_INSET_PT);
 
     results.push({
       size,
@@ -787,13 +791,17 @@ function findClientRenderEquationInTextElement(
     const size = getSlideTextSize(renderOptions.size, renderOptions.defaultSize, equationRange);
     const colorRangeEnd = Math.max(equationOffsets.start + renderOptions.delim[4], equationOffsets.end);
     const textColor = getRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
-    const bgColor = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum) || getShapeFillRgbColor(textElement, slideNum);
+    const bgColorRaw = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum) || getShapeFillRgbColor(textElement, slideNum);
+    // REASON: a white / near-white background should render as transparent, not a baked white box.
+    // Otherwise every equation on a normal white slide gets an opaque rectangle. Only a genuinely
+    // colored highlight/fill is baked in.
+    const bgColor = bgColorRaw && !isNearWhite(bgColorRaw) ? bgColorRaw : null;
     // REASON: collapse the encoded four-backslash newline marker in ENCODED space
     // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
     // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
     // \hline" after a derender round-trip) and align/matrix row breaks.
     const clientEquation = Common.getClientEquation(equationOriginal, IntegratedApp);
-    const eqOffset = estimateInBoxOffset(renderedText.substring(0, equationOffsets.start), size, getBounds(textElement).width);
+    const eqOffset = estimateInBoxOffset(renderedText.substring(0, equationOffsets.start), size, getBounds(textElement).width - 2 * BOX_LEFT_INSET_PT);
 
     return {
       size,
@@ -879,32 +887,69 @@ function getBounds(textElement: PageElement) {
 //   - side-by-side/corner: empty prefix -> (0, 0); the placement step keeps alignment there and
 //     the slide-edge clamp guarantees nothing lands off-page (overlap is acceptable, off-slide is
 //     not).
-const GLYPH_ADVANCE_RATIO = 0.5; // avg glyph advance as a fraction of the font size (proportional)
-const LINE_HEIGHT_RATIO = 1.2;   // line height as a fraction of the font size
-function estimateInBoxOffset(textBefore: string, fontSizePt: number, boxWidthPt: number) {
+const LINE_HEIGHT_RATIO = 1.2; // line height as a fraction of the font size
+// Slides' default text-box insets (padding) — text starts this far from the box's top-left, so
+// the estimated position must too. Not readable via Apps Script, so use the product defaults.
+const BOX_LEFT_INSET_PT = 7.2; // 0.1"
+const BOX_TOP_INSET_PT = 3.6;  // 0.05"
+// REASON: per-glyph advance widths in em (fraction of font size), Helvetica/Arial metrics — the
+// default Slides font. A flat 0.5 overestimated narrow glyphs (i, l, spaces, punctuation) and
+// pushed images right of their text. Digits are 0.556; anything unlisted falls back to 0.5.
+const GLYPH_WIDTHS_EM: { [ch: string]: number } = {
+  " ": 0.278, "!": 0.278, "\"": 0.355, "#": 0.556, "$": 0.556, "%": 0.889, "&": 0.667, "'": 0.191,
+  "(": 0.333, ")": 0.333, "*": 0.389, "+": 0.584, ",": 0.278, "-": 0.333, ".": 0.278, "/": 0.278,
+  ":": 0.278, ";": 0.278, "<": 0.584, "=": 0.584, ">": 0.584, "?": 0.556, "@": 1.015,
+  "A": 0.667, "B": 0.667, "C": 0.722, "D": 0.722, "E": 0.667, "F": 0.611, "G": 0.778, "H": 0.722,
+  "I": 0.278, "J": 0.5, "K": 0.667, "L": 0.556, "M": 0.833, "N": 0.722, "O": 0.778, "P": 0.667,
+  "Q": 0.778, "R": 0.722, "S": 0.667, "T": 0.611, "U": 0.722, "V": 0.667, "W": 0.944, "X": 0.667,
+  "Y": 0.667, "Z": 0.611, "[": 0.278, "\\": 0.278, "]": 0.278, "^": 0.469, "_": 0.556, "`": 0.333,
+  "a": 0.556, "b": 0.556, "c": 0.5, "d": 0.556, "e": 0.556, "f": 0.278, "g": 0.556, "h": 0.556,
+  "i": 0.222, "j": 0.222, "k": 0.5, "l": 0.222, "m": 0.833, "n": 0.556, "o": 0.556, "p": 0.556,
+  "q": 0.556, "r": 0.333, "s": 0.5, "t": 0.278, "u": 0.556, "v": 0.5, "w": 0.722, "x": 0.5,
+  "y": 0.5, "z": 0.5, "{": 0.334, "|": 0.26, "}": 0.334, "~": 0.584
+};
+function glyphWidthEm(ch: string) {
+  if (ch in GLYPH_WIDTHS_EM) return GLYPH_WIDTHS_EM[ch];
+  if (ch >= "0" && ch <= "9") return 0.556;
+  return 0.5;
+}
+
+// A white / near-white background is treated as "no background" (transparent equation image).
+function isNearWhite(rgb: number[]) {
+  return rgb[0] >= 250 && rgb[1] >= 250 && rgb[2] >= 250;
+}
+
+// REASON: Slides exposes no geometry for a substring inside a text box, so estimate where an
+// equation sits from the text that PRECEDES it, returning an (dx, dy) offset in points from the
+// box's top-left content origin. Sum real per-glyph advances for the horizontal position and
+// soft-wrap when the running width exceeds the box's usable width. Graceful degradation:
+//   - full inline: font size known -> real glyph-width column (dx) and wrapped line (dy)
+//   - line-aware:  no font size -> dx = 0 (box edge), dy counts explicit breaks only
+//   - box start:   empty prefix -> (0, 0); placement keeps alignment there.
+function estimateInBoxOffset(textBefore: string, fontSizePt: number, usableWidthPt: number) {
   const hasMetrics = typeof fontSizePt === "number" && fontSizePt > 0;
   const fontPt = hasMetrics ? fontSizePt : 12;
-  const glyphW = Math.max(1, fontPt * GLYPH_ADVANCE_RATIO);
   const lineH = Math.max(1, fontPt * LINE_HEIGHT_RATIO);
-  const charsPerLine = hasMetrics && boxWidthPt > 0 ? Math.max(1, Math.floor(boxWidthPt / glyphW)) : Infinity;
+  const maxLineWidth = hasMetrics && usableWidthPt > 0 ? usableWidthPt : Infinity;
 
   let line = 0;
-  let column = 0;
+  let x = 0; // width accumulated on the current line, in points
   for (let i = 0; i < textBefore.length; i++) {
     const ch = textBefore.charAt(i);
     // \n \r \v are all in-text line breaks across Docs/Slides.
     if (ch === "\n" || ch === "\r" || ch === "\v") {
       line++;
-      column = 0;
+      x = 0;
       continue;
     }
-    column++;
-    if (column >= charsPerLine) {
+    const w = glyphWidthEm(ch) * fontPt;
+    if (x + w > maxLineWidth) { // soft wrap
       line++;
-      column = 0;
+      x = 0;
     }
+    x += w;
   }
-  return { dx: hasMetrics ? column * glyphW : 0, dy: line * lineH };
+  return { dx: hasMetrics ? x : 0, dy: line * lineH };
 }
 
 function resize(eqnImage: GoogleAppsScript.Slides.Image, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment, bounds: ReturnType<typeof getBounds>, posOffset?: { dx: number; dy: number }) {
@@ -920,8 +965,10 @@ function resize(eqnImage: GoogleAppsScript.Slides.Image, scale: number, horizont
   // content (dx>0 or dy>0). An equation at the very start of the box keeps the alignment-based
   // placement below, which is correct for a single centered/right-aligned equation.
   if (posOffset && (posOffset.dx > 0 || posOffset.dy > 0)) {
-    left = bounds.x + posOffset.dx;
-    top = bounds.y + posOffset.dy;
+    // add the box insets so the image lines up with the text's actual content origin, not the
+    // box's outer corner (this is what pulled images up-and-right of their source text).
+    left = bounds.x + BOX_LEFT_INSET_PT + posOffset.dx;
+    top = bounds.y + BOX_TOP_INSET_PT + posOffset.dy;
   } else {
     // horizontal: match the text alignment (box-edge / line-aware fallback)
     if (horizontalAlignment === SlidesApp.ParagraphAlignment.END)
