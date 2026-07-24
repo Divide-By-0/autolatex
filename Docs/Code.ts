@@ -572,7 +572,12 @@ function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, pr
   Common.debugLog(renderOptions.delim[2], " single escaped delimiters ", placeHolderEnd - placeHolderStart, " characters long");
 
   Common.reportDeltaTime(214);
-  if (placeHolderEnd - placeHolderStart == 2.0) {
+  // REASON: an empty equation contains only its opening and closing delimiters, so its
+  // inclusive span is exactly 2 * delimiter length. The legacy hard-coded `== 2` treated
+  // every one-character single-dollar equation (`$1$`, `$x$`) as empty, while failing to
+  // recognize actually-empty `$$$$`, `\[\]`, and `\(\)` pairs.
+  const isEmptyEquation = placeHolderEnd - placeHolderStart + 1 === 2 * renderOptions.delim[4];
+  if (isEmptyEquation) {
     // empty equation
     console.log("Empty equation! In index " + index + " and offset " + placeHolderStart);
 
@@ -669,6 +674,9 @@ function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, pr
     };
   }
 
+  // REASON: the MathJax path defers removal, so buildClientRenderResponse must return
+  // a post-NamedRange-mutation cursor. Do not pass either delimiter RangeElement through:
+  // adding the named range can make both pre-mutation search results stale.
   return findEquationAndPlaceImage(range.getRangeElements()[0], renderOptions);
 }
 
@@ -871,6 +879,14 @@ function buildClientRenderResponse(
     .build();
   // save this range for later
   const namedRange = doc.addNamedRange("ale-equation-range", range);
+  // REASON: addNamedRange mutates the Docs structure and can invalidate every
+  // RangeElement obtained before it, including startElement and the closing
+  // delimiter from findPos. Re-read the persisted range after the mutation and
+  // use that fresh whole-equation range as findText's continuation cursor. Its
+  // inclusive end is the closing delimiter, so the next result is the following
+  // equation's opening delimiter rather than the closing delimiter again.
+  const persistedRangeElements = namedRange.getRange().getRangeElements();
+  const nextStartElement = persistedRangeElements[persistedRangeElements.length - 1];
   const clientRenderOptions: AutoLatexCommon.ClientRenderOptions = {
     ...coloredRenderOptions,
     size,
@@ -882,7 +898,7 @@ function buildClientRenderResponse(
     status: DocsEquationRenderStatus.ClientRender,
     equationSize: size,
     clientRenderOptions,
-    nextStartElement: startElement
+    nextStartElement
   };
 }
 

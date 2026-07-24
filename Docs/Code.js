@@ -469,7 +469,12 @@ function findPos(index, renderOptions, prevFailedStartElemIfIsEmpty) {
     var placeHolderEnd = endElement.getEndOffsetInclusive(); //text between placeHolderStart and placeHolderEnd will be permanently deleted
     Common.debugLog(renderOptions.delim[2], " single escaped delimiters ", placeHolderEnd - placeHolderStart, " characters long");
     Common.reportDeltaTime(214);
-    if (placeHolderEnd - placeHolderStart == 2.0) {
+    // REASON: an empty equation contains only its opening and closing delimiters, so its
+    // inclusive span is exactly 2 * delimiter length. The legacy hard-coded `== 2` treated
+    // every one-character single-dollar equation (`$1$`, `$x$`) as empty, while failing to
+    // recognize actually-empty `$$$$`, `\[\]`, and `\(\)` pairs.
+    var isEmptyEquation = placeHolderEnd - placeHolderStart + 1 === 2 * renderOptions.delim[4];
+    if (isEmptyEquation) {
         // empty equation
         console.log("Empty equation! In index " + index + " and offset " + placeHolderStart);
         return {
@@ -562,6 +567,9 @@ function findPos(index, renderOptions, prevFailedStartElemIfIsEmpty) {
             }
         };
     }
+    // REASON: the MathJax path defers removal, so buildClientRenderResponse must return
+    // a post-NamedRange-mutation cursor. Do not pass either delimiter RangeElement through:
+    // adding the named range can make both pre-mutation search results stale.
     return findEquationAndPlaceImage(range.getRangeElements()[0], renderOptions);
 }
 function getEquation(rangeElement, delimiters) {
@@ -733,12 +741,20 @@ function buildClientRenderResponse(textElement, startElement, equationOriginal, 
         .build();
     // save this range for later
     var namedRange = doc.addNamedRange("ale-equation-range", range);
+    // REASON: addNamedRange mutates the Docs structure and can invalidate every
+    // RangeElement obtained before it, including startElement and the closing
+    // delimiter from findPos. Re-read the persisted range after the mutation and
+    // use that fresh whole-equation range as findText's continuation cursor. Its
+    // inclusive end is the closing delimiter, so the next result is the following
+    // equation's opening delimiter rather than the closing delimiter again.
+    var persistedRangeElements = namedRange.getRange().getRangeElements();
+    var nextStartElement = persistedRangeElements[persistedRangeElements.length - 1];
     var clientRenderOptions = __assign(__assign({}, coloredRenderOptions), { size: size, rangeId: namedRange.getId(), equation: clientEquation, equationLinkEncoded: encodeURIComponent(clientEquation) });
     return {
         status: 2 /* DocsEquationRenderStatus.ClientRender */,
         equationSize: size,
         clientRenderOptions: clientRenderOptions,
-        nextStartElement: startElement
+        nextStartElement: nextStartElement
     };
 }
 /**

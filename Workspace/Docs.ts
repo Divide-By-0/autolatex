@@ -115,7 +115,12 @@ function findPos(index: number, delim: AutoLatexCommon.Delimiter, quality: numbe
   Common.debugLog(delim[2], " single escaped delimiters ", placeHolderEnd - placeHolderStart, " characters long");
 
   Common.reportDeltaTime(214);
-  if (placeHolderEnd - placeHolderStart == 2.0) {
+  // REASON: the inclusive span of an empty equation is exactly the two delimiters.
+  // The old `== 2` check classified every one-character `$...$` equation (`$1$`,
+  // `$x$`) as empty in the Workspace add-on, so its Card UI reported only the
+  // longer equations as rendered.
+  const isEmptyEquation = placeHolderEnd - placeHolderStart + 1 === 2 * delim[4];
+  if (isEmptyEquation) {
     // empty equation
     console.log("Empty equation! In index " + index + " and offset " + placeHolderStart);
     return [defaultSize, endElement]; // default behavior of placeImage
