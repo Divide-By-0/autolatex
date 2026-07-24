@@ -1320,9 +1320,15 @@ function clientRenderComplete(equations: SlidesClientRenderPayload[]): SlidesEqu
         prevEnd = o.rangeEnd;
         successCount++;
       }
-      // NOTE: we intentionally KEEP the box (even if it's now only spaces) so derender can restore
-      // the equation into its space gap. A standalone equation box just becomes an invisible
-      // spaces box behind the floating image.
+
+      // REASON: a box that is now only whitespace held nothing but equations — drop it so the image
+      // floats on its own (the old behavior) instead of leaving an empty spaces box behind. Boxes
+      // that still contain prose keep their placeholder spaces so derender can restore inline.
+      if (!isTableCell(target.textElement) &&
+          target.textElement.getShapeType() === SlidesApp.ShapeType.TEXT_BOX &&
+          target.textRange.asRenderedString().trim().length === 0) {
+        target.textElement.remove();
+      }
     } catch (error) {
       console.error("MathJax Slides client render completion failed.", error);
     }
