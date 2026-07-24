@@ -374,7 +374,10 @@ function findAllClientRenderEquationsInTextElement(
     const endOffset = Math.min(textRange.getLength(), equationOffsets.end + renderOptions.delim[4]);
     const equationRange = textRange.getRange(equationOffsets.start, endOffset);
     const equationOriginal = getEquation(equationRange, renderOptions.delim);
-    if (!equationOriginal) {
+    // REASON: skip empty AND whitespace-only equations (e.g. a lone line break). They typeset
+    // to a 0x0 SVG and would crash the shared client canvas renderer. Mirrors the Docs findPos
+    // guard so no surface sends a blank equation to MathJax.
+    if (!equationOriginal || equationOriginal.trim() === "") {
       searchOffset = equationOffsets.end + renderOptions.delim[4];
       continue;
     }
@@ -765,7 +768,10 @@ function findClientRenderEquationInTextElement(
     const endOffset = Math.min(textRange.getLength(), equationOffsets.end + renderOptions.delim[4]);
     const equationRange = textRange.getRange(equationOffsets.start, endOffset);
     const equationOriginal = getEquation(equationRange, renderOptions.delim);
-    if (!equationOriginal) {
+    // REASON: skip empty AND whitespace-only equations (e.g. a lone line break). They typeset
+    // to a 0x0 SVG and would crash the shared client canvas renderer. Mirrors the Docs findPos
+    // guard so no surface sends a blank equation to MathJax.
+    if (!equationOriginal || equationOriginal.trim() === "") {
       searchOffset = equationOffsets.end + renderOptions.delim[4];
       continue;
     }

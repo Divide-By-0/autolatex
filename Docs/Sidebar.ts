@@ -398,7 +398,16 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
     }
 
     // we're not done yet - these equations need to be rendered on the client
-    const equationsToRender = clientEquations || [];
+    // REASON: an empty / whitespace-only equation (most often a lone "\r" produced when an
+    // empty `$...$` straddling a paragraph break gets auto-merged) typesets to a 0x0 SVG. The
+    // renderer throws on it, which otherwise counts as a failure and fires the alarming
+    // "MathJax failed to render N equation(s)" error. It is not a real equation, so drop it
+    // here: never rendered, never counted as a success or a failure. The server-side findPos
+    // guard catches the common single-paragraph case; this is the catch-all for whatever the
+    // merge path still lets through.
+    const equationsToRender = (clientEquations || []).filter(
+      c => typeof c.equation === "string" && c.equation.trim() !== ""
+    );
     mapWithConcurrency(equationsToRender, MATHJAX_CONCURRENCY_LIMIT, async c => {
       try {
         return {

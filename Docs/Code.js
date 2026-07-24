@@ -416,7 +416,17 @@ function tryAutoMergeMultiParagraphEquation(body, startParaIdx, endParaIdx) {
         // \r (\u000D) is the in-text representation of a Shift+Enter line break in Docs.
         // See newlineCharacter comment near top of this file.
         startPara.editAsText().appendText("\r" + text);
-        nextPara.removeFromParent();
+        // REASON: Docs forbids deleting the final paragraph of a section — removeFromParent()
+        // throws "Can't remove the last paragraph in a document section" (seen in prod when an
+        // equation spans into the section's last paragraph). Its text is already merged into
+        // startPara, so when nextPara is that final paragraph, empty it in place instead of
+        // removing it; a trailing empty paragraph is harmless and the scan re-runs from scratch.
+        if (startParaIdx + 1 >= body.getNumChildren() - 1) {
+            nextPara.clear();
+        }
+        else {
+            nextPara.removeFromParent();
+        }
     }
     return { success: true, reason: "Merged " + numToMerge + " paragraph(s) with line breaks" };
 }
