@@ -13,9 +13,8 @@ const docsCodePath = process.env.AUTOLATEX_DOCS_CODE_PATH ||
 // difference is the whole bug: for single-`$` a constructed whole-equation range starts at the
 // opening delimiter, so the next search re-finds the equation's own closing `$` and pairs it
 // forward. Only resuming from the closing-delimiter findText result advances correctly.
-function createRangeElement(element, startOffset, endOffsetInclusive = startOffset, generation = 0, fromFind = false) {
+function createRangeElement(element, startOffset, endOffsetInclusive = startOffset, fromFind = false) {
   return {
-    generation,
     fromFind,
     getElement: () => element,
     getStartOffset: () => startOffset,
@@ -60,12 +59,6 @@ function loadDocsCode(paragraphTexts, delimiter) {
   body.getChildIndex = paragraph => paragraphs.indexOf(paragraph);
   body.getParent = () => sectionRoot;
 
-  // REASON: adding a named range can invalidate RangeElement search results that were
-  // obtained before the document mutation. The production failure presents as an
-  // inclusive resume from that stale result: the just-used closing "$" is returned
-  // again and becomes the next opening delimiter. A current RangeElement resumes
-  // after its inclusive end, matching the findText(..., from) "next result" contract.
-  let documentGeneration = 0;
   body.findText = (pattern, fromRange) => {
     const token = pattern === delimiter[3] ? delimiter[1] : delimiter[0];
     let paragraphIndex = 0;
@@ -89,7 +82,6 @@ function loadDocsCode(paragraphTexts, delimiter) {
           paragraphs[index].textElement,
           matchOffset,
           matchOffset + token.length - 1,
-          documentGeneration,
           true // this is a genuine findText result
         );
       }
@@ -111,7 +103,6 @@ function loadDocsCode(paragraphTexts, delimiter) {
   const renderedSpans = [];
   const document = {
     addNamedRange: (_name, range) => {
-      documentGeneration++;
       const stored = range.getRangeElements()[0];
       renderedSpans.push({
         paragraphIndex: stored.getElement().paragraphIndex,
@@ -121,8 +112,7 @@ function loadDocsCode(paragraphTexts, delimiter) {
       const currentRangeElement = createRangeElement(
         stored.getElement(),
         stored.getStartOffset(),
-        stored.getEndOffsetInclusive(),
-        documentGeneration
+        stored.getEndOffsetInclusive()
       );
       return {
         getId: () => `range-${++namedRangeId}`,
@@ -139,8 +129,7 @@ function loadDocsCode(paragraphTexts, delimiter) {
           rangeElement = createRangeElement(
             element,
             startOffset,
-            endOffsetInclusive,
-            documentGeneration
+            endOffsetInclusive
           );
           return {
             build: () => ({

@@ -784,7 +784,7 @@ function buildClientRenderResponse(textElement, startElement, equationOriginal, 
     // which already resumes from endElement. (A previous fix re-read the named range's span here and
     // passed the unit tests, but that span still starts at the opening `$`, so it mis-paired in
     // production — confirmed via the Cloud Logging trace for a live user.)
-    var nextStartElement = endElement || namedRange.getRange().getRangeElements().slice(-1)[0];
+    var nextStartElement = endElement;
     var clientRenderOptions = __assign(__assign({}, coloredRenderOptions), { size: size, rangeId: namedRange.getId(), equation: clientEquation, equationLinkEncoded: encodeURIComponent(clientEquation) });
     return {
         status: 2 /* DocsEquationRenderStatus.ClientRender */,

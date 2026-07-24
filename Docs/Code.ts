@@ -829,7 +829,7 @@ function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRender
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
 
-function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.RangeElement,  renderOptions: AutoLatexCommon.RenderOptions, endElement?: GoogleAppsScript.Document.RangeElement): DocsEquationRenderResult {
+function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.RangeElement,  renderOptions: AutoLatexCommon.RenderOptions, endElement: GoogleAppsScript.Document.RangeElement): DocsEquationRenderResult {
   Common.reportDeltaTime(411);
   Common.reportDeltaTime(413);
   // GET VARIABLES
@@ -893,7 +893,7 @@ function buildClientRenderResponse(
   equationOriginal: string,
   coloredRenderOptions: AutoLatexCommon.RenderOptions & { r: number; g: number; b: number },
   size: number,
-  endElement?: GoogleAppsScript.Document.RangeElement
+  endElement: GoogleAppsScript.Document.RangeElement
 ): DocsEquationRenderResult {
   // REASON: reEncode turns each in-equation newline into an encoded four-backslash
   // marker ("%5C%5C%5C%5C%20"), which must collapse back to a "\\ " row break for the
@@ -923,7 +923,7 @@ function buildClientRenderResponse(
   // which already resumes from endElement. (A previous fix re-read the named range's span here and
   // passed the unit tests, but that span still starts at the opening `$`, so it mis-paired in
   // production — confirmed via the Cloud Logging trace for a live user.)
-  const nextStartElement = endElement || namedRange.getRange().getRangeElements().slice(-1)[0];
+  const nextStartElement = endElement;
   const clientRenderOptions: AutoLatexCommon.ClientRenderOptions = {
     ...coloredRenderOptions,
     size,
