@@ -24,7 +24,8 @@ interface DerenderData {
   pageElementId?: string,
   tableRow?: number,
   tableColumn?: number,
-  spaceCount?: number
+  spaceCount?: number,
+  spaceStart?: number
 }
 
 interface SlidesClientRenderOptions {
@@ -1249,7 +1250,8 @@ function placeImageAndFillSpaces(
     pageElementId: options.pageElementId,
     tableRow: options.tableRow,
     tableColumn: options.tableColumn,
-    spaceCount
+    spaceCount,
+    spaceStart: liveStart
   };
   image.setTitle(JSON.stringify(derenderData));
 
@@ -1310,19 +1312,17 @@ function clientRenderComplete(equations: SlidesClientRenderPayload[]): SlidesEqu
         const blob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
         const placed = placeImageAndFillSpaces(target, o, bounds, equationRange, liveStart, blob, { dx: posDx, dy: posDy, lineHeight });
 
-        cursor.x += placed.imageWidth;                                  // equation occupies its image width
-        liveDelta += placed.spaceCount - (o.rangeEnd - o.rangeStart);   // net length change from the space-fill
+        // REASON: advance by the GAP width (the spaces the box actually lays out), not the image
+        // width. If these differ, the next equation's image lands off its own gap (first-right /
+        // second-left). Keeping the cursor in lockstep with the box's spaces keeps them aligned.
+        cursor.x += placed.spaceCount * (glyphWidthEm(" ") * fontPt);
+        liveDelta += placed.spaceCount - (o.rangeEnd - o.rangeStart); // net length change from the space-fill
         prevEnd = o.rangeEnd;
         successCount++;
       }
-
-      // REASON: a box that is now only whitespace was a standalone equation box; drop it so the
-      // image floats on its own (the old behavior), instead of leaving an empty box behind.
-      if (!isTableCell(target.textElement) &&
-          target.textElement.getShapeType() === SlidesApp.ShapeType.TEXT_BOX &&
-          target.textRange.asRenderedString().trim().length === 0) {
-        target.textElement.remove();
-      }
+      // NOTE: we intentionally KEEP the box (even if it's now only spaces) so derender can restore
+      // the equation into its space gap. A standalone equation box just becomes an invisible
+      // spaces box behind the floating image.
     } catch (error) {
       console.error("MathJax Slides client render completion failed.", error);
     }
@@ -1506,20 +1506,32 @@ function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoL
   return Common.DerenderResult.Success;
 }
 
-// Find a run of EXACTLY `count` consecutive spaces in boxText; returns its start offset or -1.
-function findSpaceGap(boxText: string, count: number): number {
+// Find where to reinsert an equation over its placeholder spaces. The `count` placeholder spaces
+// usually merge with the prose spaces that surrounded the equation, so the visible run is >= count.
+// Return the offset (within a run of >= count spaces) closest to the recorded hint, or -1.
+function findSpaceGap(boxText: string, count: number, hint: number): number {
+  let best = -1;
+  let bestDist = Infinity;
   let i = 0;
   while (i < boxText.length) {
     if (boxText.charAt(i) === " ") {
       let j = i;
       while (j < boxText.length && boxText.charAt(j) === " ") j++;
-      if (j - i === count) return i;
+      if (j - i >= count) {
+        // any offset in [i, j-count] can host the `count`-space placeholder; pick nearest the hint
+        const candidate = Math.max(i, Math.min(hint, j - count));
+        const dist = Math.abs(candidate - hint);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = candidate;
+        }
+      }
       i = j;
     } else {
       i++;
     }
   }
-  return -1;
+  return best;
 }
 
 // Resolve the TextRange of the box (shape or table cell) recorded in a space-fill DerenderData.
@@ -1546,7 +1558,7 @@ function restoreEquationIntoSpaceGap(
 ): boolean {
   const boxTextRange = resolveDerenderBoxTextRange(slide, derenderData);
   if (!boxTextRange) return false;
-  const gapStart = findSpaceGap(boxTextRange.asRenderedString(), derenderData.spaceCount as number);
+  const gapStart = findSpaceGap(boxTextRange.asRenderedString(), derenderData.spaceCount as number, derenderData.spaceStart ?? 0);
   if (gapStart < 0) return false;
 
   boxTextRange.getRange(gapStart, gapStart + (derenderData.spaceCount as number)).clear();
