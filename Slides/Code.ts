@@ -940,8 +940,15 @@ function resize(eqnImage: GoogleAppsScript.Slides.Image, scale: number, horizont
       top = bounds.y + bounds.height / 2 - height / 2;
   }
 
-  // REASON: never let the image run off the right/bottom edge of the slide. Clamp to the page;
-  // overlapping another element is acceptable, disappearing off-slide is not (user spec).
+  // REASON: keep the image inside its own text box first — the inline estimate can overshoot the
+  // box's right/bottom edge (long lines, imperfect wrap estimate). Clamp so the image's far edge
+  // stays within the box; if the image is wider/taller than the box, pin it to the box's top-left
+  // (it will overflow, but starts in the right place).
+  left = Math.max(bounds.x, Math.min(left, bounds.x + bounds.width - width));
+  top = Math.max(bounds.y, Math.min(top, bounds.y + bounds.height - height));
+
+  // REASON: then the outer safety — never let the image run off the right/bottom edge of the
+  // slide. Overlapping another element is acceptable, disappearing off-slide is not (user spec).
   const presentation = SlidesApp.getActivePresentation();
   const slideWidth = presentation.getPageWidth();
   const slideHeight = presentation.getPageHeight();
