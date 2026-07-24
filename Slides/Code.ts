@@ -39,9 +39,11 @@ interface SlidesClientRenderOptions {
   rangeEnd: number;
   // Estimated position of the equation inside its text box, in points from the box's top-left.
   // Computed at scan time (drift-free) so placement can put each image roughly where its source
-  // text was instead of stacking them all in the box corner. See estimateInBoxOffset.
+  // text was instead of stacking them all in the box corner. posLineHeight lets placement anchor
+  // the image's bottom to the text line's bottom. See estimateInBoxOffset.
   posDx?: number;
   posDy?: number;
+  posLineHeight?: number;
 }
 
 interface SlidesClientRenderPayload {
@@ -419,7 +421,8 @@ function findAllClientRenderEquationsInTextElement(
       rangeStart: equationOffsets.start,
       rangeEnd: endOffset,
       posDx: eqOffset.dx,
-      posDy: eqOffset.dy
+      posDy: eqOffset.dy,
+      posLineHeight: eqOffset.lineHeight
     });
 
     searchOffset = equationOffsets.end + renderOptions.delim[4];
@@ -820,7 +823,8 @@ function findClientRenderEquationInTextElement(
       rangeStart: equationOffsets.start,
       rangeEnd: endOffset,
       posDx: eqOffset.dx,
-      posDy: eqOffset.dy
+      posDy: eqOffset.dy,
+      posLineHeight: eqOffset.lineHeight
     };
   }
 
@@ -890,7 +894,9 @@ function getBounds(textElement: PageElement) {
 const LINE_HEIGHT_RATIO = 1.2; // line height as a fraction of the font size
 // Slides' default text-box insets (padding) — text starts this far from the box's top-left, so
 // the estimated position must too. Not readable via Apps Script, so use the product defaults.
-const BOX_LEFT_INSET_PT = 7.2; // 0.1"
+// Nudged slightly below the geometric 0.1" left inset to absorb the rendered image's own left
+// bearing (a small whitespace margin baked into the PNG), which read as "a tad too far right".
+const BOX_LEFT_INSET_PT = 5.4;
 const BOX_TOP_INSET_PT = 3.6;  // 0.05"
 // REASON: per-glyph advance widths in em (fraction of font size), Helvetica/Arial metrics — the
 // default Slides font. A flat 0.5 overestimated narrow glyphs (i, l, spaces, punctuation) and
@@ -949,10 +955,12 @@ function estimateInBoxOffset(textBefore: string, fontSizePt: number, usableWidth
     }
     x += w;
   }
-  return { dx: hasMetrics ? x : 0, dy: line * lineH };
+  // dy is the TOP of the equation's line; lineHeight lets placement anchor the image's BOTTOM to
+  // the line's bottom (equations should sit on the text baseline, not float at the line top).
+  return { dx: hasMetrics ? x : 0, dy: line * lineH, lineHeight: lineH };
 }
 
-function resize(eqnImage: GoogleAppsScript.Slides.Image, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment, bounds: ReturnType<typeof getBounds>, posOffset?: { dx: number; dy: number }) {
+function resize(eqnImage: GoogleAppsScript.Slides.Image, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment, bounds: ReturnType<typeof getBounds>, posOffset?: { dx: number; dy: number; lineHeight: number }) {
   const width = eqnImage.getWidth() * scale;
   const height = eqnImage.getHeight() * scale;
 
@@ -968,7 +976,10 @@ function resize(eqnImage: GoogleAppsScript.Slides.Image, scale: number, horizont
     // add the box insets so the image lines up with the text's actual content origin, not the
     // box's outer corner (this is what pulled images up-and-right of their source text).
     left = bounds.x + BOX_LEFT_INSET_PT + posOffset.dx;
-    top = bounds.y + BOX_TOP_INSET_PT + posOffset.dy;
+    // anchor the image's BOTTOM to the bottom of the equation's text line (posDy is the line top,
+    // so posDy + lineHeight is the line bottom). Anchoring the top made tall equation images float
+    // above the text; equations should sit on the baseline.
+    top = bounds.y + BOX_TOP_INSET_PT + posOffset.dy + posOffset.lineHeight - height;
   } else {
     // horizontal: match the text alignment (box-edge / line-aware fallback)
     if (horizontalAlignment === SlidesApp.ParagraphAlignment.END)
@@ -1193,7 +1204,8 @@ function placeClientRenderedImage(
   // and always clamps to the slide edges.
   resize(image, 1.26 / 5, textHorizontalAlignment, textVerticalAlignment, bounds, {
     dx: renderOptions.posDx || 0,
-    dy: renderOptions.posDy || 0
+    dy: renderOptions.posDy || 0,
+    lineHeight: renderOptions.posLineHeight || 0
   });
 
   if (
