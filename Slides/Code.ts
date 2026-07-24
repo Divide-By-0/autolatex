@@ -53,11 +53,11 @@ interface SlidesClientRenderOptions {
   posDx?: number;
   posDy?: number;
   posLineHeight?: number;
-  // Inputs for exact client-side measurement (Canvas measureText) — the sidebar recomputes
-  // posDx/posDy from these using the real font, overriding the server's Arial estimate above.
-  precedingText?: string;
+  // The equation's font family (server) so the sidebar can load it and measure it.
   fontFamily?: string;
-  boxUsableWidth?: number;
+  // Per-glyph advance widths in em, measured on the CLIENT with Canvas measureText for fontFamily
+  // (exact for any font). The server cursor uses these instead of the hardcoded Arial table.
+  glyphWidths?: { [ch: string]: number };
 }
 
 interface SlidesClientRenderPayload {
@@ -436,7 +436,8 @@ function findAllClientRenderEquationsInTextElement(
       rangeEnd: endOffset,
       posDx: eqOffset.dx,
       posDy: eqOffset.dy,
-      posLineHeight: eqOffset.lineHeight
+      posLineHeight: eqOffset.lineHeight,
+      fontFamily: getFontFamilySafe(equationRange)
     });
 
     searchOffset = equationOffsets.end + renderOptions.delim[4];
@@ -838,7 +839,8 @@ function findClientRenderEquationInTextElement(
       rangeEnd: endOffset,
       posDx: eqOffset.dx,
       posDy: eqOffset.dy,
-      posLineHeight: eqOffset.lineHeight
+      posLineHeight: eqOffset.lineHeight,
+      fontFamily: getFontFamilySafe(equationRange)
     };
   }
 
@@ -928,7 +930,9 @@ const GLYPH_WIDTHS_EM: { [ch: string]: number } = {
   "q": 0.556, "r": 0.333, "s": 0.5, "t": 0.278, "u": 0.556, "v": 0.5, "w": 0.722, "x": 0.5,
   "y": 0.5, "z": 0.5, "{": 0.334, "|": 0.26, "}": 0.334, "~": 0.584
 };
-function glyphWidthEm(ch: string) {
+function glyphWidthEm(ch: string, table?: { [ch: string]: number }) {
+  // Prefer the client-measured table for the actual font; fall back to the Arial estimate.
+  if (table && ch in table) return table[ch];
   if (ch in GLYPH_WIDTHS_EM) return GLYPH_WIDTHS_EM[ch];
   if (ch >= "0" && ch <= "9") return 0.556;
   return 0.5;
@@ -937,6 +941,15 @@ function glyphWidthEm(ch: string) {
 // A white / near-white background is treated as "no background" (transparent equation image).
 function isNearWhite(rgb: number[]) {
   return rgb[0] >= 250 && rgb[1] >= 250 && rgb[2] >= 250;
+}
+
+// The font family of a text range, for the sidebar to load + measure. Null for mixed runs.
+function getFontFamilySafe(range: GoogleAppsScript.Slides.TextRange): string | undefined {
+  try {
+    return range.getTextStyle().getFontFamily() || undefined;
+  } catch (e) {
+    return undefined;
+  }
 }
 
 // REASON: Slides exposes no geometry for a substring inside a text box, so estimate where an
@@ -1186,7 +1199,7 @@ function resolveClientRenderTarget(options: SlidesClientRenderOptions) {
 
 // Advance a { x, line } cursor over plain text using per-glyph widths (points), wrapping when the
 // running line width exceeds usableWidthPt. Mutates the cursor.
-function advanceCursorOverText(cursor: { x: number; line: number }, text: string, fontPt: number, usableWidthPt: number) {
+function advanceCursorOverText(cursor: { x: number; line: number }, text: string, fontPt: number, usableWidthPt: number, table?: { [ch: string]: number }) {
   const maxWidth = usableWidthPt > 0 ? usableWidthPt : Infinity;
   for (let i = 0; i < text.length; i++) {
     const ch = text.charAt(i);
@@ -1195,7 +1208,7 @@ function advanceCursorOverText(cursor: { x: number; line: number }, text: string
       cursor.x = 0;
       continue;
     }
-    const w = glyphWidthEm(ch) * fontPt;
+    const w = glyphWidthEm(ch, table) * fontPt;
     if (cursor.x + w > maxWidth && cursor.x > 0) {
       cursor.line++;
       cursor.x = 0;
@@ -1231,9 +1244,9 @@ function placeImageAndFillSpaces(
   resize(image, 1.26 / 5, textHorizontalAlignment, textVerticalAlignment, bounds, pos);
   const imageWidth = image.getWidth();
 
-  // Replace the equation source with spaces sized to the rendered image (Arial space = 0.278 em).
+  // Replace the equation source with spaces sized to the rendered image (real font's space width).
   const fontPt = options.size > 0 ? options.size : 12;
-  const spaceWidthPt = glyphWidthEm(" ") * fontPt;
+  const spaceWidthPt = glyphWidthEm(" ", options.glyphWidths) * fontPt;
   const spaceCount = Math.max(1, Math.round(imageWidth / spaceWidthPt));
   equationRange.clear();
   target.textRange.insertText(liveStart, " ".repeat(spaceCount));
@@ -1295,8 +1308,8 @@ function clientRenderComplete(equations: SlidesClientRenderPayload[]): SlidesEqu
         const fontPt = o.size > 0 ? o.size : 12;
         const lineHeight = fontPt * LINE_HEIGHT_RATIO;
 
-        // walk the plain text between the previous equation and this one
-        advanceCursorOverText(cursor, originalText.substring(prevEnd, o.rangeStart), fontPt, usableWidth);
+        // walk the plain text between the previous equation and this one (real font widths)
+        advanceCursorOverText(cursor, originalText.substring(prevEnd, o.rangeStart), fontPt, usableWidth, o.glyphWidths);
         const posDx = cursor.x;
         const posDy = cursor.line * lineHeight;
 
@@ -1315,7 +1328,7 @@ function clientRenderComplete(equations: SlidesClientRenderPayload[]): SlidesEqu
         // REASON: advance by the GAP width (the spaces the box actually lays out), not the image
         // width. If these differ, the next equation's image lands off its own gap (first-right /
         // second-left). Keeping the cursor in lockstep with the box's spaces keeps them aligned.
-        cursor.x += placed.spaceCount * (glyphWidthEm(" ") * fontPt);
+        cursor.x += placed.spaceCount * (glyphWidthEm(" ", o.glyphWidths) * fontPt);
         liveDelta += placed.spaceCount - (o.rangeEnd - o.rangeStart); // net length change from the space-fill
         prevEnd = o.rangeEnd;
         successCount++;

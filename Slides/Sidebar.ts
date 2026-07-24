@@ -59,6 +59,8 @@ interface SlidesClientRenderOptions {
   tableColumn?: number;
   rangeStart: number;
   rangeEnd: number;
+  fontFamily?: string;
+  glyphWidths?: { [ch: string]: number };
 }
 
 interface SlidesClientEquationRenderResult {
@@ -100,6 +102,74 @@ declare function renderEquationPngWithMathJax(
   renderOptions: { equation: string; inline: boolean; size: number; r: number; g: number; b: number; bgR?: number; bgG?: number; bgB?: number },
   reportError?: (context: string, error: unknown, extra?: Record<string, unknown>) => void
 ): Promise<Blob>;
+
+// REASON: measure real per-glyph advance widths for a font via Canvas measureText, so the server
+// can position equation images exactly for ANY font instead of assuming Arial. Measured at a large
+// reference size and normalized to em. Google Fonts are loaded on demand (system fonts already
+// resolve). Falls back silently to the server's Arial table if a font can't be measured.
+const GLYPH_MEASURE_REF_PX = 200;
+const glyphMeasureCanvas = document.createElement("canvas");
+const glyphMeasureCtx = glyphMeasureCanvas.getContext("2d");
+const fontLoadPromises: { [family: string]: Promise<void> } = {};
+const glyphTableCache: { [family: string]: { [ch: string]: number } } = {};
+
+function ensureFontLoaded(family: string): Promise<void> {
+  if (fontLoadPromises[family]) return fontLoadPromises[family];
+  fontLoadPromises[family] = (async () => {
+    try {
+      await new Promise<void>(resolve => {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = "https://fonts.googleapis.com/css2?family=" + encodeURIComponent(family) + ":wght@400;700&display=swap";
+        link.onload = () => resolve();
+        link.onerror = () => resolve(); // not a Google Font (system font) — measure the browser's copy
+        document.head.appendChild(link);
+      });
+      const fonts = (document as unknown as { fonts?: { load(f: string): Promise<unknown> } }).fonts;
+      if (fonts && fonts.load) {
+        await fonts.load('400 20px "' + family + '"').catch(() => undefined);
+      }
+    } catch (e) {
+      // fall back to whatever the browser already has
+    }
+  })();
+  return fontLoadPromises[family];
+}
+
+async function measureGlyphTable(family: string): Promise<{ [ch: string]: number }> {
+  if (glyphTableCache[family]) return glyphTableCache[family];
+  await ensureFontLoaded(family);
+  const table: { [ch: string]: number } = {};
+  if (glyphMeasureCtx) {
+    glyphMeasureCtx.font = GLYPH_MEASURE_REF_PX + 'px "' + family + '", sans-serif';
+    for (let code = 32; code <= 126; code++) {
+      const ch = String.fromCharCode(code);
+      table[ch] = glyphMeasureCtx.measureText(ch).width / GLYPH_MEASURE_REF_PX;
+    }
+  }
+  glyphTableCache[family] = table;
+  return table;
+}
+
+async function attachGlyphTables(equations: SlidesClientRenderOptions[]): Promise<void> {
+  const families: { [f: string]: boolean } = {};
+  for (const eq of equations) {
+    if (eq.fontFamily) families[eq.fontFamily] = true;
+  }
+  const tables: { [f: string]: { [ch: string]: number } } = {};
+  for (const family of Object.keys(families)) {
+    try {
+      tables[family] = await measureGlyphTable(family);
+    } catch (e) {
+      // leave unset -> server uses its Arial fallback for this font
+    }
+  }
+  for (const eq of equations) {
+    if (eq.fontFamily && tables[eq.fontFamily]) {
+      eq.glyphWidths = tables[eq.fontFamily];
+    }
+  }
+}
 
 async function renderMathJaxEquation(renderOptions: SlidesClientRenderOptions) {
   return renderEquationPngWithMathJax(renderOptions, reportMathJaxClientError);
@@ -284,9 +354,11 @@ function insertText(){
       // REASON: Carry forward any successes the server included with this ClientRender batch.
       mathJaxRenderedCount += result.successCount;
 
-      // REASON: Render equations independently. A single MathJax failure should not force
+      // REASON: measure the real per-font glyph widths (Canvas measureText) and attach them to each
+      // equation's options FIRST, so the server can position images exactly for any font (not just
+      // Arial). Then render each equation independently — a single MathJax failure must not force
       // the whole batch through legacy server renderers that cannot preserve Unicode text.
-      mapWithConcurrency(equationsToRender, MATHJAX_CONCURRENCY_LIMIT, async eq => {
+      attachGlyphTables(equationsToRender).then(() => mapWithConcurrency(equationsToRender, MATHJAX_CONCURRENCY_LIMIT, async eq => {
         try {
           return {
             ok: true as const,
@@ -305,7 +377,7 @@ function insertText(){
             options: eq
           };
         }
-      })
+      }))
         .then(results => {
           const rendered = results
             .filter(result => result.ok)
