@@ -92,10 +92,21 @@ function loadDocsCode(paragraphTexts, delimiter) {
   };
 
   let namedRangeId = 0;
+  // REASON: record the document-order span each rendered equation occupies so a test can
+  // reconstruct the de-render round-trip. De-render replaces every image with
+  // delimiter+equation+delimiter, so the reconstructed text must equal the original. The
+  // pairing bug renders the prose between two equations as its own image whose span abuts
+  // its neighbours, so de-rendering collides their delimiters into "$$".
+  const renderedSpans = [];
   const document = {
     addNamedRange: (_name, range) => {
       documentGeneration++;
       const stored = range.getRangeElements()[0];
+      renderedSpans.push({
+        paragraphIndex: stored.getElement().paragraphIndex,
+        start: stored.getStartOffset(),
+        end: stored.getEndOffsetInclusive(),
+      });
       const currentRangeElement = createRangeElement(
         stored.getElement(),
         stored.getStartOffset(),
@@ -161,6 +172,7 @@ function loadDocsCode(paragraphTexts, delimiter) {
   return {
     context,
     delimiter,
+    renderedSpans,
   };
 }
 
@@ -261,4 +273,77 @@ test("MathJax batch preserves pairing across the two test-document paragraphs", 
     ]),
     ["10000", "2000", "1", "2"],
   );
+});
+
+// REASON: reproduce the exact user-visible de-render symptom, not just the render pairing.
+// Render each equation, then de-render every image the way removeAll() does — replace the
+// image with delimiter[0] + storedEquation + delimiter[1], keeping the un-rendered text
+// between images. The reconstructed document must equal the original. Under the pairing
+// bug the prose between two equations is itself rendered, and its image span abuts both
+// neighbours, so de-rendering collapses their delimiters together:
+//   "Render $10000$ don't render $2000$"  ->  "Render $10000$$ don't render $$2000$"
+//   "$1$ and $2$"                          ->  "$1$$ and $$2$"
+function renderThenDerender(paragraphTexts, delimiter = delimiters.singleDollar) {
+  const { context, renderedSpans } = loadDocsCode(paragraphTexts, delimiter);
+  const renderOptions = {
+    size: 11,
+    defaultSize: 11,
+    inline: false,
+    delim: delimiter,
+    clientRender: true,
+    autoFallbackToClient: false,
+    r: 0,
+    g: 0,
+    b: 0,
+  };
+
+  const rendered = [];
+  let cursor = null;
+  for (let iteration = 0; iteration < 20; iteration++) {
+    const result = context.findPos(0, renderOptions, cursor);
+    if (result.status === 7 || result.status === 6) break;
+    assert.equal(result.status, 2, "expected a MathJax client-render result");
+    // renderedSpans grows by exactly one entry per rendered equation, in call order.
+    rendered.push({
+      ...renderedSpans[renderedSpans.length - 1],
+      eq: result.clientRenderOptions.equation,
+    });
+    cursor = result.nextStartElement;
+    if (rendered.length > 40) assert.fail("delimiter scan did not terminate");
+  }
+
+  // Reconstruct each paragraph: walk left to right, emitting the un-rendered text before
+  // each image, then delimiter+equation+delimiter for the image itself. slice() (not
+  // substring) so an abutting/overlapping image span yields "" rather than swapping args.
+  return paragraphTexts
+    .map((text, paragraphIndex) => {
+      const images = rendered
+        .filter(image => image.paragraphIndex === paragraphIndex)
+        .sort((a, b) => a.start - b.start);
+      let out = "";
+      let position = 0;
+      for (const image of images) {
+        out += text.slice(position, image.start);
+        out += delimiter[0] + image.eq + delimiter[1];
+        position = image.end + 1;
+      }
+      out += text.slice(position);
+      return out;
+    })
+    .join("\n");
+}
+
+test("render then de-render round-trips currency-looking equations unchanged", () => {
+  const original = "Render $10000$ don't render $2000$";
+  assert.equal(renderThenDerender([original]), original);
+});
+
+test("render then de-render round-trips $1$ and $2$ unchanged", () => {
+  const original = "$1$ and $2$";
+  assert.equal(renderThenDerender([original]), original);
+});
+
+test("render then de-render round-trips the two-paragraph test document unchanged", () => {
+  const paragraphs = ["Render $10000$ don't render $2000$", "$1$ and $2$"];
+  assert.equal(renderThenDerender(paragraphs), paragraphs.join("\n"));
 });
