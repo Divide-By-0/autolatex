@@ -704,10 +704,11 @@ function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, pr
     };
   }
 
-  // REASON: the MathJax path defers removal, so buildClientRenderResponse must return
-  // a post-NamedRange-mutation cursor. Do not pass either delimiter RangeElement through:
-  // adding the named range can make both pre-mutation search results stale.
-  return findEquationAndPlaceImage(range.getRangeElements()[0], renderOptions);
+  // REASON: pass endElement (the closing-delimiter findText result) so the deferred MathJax path
+  // can resume the scan strictly after this equation. Resuming from the equation span instead
+  // (which starts at the opening delimiter) makes findText re-find this equation's own closing
+  // `$` and pair it forward — see buildClientRenderResponse.
+  return findEquationAndPlaceImage(range.getRangeElements()[0], renderOptions, endElement);
 }
 
 
@@ -828,7 +829,7 @@ function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRender
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
 
-function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.RangeElement,  renderOptions: AutoLatexCommon.RenderOptions): DocsEquationRenderResult {
+function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.RangeElement,  renderOptions: AutoLatexCommon.RenderOptions, endElement?: GoogleAppsScript.Document.RangeElement): DocsEquationRenderResult {
   Common.reportDeltaTime(411);
   Common.reportDeltaTime(413);
   // GET VARIABLES
@@ -869,7 +870,7 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
   // REASON: Explicit MathJax and Automatic both render on the client first.
   // Automatic falls back to server renderers from the sidebar only if MathJax fails.
   if (renderOptions.clientRender || renderOptions.autoFallbackToClient) {
-    return buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size);
+    return buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size, endElement);
   }
 
   let { resp, renderer, worked, authorizationError } = renderEquationWithCompatibility(equationOriginal, coloredRenderOptions);
@@ -891,7 +892,8 @@ function buildClientRenderResponse(
   startElement: GoogleAppsScript.Document.RangeElement,
   equationOriginal: string,
   coloredRenderOptions: AutoLatexCommon.RenderOptions & { r: number; g: number; b: number },
-  size: number
+  size: number,
+  endElement?: GoogleAppsScript.Document.RangeElement
 ): DocsEquationRenderResult {
   // REASON: reEncode turns each in-equation newline into an encoded four-backslash
   // marker ("%5C%5C%5C%5C%20"), which must collapse back to a "\\ " row break for the
@@ -907,16 +909,21 @@ function buildClientRenderResponse(
   const range = doc.newRange()
     .addElement(textElement, startElement.getStartOffset(), startElement.getEndOffsetInclusive())
     .build();
-  // save this range for later
+  // save this range for later (used by clientRenderComplete to place the image)
   const namedRange = doc.addNamedRange("ale-equation-range", range);
-  // REASON: addNamedRange mutates the Docs structure and can invalidate every
-  // RangeElement obtained before it, including startElement and the closing
-  // delimiter from findPos. Re-read the persisted range after the mutation and
-  // use that fresh whole-equation range as findText's continuation cursor. Its
-  // inclusive end is the closing delimiter, so the next result is the following
-  // equation's opening delimiter rather than the closing delimiter again.
-  const persistedRangeElements = namedRange.getRange().getRangeElements();
-  const nextStartElement = persistedRangeElements[persistedRangeElements.length - 1];
+  // REASON: resume the scan from the CLOSING-delimiter findText result (endElement), NOT from a
+  // range derived from the equation span. findText(pattern, from) continues from `from`'s
+  // position; for single-`$` the opening and closing delimiter are the same character, so if we
+  // resume from anything anchored at the OPENING delimiter (the whole-equation range, the
+  // named-range span — both start at the opening `$`), findText re-finds this equation's own
+  // CLOSING `$` and pairs it forward with the next equation's opening `$`, rendering the prose
+  // between (and crossing paragraph breaks -> spurious "multi-paragraph" merges). endElement is a
+  // genuine findText result positioned at the closing delimiter, so the next search lands strictly
+  // after it on the following equation's opening delimiter. This mirrors the empty-equation path,
+  // which already resumes from endElement. (A previous fix re-read the named range's span here and
+  // passed the unit tests, but that span still starts at the opening `$`, so it mis-paired in
+  // production — confirmed via the Cloud Logging trace for a live user.)
+  const nextStartElement = endElement || namedRange.getRange().getRangeElements().slice(-1)[0];
   const clientRenderOptions: AutoLatexCommon.ClientRenderOptions = {
     ...coloredRenderOptions,
     size,

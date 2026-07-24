@@ -7,9 +7,16 @@ const vm = require("node:vm");
 const docsCodePath = process.env.AUTOLATEX_DOCS_CODE_PATH ||
   path.join(__dirname, "..", "Docs", "Code.js");
 
-function createRangeElement(element, startOffset, endOffsetInclusive = startOffset, generation = 0) {
+// REASON: fromFind distinguishes a genuine findText() result from a range built by
+// newRange().addElement() or read back from a NamedRange. Real Docs continues findText(pattern,
+// from) STRICTLY AFTER a findText result's match, but from the START of a constructed range. That
+// difference is the whole bug: for single-`$` a constructed whole-equation range starts at the
+// opening delimiter, so the next search re-finds the equation's own closing `$` and pairs it
+// forward. Only resuming from the closing-delimiter findText result advances correctly.
+function createRangeElement(element, startOffset, endOffsetInclusive = startOffset, generation = 0, fromFind = false) {
   return {
     generation,
+    fromFind,
     getElement: () => element,
     getStartOffset: () => startOffset,
     getEndOffsetInclusive: () => endOffsetInclusive,
@@ -65,9 +72,12 @@ function loadDocsCode(paragraphTexts, delimiter) {
     let offset = 0;
     if (fromRange) {
       paragraphIndex = fromRange.getElement().paragraphIndex;
-      offset = fromRange.generation < documentGeneration
-        ? fromRange.getStartOffset()
-        : fromRange.getEndOffsetInclusive() + 1;
+      // Real Docs: continue AFTER a findText result's match, but from the START of a range that
+      // was constructed (newRange / NamedRange). +1 in both cases because the search is exclusive
+      // of the anchor position itself.
+      offset = fromRange.fromFind
+        ? fromRange.getEndOffsetInclusive() + 1
+        : fromRange.getStartOffset() + 1;
     }
 
     for (let index = paragraphIndex; index < paragraphs.length; index++) {
@@ -79,7 +89,8 @@ function loadDocsCode(paragraphTexts, delimiter) {
           paragraphs[index].textElement,
           matchOffset,
           matchOffset + token.length - 1,
-          documentGeneration
+          documentGeneration,
+          true // this is a genuine findText result
         );
       }
     }
