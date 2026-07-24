@@ -205,6 +205,14 @@ function collectClientEquations(paragraphTexts, delimiter = delimiters.singleDol
       return equations;
     }
 
+    // EmptyEquation (3): truly-empty or whitespace-only span. replaceEquations() skips it and
+    // moves on; mirror that so these never appear in the rendered set.
+    if (result.status === 3) {
+      assert.ok(result.nextStartElement, "empty-equation skip must advance the cursor");
+      cursor = result.nextStartElement;
+      continue;
+    }
+
     assert.equal(result.status, 2, "expected a MathJax client-render result");
     assert.ok(result.nextStartElement, "the batch scan must advance its cursor");
     equations.push(result.clientRenderOptions.equation);
@@ -302,6 +310,11 @@ function renderThenDerender(paragraphTexts, delimiter = delimiters.singleDollar)
   for (let iteration = 0; iteration < 20; iteration++) {
     const result = context.findPos(0, renderOptions, cursor);
     if (result.status === 7 || result.status === 6) break;
+    if (result.status === 3) {
+      // EmptyEquation: not rendered, no image placed - skip it in the reconstruction too.
+      cursor = result.nextStartElement;
+      continue;
+    }
     assert.equal(result.status, 2, "expected a MathJax client-render result");
     // renderedSpans grows by exactly one entry per rendered equation, in call order.
     rendered.push({
@@ -346,4 +359,17 @@ test("render then de-render round-trips $1$ and $2$ unchanged", () => {
 test("render then de-render round-trips the two-paragraph test document unchanged", () => {
   const paragraphs = ["Render $10000$ don't render $2000$", "$1$ and $2$"];
   assert.equal(renderThenDerender(paragraphs), paragraphs.join("\n"));
+});
+
+// REASON: a $...$ whose content is only whitespace typesets to a 0x0 SVG and crashes the
+// client canvas (convertToBlob "OffscreenCanvas size is zero" -> "MathJax failed to render 1
+// equation"). It must be skipped like an empty equation, not queued for rendering. Real inputs:
+// a lone "\r" from an empty equation auto-merged across a paragraph break, or a "$ $" typo.
+test("whitespace-only single-dollar equations are skipped, not rendered", () => {
+  assert.deepEqual(collectClientEquations(["$1$ and $ $"]), ["1"]);
+});
+
+test("a carriage-return-only equation is skipped and does not break neighbours", () => {
+  assert.deepEqual(collectClientEquations(["before $\r$ after"]), []);
+  assert.deepEqual(collectClientEquations(["$x$ then $\r$ then $y$"]), ["x", "y"]);
 });

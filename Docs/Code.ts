@@ -588,6 +588,27 @@ function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, pr
     };
   }
 
+  // REASON: an equation whose content is only whitespace (most commonly a lone "\r" from an
+  // empty `$...$` that straddled a paragraph break and got auto-merged with a line break) is
+  // not a real equation. The old `== 2` empty check happened to skip it because its content was
+  // one character; the delimiter-length check above intentionally no longer does, so it now
+  // slips through to MathJax, which renders a 0x0 SVG and crashes convertToBlob with
+  // "OffscreenCanvas ... size is zero" (seen in prod as "MathJax failed to render 1 equation").
+  // Skip it exactly like an empty equation, resuming past the closing delimiter (endElement) so
+  // the scan can't re-pair the closing delimiter with the next equation. Only when start and end
+  // share a Text element (the common case); cross-element spans fall through to the logic below.
+  if (startElement.getElement() === endElement.getElement()) {
+    const between = startElement.getElement().asText().getText()
+      .substring(placeHolderStart + renderOptions.delim[4], placeHolderEnd - renderOptions.delim[4] + 1);
+    if (between.trim() === "") {
+      console.log("Whitespace-only equation skipped. In index " + index + " and offset " + placeHolderStart);
+      return {
+        nextStartElement: endElement,
+        status: DocsEquationRenderStatus.EmptyEquation
+      };
+    }
+  }
+
   // REASON: The legacy assumption was "start and end delimiters live in the same Text element."
   // That breaks in two real-world cases:
   //   1. Multi-paragraph equations: user pressed Enter (paragraph break) inside the equation

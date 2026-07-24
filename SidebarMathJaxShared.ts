@@ -96,6 +96,14 @@ async function renderEquationPngWithMathJax(
   const width = svg.clientWidth * 5;
   const height = svg.clientHeight * 5;
   svg.remove();
+  // REASON: a whitespace-only / empty equation (e.g. a lone "\r") typesets to a 0x0 SVG. A
+  // zero-size OffscreenCanvas then throws an opaque IndexSizeError in convertToBlob ("The size
+  // of OffscreenCanvas is zero"), which surfaced in prod as "MathJax failed to render 1
+  // equation(s)". Docs skips these upstream in findPos, but Slides/Sheets share this renderer,
+  // so fail fast here with a clear, self-explaining message instead of the canvas crash.
+  if (width <= 0 || height <= 0) {
+    throw new Error("Empty equation (zero-size render); nothing to rasterize.");
+  }
   svg.setAttribute("width", `${width}px`);
   svg.setAttribute("height", `${height}px`);
 
