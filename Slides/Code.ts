@@ -37,6 +37,11 @@ interface SlidesClientRenderOptions {
   tableColumn?: number;
   rangeStart: number;
   rangeEnd: number;
+  // Estimated position of the equation inside its text box, in points from the box's top-left.
+  // Computed at scan time (drift-free) so placement can put each image roughly where its source
+  // text was instead of stacking them all in the box corner. See estimateInBoxOffset.
+  posDx?: number;
+  posDy?: number;
 }
 
 interface SlidesClientRenderPayload {
@@ -391,6 +396,7 @@ function findAllClientRenderEquationsInTextElement(
     // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
     // \hline" after a derender round-trip) and align/matrix row breaks.
     const clientEquation = Common.getClientEquation(equationOriginal, IntegratedApp);
+    const eqOffset = estimateInBoxOffset(renderedText.substring(0, equationOffsets.start), size, getBounds(textElement).width);
 
     results.push({
       size,
@@ -407,7 +413,9 @@ function findAllClientRenderEquationsInTextElement(
       tableRow: isTableCell(textElement) ? textElement.getRowIndex() : undefined,
       tableColumn: isTableCell(textElement) ? textElement.getColumnIndex() : undefined,
       rangeStart: equationOffsets.start,
-      rangeEnd: endOffset
+      rangeEnd: endOffset,
+      posDx: eqOffset.dx,
+      posDy: eqOffset.dy
     });
 
     searchOffset = equationOffsets.end + renderOptions.delim[4];
@@ -785,6 +793,7 @@ function findClientRenderEquationInTextElement(
     // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
     // \hline" after a derender round-trip) and align/matrix row breaks.
     const clientEquation = Common.getClientEquation(equationOriginal, IntegratedApp);
+    const eqOffset = estimateInBoxOffset(renderedText.substring(0, equationOffsets.start), size, getBounds(textElement).width);
 
     return {
       size,
@@ -801,7 +810,9 @@ function findClientRenderEquationInTextElement(
       tableRow: isTableCell(textElement) ? textElement.getRowIndex() : undefined,
       tableColumn: isTableCell(textElement) ? textElement.getColumnIndex() : undefined,
       rangeStart: equationOffsets.start,
-      rangeEnd: endOffset
+      rangeEnd: endOffset,
+      posDx: eqOffset.dx,
+      posDy: eqOffset.dy
     };
   }
 
@@ -858,29 +869,87 @@ function getBounds(textElement: PageElement) {
   }
 }
 
-function resize(eqnImage: GoogleAppsScript.Slides.Image, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment, bounds: ReturnType<typeof getBounds>) {
+// REASON: Slides exposes no geometry for a substring inside a text box, so estimate where an
+// equation sits from the text that PRECEDES it, returning an (dx, dy) offset in points from the
+// box's top-left. Heuristic: average glyph advance ~= 0.5 * fontSize and line height ~= 1.2 *
+// fontSize, with a soft wrap when a visual line exceeds the box width. Graceful degradation
+// matching the requested fallback chain:
+//   - full inline: font size + box width known -> real column (dx) and wrapped line (dy)
+//   - line-aware:  no font metrics -> dx pinned to 0 (box edge), dy counts explicit breaks only
+//   - side-by-side/corner: empty prefix -> (0, 0); the placement step keeps alignment there and
+//     the slide-edge clamp guarantees nothing lands off-page (overlap is acceptable, off-slide is
+//     not).
+const GLYPH_ADVANCE_RATIO = 0.5; // avg glyph advance as a fraction of the font size (proportional)
+const LINE_HEIGHT_RATIO = 1.2;   // line height as a fraction of the font size
+function estimateInBoxOffset(textBefore: string, fontSizePt: number, boxWidthPt: number) {
+  const hasMetrics = typeof fontSizePt === "number" && fontSizePt > 0;
+  const fontPt = hasMetrics ? fontSizePt : 12;
+  const glyphW = Math.max(1, fontPt * GLYPH_ADVANCE_RATIO);
+  const lineH = Math.max(1, fontPt * LINE_HEIGHT_RATIO);
+  const charsPerLine = hasMetrics && boxWidthPt > 0 ? Math.max(1, Math.floor(boxWidthPt / glyphW)) : Infinity;
+
+  let line = 0;
+  let column = 0;
+  for (let i = 0; i < textBefore.length; i++) {
+    const ch = textBefore.charAt(i);
+    // \n \r \v are all in-text line breaks across Docs/Slides.
+    if (ch === "\n" || ch === "\r" || ch === "\v") {
+      line++;
+      column = 0;
+      continue;
+    }
+    column++;
+    if (column >= charsPerLine) {
+      line++;
+      column = 0;
+    }
+  }
+  return { dx: hasMetrics ? column * glyphW : 0, dy: line * lineH };
+}
+
+function resize(eqnImage: GoogleAppsScript.Slides.Image, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment, bounds: ReturnType<typeof getBounds>, posOffset?: { dx: number; dy: number }) {
   const width = eqnImage.getWidth() * scale;
   const height = eqnImage.getHeight() * scale;
-  
+
   eqnImage.setWidth(width);
   eqnImage.setHeight(height);
-  
-  // try to match the horizontal alignment of the text
-  if (horizontalAlignment === SlidesApp.ParagraphAlignment.END)
-    // subtracting the image width emulates "setRight"
-    eqnImage.setLeft(bounds.x + bounds.width - width); 
-  else if (horizontalAlignment === SlidesApp.ParagraphAlignment.CENTER)
-    eqnImage.setLeft(bounds.x + bounds.width / 2 - width / 2);
-  else
-    eqnImage.setLeft(bounds.x);
 
-  // match the vertical alignment
-  if (verticalAlignment === SlidesApp.ContentAlignment.TOP)
-    eqnImage.setTop(bounds.y);
-  else if (verticalAlignment === SlidesApp.ContentAlignment.BOTTOM)
-    eqnImage.setTop(bounds.y + bounds.height - height); // emulating "setBottom"
-  else
-    eqnImage.setTop(bounds.y + bounds.height / 2 - height / 2);
+  let left: number;
+  let top: number;
+  // Primary: the estimated inline position, but only when the equation actually has preceding
+  // content (dx>0 or dy>0). An equation at the very start of the box keeps the alignment-based
+  // placement below, which is correct for a single centered/right-aligned equation.
+  if (posOffset && (posOffset.dx > 0 || posOffset.dy > 0)) {
+    left = bounds.x + posOffset.dx;
+    top = bounds.y + posOffset.dy;
+  } else {
+    // horizontal: match the text alignment (box-edge / line-aware fallback)
+    if (horizontalAlignment === SlidesApp.ParagraphAlignment.END)
+      left = bounds.x + bounds.width - width; // subtracting the image width emulates "setRight"
+    else if (horizontalAlignment === SlidesApp.ParagraphAlignment.CENTER)
+      left = bounds.x + bounds.width / 2 - width / 2;
+    else
+      left = bounds.x;
+
+    // match the vertical alignment
+    if (verticalAlignment === SlidesApp.ContentAlignment.TOP)
+      top = bounds.y;
+    else if (verticalAlignment === SlidesApp.ContentAlignment.BOTTOM)
+      top = bounds.y + bounds.height - height; // emulating "setBottom"
+    else
+      top = bounds.y + bounds.height / 2 - height / 2;
+  }
+
+  // REASON: never let the image run off the right/bottom edge of the slide. Clamp to the page;
+  // overlapping another element is acceptable, disappearing off-slide is not (user spec).
+  const presentation = SlidesApp.getActivePresentation();
+  const slideWidth = presentation.getPageWidth();
+  const slideHeight = presentation.getPageHeight();
+  left = Math.max(0, Math.min(left, slideWidth - width));
+  top = Math.max(0, Math.min(top, slideHeight - height));
+
+  eqnImage.setLeft(left);
+  eqnImage.setTop(top);
 }
 
 /**
@@ -1065,7 +1134,13 @@ function placeClientRenderedImage(
   text.clear();
 
   const image = slide.insertImage(renderedEquation);
-  resize(image, 1.26 / 5, textHorizontalAlignment, textVerticalAlignment, bounds);
+  // Place the image at its estimated inline position within the box (computed at scan time from
+  // the preceding text); resize() falls back to alignment-based placement when there is no offset
+  // and always clamps to the slide edges.
+  resize(image, 1.26 / 5, textHorizontalAlignment, textVerticalAlignment, bounds, {
+    dx: renderOptions.posDx || 0,
+    dy: renderOptions.posDy || 0
+  });
 
   if (
     !isTableCell(textElement) &&
