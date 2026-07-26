@@ -55,8 +55,9 @@ window.MathJax = {
 `;
 }
 
-function wrapJS(sidebarJS, includeMathJax) {
+function wrapJS(sidebarJS, includeMathJax, sharedJS) {
   const mathJaxSetup = includeMathJax ? getMathJaxSetup() : "";
+  const sharedBlock = includeMathJax && sharedJS ? `\n${sharedJS}` : "";
   // REASON: crossorigin="anonymous" makes the browser surface real error
   // details (message/filename/lineno/stack) in window.onerror for this
   // cross-origin script. Without it, every MathJax failure inside the sandboxed
@@ -69,7 +70,7 @@ function wrapJS(sidebarJS, includeMathJax) {
 
   return `<script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
 <script>
-${mathJaxSetup}
+${mathJaxSetup}${sharedBlock}
 ${sidebarJS}</script>${mathJaxScript}`;
 }
 
@@ -77,14 +78,28 @@ async function compileTS() {
   await execPromise("npx tsc --preserveConstEnums Sidebar.ts -t es2020 --lib es2020,dom --types google-apps-script,jquery --skipLibCheck");
 }
 
+// REASON: the MathJax equation preprocessing (depth-aware newlines, hline repair,
+// gathered wrap) must behave identically in the Docs and Slides sidebars. It lives
+// once in ../SidebarMathJaxShared.ts and is compiled + injected here rather than
+// copy-pasted into each Sidebar.ts.
+async function compileSharedTS() {
+  await execPromise("npx tsc --preserveConstEnums ../SidebarMathJaxShared.ts -t es2020 --lib es2020,dom --skipLibCheck");
+}
+
 async function buildSidebarJS() {
   await compileTS();
-  
+
   const sidebarJS = fs.readFileSync("Sidebar.js", "utf8");
   const sidebarHTML = fs.readFileSync("Sidebar.html", "utf8");
   const includeMathJax = sidebarHTML.includes("data-mathjax-enabled");
 
-  const wrapped = wrapJS(sidebarJS, includeMathJax);
+  let sharedJS = "";
+  if (includeMathJax) {
+    await compileSharedTS();
+    sharedJS = fs.readFileSync("../SidebarMathJaxShared.js", "utf8");
+  }
+
+  const wrapped = wrapJS(sidebarJS, includeMathJax, sharedJS);
 
   // write out
   fs.writeFileSync("SidebarJS.html", wrapped);

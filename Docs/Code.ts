@@ -399,7 +399,7 @@ function isSingleDollarDelimiter(rangeElement: GoogleAppsScript.Document.RangeEl
 // instead of `\]`, find none, and report "no equations found." For `$ ... $` the two are the
 // same regex so either index works; isSingleDollarDelimiter still filters out `$$` / `\$` cases.
 function findNextDelimiter(
-  docBody: GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection | GoogleAppsScript.Document.FooterSection,
+  docBody: GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection | GoogleAppsScript.Document.FooterSection | GoogleAppsScript.Document.FootnoteSection,
   renderOptions: AutoLatexCommon.RenderOptions,
   fromRange: GoogleAppsScript.Document.RangeElement | null = null,
   delimIdx: 2 | 3 = 2
@@ -439,7 +439,7 @@ function findNextDelimiter(
 // (the Enter-instead-of-Shift+Enter case) so we can auto-fix them.
 function getContainingTopLevelChild(
   element: GoogleAppsScript.Document.Element,
-  body: GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection | GoogleAppsScript.Document.FooterSection
+  body: GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection | GoogleAppsScript.Document.FooterSection | GoogleAppsScript.Document.FootnoteSection
 ): { topLevelChild: GoogleAppsScript.Document.Element, indexInBody: number } | null {
   let current: GoogleAppsScript.Document.Element | null = element;
   while (current != null) {
@@ -478,7 +478,7 @@ function getContainingTopLevelChild(
 // preserved because appendText only takes a string. Formatting is not the failure condition;
 // the paragraph break is.
 function tryAutoMergeMultiParagraphEquation(
-  body: GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection | GoogleAppsScript.Document.FooterSection,
+  body: GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection | GoogleAppsScript.Document.FooterSection | GoogleAppsScript.Document.FootnoteSection,
   startParaIdx: number,
   endParaIdx: number
 ): { success: boolean, reason: string } {
@@ -545,8 +545,12 @@ function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, pr
   Common.reportDeltaTime(195);
   const docBody = getBodyFromIndex(index);
   if (docBody == null) {
+    // REASON: an unrecognized section type means "nothing to scan here", not "the
+    // document failed to load". Returning NoDocument here aborted the whole render
+    // with a misleading auth error for any doc containing such a section (silently —
+    // this path logged nothing, which is why user reports were undiagnosable).
     return {
-      status: DocsEquationRenderStatus.NoDocument
+      status: DocsEquationRenderStatus.NoStartDelimiter
     };
   }
   const startElement = findNextDelimiter(docBody, renderOptions, prevFailedStartElemIfIsEmpty, 2);
@@ -719,6 +723,7 @@ function getSize(size: number, defaultSize: number, rangeElement: GoogleAppsScri
 function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRenderOptions, renderedEquationB64: string }[]) {
   const mathjaxRenderer = Common.getRenderer(Common.rendererIds.MATHJAX);
   let c = 0;
+  let alreadyRenderedCount = 0;
   console.log("MathJax client render completion received equations:", equations.length);
   
   // Go backwards so that the named ranges for multiple equations in the same paragraph don't get removed
@@ -739,6 +744,15 @@ function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRender
         continue;
       }
 
+      // REASON: if the range element is no longer Text (most commonly it's already an
+      // INLINE_IMAGE from a double-click render or an overlapping batch), placeImage's
+      // asText() threw a locale-dependent cast error — thousands of ERROR lines/day for
+      // what is a benign "already done" state. Skip quietly instead.
+      if (rangeElements[0].getElement().getType() !== DocumentApp.ElementType.TEXT) {
+        alreadyRenderedCount++;
+        continue;
+      }
+
       const equationBlob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
       const result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equationLinkEncoded, equation.options.size, equation.options.delim);
 
@@ -752,6 +766,9 @@ function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRender
     }
   }
   
+  if (alreadyRenderedCount > 0) {
+    console.log("MathJax client render completion skipped already-rendered ranges:", alreadyRenderedCount);
+  }
   return {
     lastStatus: DocsEquationRenderStatus.Success,
     successCount: c
@@ -795,11 +812,20 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
   const colorHex = textElement.getForegroundColor(startElement.getStartOffset());
   // Docs can return null or malformed colors in some edge cases. Fall back to black.
   const [r, g, b] = getRgbFromHex(colorHex);
-  
+
+  // REASON: users build dark documents by highlighting text with a dark background
+  // color; the transparent equation PNG then shows the white page through the
+  // highlight band, making light-colored equations invisible. Sample the text's
+  // background color so the client bakes it into the image. No highlight (null)
+  // keeps the image transparent, exactly as before.
+  const bgHex = textElement.getBackgroundColor(startElement.getStartOffset());
+  const bgColor = bgHex ? getRgbFromHex(bgHex) : null;
+
   // add color info to render options
   const coloredRenderOptions = {
     ...renderOptions,
     r, g, b,
+    ...(bgColor ? { bgR: bgColor[0], bgG: bgColor[1], bgB: bgColor[2] } : {}),
   };
   
   // REASON: Explicit MathJax and Automatic both render on the client first.
@@ -838,7 +864,7 @@ function buildClientRenderResponse(
   // silently merging align/matrix rows and degrading "\\\hline" -> "\\hline" ->
   // (after a derender round-trip) a bare "\hline", which MathJax rejects as
   // "Misplaced \hline".
-  const clientEquation = decodeURIComponent(equationOriginal.split("%5C%5C%5C%5C").join("%5C%5C"));
+  const clientEquation = Common.getClientEquation(equationOriginal, getDocsApp());
   const doc = DocumentApp.getActiveDocument();
   const range = doc.newRange()
     .addElement(textElement, startElement.getStartOffset(), startElement.getEndOffsetInclusive())
@@ -957,17 +983,51 @@ function findInsertableAncestor(element: GoogleAppsScript.Document.Element) {
   return null;
 }
 
+// REASON: a doc with several unplaceable equations logged the same failure for every
+// equation on every retry (observed: one stuck user emitted ~2300 ERROR lines/day).
+// Log each distinct container type once per execution; the thrown error still carries
+// the message for the per-equation failure details.
+const reportedPlaceImageFailureTypes = new Set<string>();
+
 function placeImage(startElement: GoogleAppsScript.Document.RangeElement, renderedEquation: GoogleAppsScript.Base.Blob, renderer: AutoLatexCommon.Renderer, equation: string, size: number, delim: AutoLatexCommon.Delimiter) {
   // GET VARIABLES
-  const textElement = startElement.getElement().asText();
-  const text = textElement.getText();
-  const ancestor = findInsertableAncestor(textElement);
+  let textElement = startElement.getElement().asText();
+  const startOffset = startElement.getStartOffset();
+  const endOffsetInclusive = startElement.getEndOffsetInclusive();
+  let ancestor = findInsertableAncestor(textElement);
+  if (!ancestor) {
+    // REASON: prod logs show Text elements living DIRECTLY under a section
+    // (directParentType=BODY_SECTION) — no Paragraph wrapper, so no ancestor exposes
+    // insertInlineImage and rendering hard-failed for those docs. Sections do expose
+    // insertParagraph, so wrap the text in a fresh Paragraph at the same position and
+    // continue normally. The equations themselves are valid; only the container is odd.
+    const directParent = textElement.getParent();
+    const sectionLike = directParent as unknown as {
+      insertParagraph?: (index: number, text: string) => GoogleAppsScript.Document.Paragraph;
+      getChildIndex?: (child: GoogleAppsScript.Document.Element) => number;
+      removeChild?: (child: GoogleAppsScript.Document.Element) => unknown;
+    };
+    if (directParent && typeof sectionLike.insertParagraph === "function" &&
+        typeof sectionLike.getChildIndex === "function" && typeof sectionLike.removeChild === "function") {
+      const idx = sectionLike.getChildIndex(textElement);
+      const wrapper = sectionLike.insertParagraph(idx, "");
+      const movedText = wrapper.appendText(textElement.getText());
+      sectionLike.removeChild(textElement);
+      textElement = movedText;
+      ancestor = { container: wrapper as unknown as GoogleAppsScript.Document.ContainerElement, directChild: movedText as unknown as GoogleAppsScript.Document.Element };
+      console.log("placeImage: wrapped section-level text in a paragraph to place the equation.");
+    }
+  }
   if (!ancestor) {
     const directParent = textElement.getParent();
     const parentType = directParent && typeof directParent.getType === "function" ? String(directParent.getType()) : "<unknown>";
-    console.error("placeImage: no ancestor within 6 levels supports insertInlineImage. directParentType=", parentType, " equation=", equation);
+    if (!reportedPlaceImageFailureTypes.has(parentType)) {
+      reportedPlaceImageFailureTypes.add(parentType);
+      console.error("placeImage: no ancestor within 6 levels supports insertInlineImage. directParentType=", parentType, " equation=", equation);
+    }
     throw new Error(`Cannot place image: equation is in an unsupported container (direct parent type ${parentType}). Inline images can't be inserted here.`);
   }
+  const text = textElement.getText();
   // REASON: TypeScript's union of insertable containers (Body, TableCell, FootnoteSection,
   // Paragraph, ListItem, ...) is wide; the methods we actually call (insertInlineImage,
   // insertText, getChild, getChildIndex) exist on all of them at runtime. Cast to the
@@ -976,11 +1036,11 @@ function placeImage(startElement: GoogleAppsScript.Document.RangeElement, render
   const paragraph = ancestor.container as unknown as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph;
   const childIndex = paragraph.getChildIndex(ancestor.directChild as GoogleAppsScript.Document.Element); //gets index of found text (or its containing wrapper) in the insertable ancestor
   const textCopy = textElement.asText().copy();
-  let endLimit = startElement.getEndOffsetInclusive();
+  let endLimit = endOffsetInclusive;
   if (text.length - 1 < endLimit) endLimit = text.length - 1;
   textCopy.asText().editAsText().deleteText(0, endLimit); // the copy only has the stuff after the equation
   Common.reportDeltaTime(522);
-  textElement.editAsText().deleteText(startElement.getStartOffset(), text.length - 1); // from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
+  textElement.editAsText().deleteText(startOffset, text.length - 1); // from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
   Common.reportDeltaTime(526);
   
   // try inserting twice
@@ -1073,10 +1133,19 @@ function getBodyFromIndex(index: number) {
   Common.assert(index < all, "index < all");
   const body = p.getChild(index);
   const type = body.getType();
-  if (type === DocumentApp.ElementType.BODY_SECTION || type === DocumentApp.ElementType.HEADER_SECTION || type === DocumentApp.ElementType.FOOTER_SECTION) {
+  // REASON: FOOTNOTE_SECTION included — academic docs commonly have footnotes, and
+  // before 2026-07 hitting one aborted the entire render with a misleading
+  // "conflicting authorizations" error (the section walker returned null and findPos
+  // mapped null to NoDocument). Footnote equations render fine: FootnoteSection
+  // supports findText/getImages, and placeImage already walks up to it.
+  if (type === DocumentApp.ElementType.BODY_SECTION ||
+      type === DocumentApp.ElementType.HEADER_SECTION ||
+      type === DocumentApp.ElementType.FOOTER_SECTION ||
+      type === DocumentApp.ElementType.FOOTNOTE_SECTION) {
     // handles alternating footers etc.
     return body as GoogleAppsScript.Document.Body | GoogleAppsScript.Document.HeaderSection | GoogleAppsScript.Document.FooterSection;
   }
+  console.log("Skipping non-scannable document section", index, String(type));
   return null;
 }
 
@@ -1090,7 +1159,9 @@ function removeAll(defaultDelimRaw: string) {
   
   for (var index = 0; index < getDocsApp().getBody().getParent().getNumChildren(); index++) {
     const body = getBodyFromIndex(index);
-    const img = body?.getImages(); //places all InlineImages from the active document into the array img
+    // REASON: FootnoteSection has findText (so rendering works there) but no
+    // getImages; De-render All just skips footnote sections.
+    const img = body && "getImages" in body ? body.getImages() : undefined; //places all InlineImages from the active document into the array img
     for (let i = 0; i < (img?.length || 0); i++) {
       const image = img![i];
       let origURL = new String(image.getLinkUrl()).toString(); //becomes "null", not null, if no equation link
@@ -1099,7 +1170,15 @@ function removeAll(defaultDelimRaw: string) {
       }
       // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
       // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
-      const result = Common.derenderEquation(origURL, getDocsApp());
+      // REASON: same escape()-era %uXXXX guard as derenderInlineImage — one ancient
+      // image must not crash De-render All for the whole document.
+      let result: ReturnType<typeof Common.derenderEquation>;
+      try {
+        result = Common.derenderEquation(origURL, getDocsApp());
+      } catch (err) {
+        console.error("removeAll: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
+        continue;
+      }
       if (!result) continue;
       const { origEq, delim: newDelim } = result;
       const delim = newDelim || defaultDelim;
@@ -1126,17 +1205,101 @@ function removeAll(defaultDelimRaw: string) {
  * @public
  */
 
+// Derender one equation image in place: insert the recovered LaTeX text at the
+// image's position in its parent and remove the image.
+function derenderInlineImage(
+  image: GoogleAppsScript.Document.InlineImage,
+  defaultDelim: AutoLatexCommon.Delimiter
+) {
+  const origURL = image.getLinkUrl();
+  if (!origURL) {
+    return Common.DerenderResult.NullUrl;
+  }
+  // REASON: images rendered in the escape()-encoding era carry %uXXXX sequences that
+  // decodeURIComponent rejects (URIError: URI malformed). Uncaught, one ancient image
+  // crashed the whole De-render run. Log WITH the URL so the offending encoding is
+  // visible, and skip just this image.
+  let result: ReturnType<typeof Common.derenderEquation>;
+  try {
+    result = Common.derenderEquation(origURL, getDocsApp());
+  } catch (err) {
+    console.error("derenderInlineImage: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
+    return Common.DerenderResult.InvalidUrl;
+  }
+  if (!result) return Common.DerenderResult.InvalidUrl;
+  const { delim: newDelim, origEq } = result;
+  const delim = newDelim || defaultDelim;
+  if (origEq.length <= 0) {
+    console.log("Empty equation derender.");
+    return Common.DerenderResult.EmptyEquation;
+  }
+  const parent = image.getParent() as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph;
+  const imageIndex = parent.getChildIndex(image);
+  parent.insertText(imageIndex, delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
+  image.removeFromParent();
+  return Common.DerenderResult.Success;
+}
+
+// Collect equation-candidate inline images from the user's selection, in document
+// order. Handles both a directly selected image and selections that span
+// paragraphs/list items containing images.
+function collectSelectedInlineImages(selection: GoogleAppsScript.Document.Range) {
+  const images: GoogleAppsScript.Document.InlineImage[] = [];
+  for (const rangeElement of selection.getRangeElements()) {
+    const el = rangeElement.getElement();
+    const elType = el.getType();
+    if (elType === DocumentApp.ElementType.INLINE_IMAGE) {
+      images.push(el.asInlineImage());
+    } else if (elType === DocumentApp.ElementType.PARAGRAPH || elType === DocumentApp.ElementType.LIST_ITEM) {
+      const container = el as GoogleAppsScript.Document.Paragraph | GoogleAppsScript.Document.ListItem;
+      for (let i = 0; i < container.getNumChildren(); i++) {
+        const child = container.getChild(i);
+        if (child.getType() === DocumentApp.ElementType.INLINE_IMAGE) {
+          images.push(child.asInlineImage());
+        }
+      }
+    }
+  }
+  return images;
+}
+
 function editEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const defaultDelim = Common.getDelimiters(delimiter);
   Common.savePrefs(sizeRaw, delimiter, renderer);
+
+  // REASON: users naturally click/select the equation image itself and hit
+  // De-render; the cursor-only flow returned CursorNotFound for that (a selection
+  // means there is no cursor). Derender every equation image in the selection —
+  // in reverse document order so earlier removals can't shift later indices.
+  const selection = DocumentApp.getActiveDocument().getSelection();
+  if (selection) {
+    const images = collectSelectedInlineImages(selection);
+    if (images.length === 0) {
+      return { result: Common.DerenderResult.NonExistentElement, successCount: 0 };
+    }
+    let successCount = 0;
+    let lastFailureResult = Common.DerenderResult.InvalidUrl;
+    for (const image of images.reverse()) {
+      const result = derenderInlineImage(image, defaultDelim);
+      if (result === Common.DerenderResult.Success) {
+        successCount++;
+      } else {
+        lastFailureResult = result;
+      }
+    }
+    return successCount > 0
+      ? { result: Common.DerenderResult.Success, successCount }
+      : { result: lastFailureResult, successCount: 0 };
+  }
+
   const cursor = DocumentApp.getActiveDocument().getCursor();
   if (!cursor) {
-    return Common.DerenderResult.CursorNotFound;
+    return { result: Common.DerenderResult.CursorNotFound, successCount: 0 };
   }
 
   const elementRaw = cursor.getElement();
   if (!elementRaw) {
-    return Common.DerenderResult.NonExistentElement;
+    return { result: Common.DerenderResult.NonExistentElement, successCount: 0 };
   }
 
   // REASON: Cursor.getElement() can return any Element subtype (Table, TableOfContents,
@@ -1147,7 +1310,7 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
   const elementType = elementRaw.getType();
   if (elementType !== DocumentApp.ElementType.PARAGRAPH && elementType !== DocumentApp.ElementType.LIST_ITEM) {
     console.log("editEquations: cursor is in unsupported element type", elementType);
-    return Common.DerenderResult.NonExistentElement;
+    return { result: Common.DerenderResult.NonExistentElement, successCount: 0 };
   }
 
   const element = elementRaw as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph;
@@ -1155,7 +1318,7 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
 
   const position = cursor.getOffset(); //offset
   if (position >= element.getNumChildren()) {
-    return Common.DerenderResult.CursorNotFound;
+    return { result: Common.DerenderResult.CursorNotFound, successCount: 0 };
   }
 
   // REASON: getChild(position).asInlineImage() throws "TEXT can't be cast to INLINE_IMAGE"
@@ -1164,25 +1327,14 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
   const childAtCursor = element.getChild(position);
   if (childAtCursor.getType() !== DocumentApp.ElementType.INLINE_IMAGE) {
     console.log("editEquations: child at cursor is not an inline image", childAtCursor.getType());
-    return Common.DerenderResult.NonExistentElement;
+    return { result: Common.DerenderResult.NonExistentElement, successCount: 0 };
   }
 
   const image = childAtCursor.asInlineImage();
   Common.debugLog("Image height", image.getHeight());
-  const origURL = image.getLinkUrl();
-  if (!origURL) {
-    return Common.DerenderResult.NullUrl;
-  }
-  Common.debugLog("Original URL from image", origURL);
-  const result = Common.derenderEquation(origURL, getDocsApp());
-  if (!result) return Common.DerenderResult.InvalidUrl;
-  const { delim: newDelim, origEq } = result;
-  const delim = newDelim || defaultDelim;
-  if (origEq.length <= 0) {
-    console.log("Empty equation derender.");
-    return Common.DerenderResult.EmptyEquation;
-  }
-  cursor.insertText(delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
-  element.getChild(position + 1).removeFromParent();
-  return Common.DerenderResult.Success;
+  const cursorResult = derenderInlineImage(image, defaultDelim);
+  return {
+    result: cursorResult,
+    successCount: cursorResult === Common.DerenderResult.Success ? 1 : 0
+  };
 }

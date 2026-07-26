@@ -25,6 +25,9 @@ interface SlidesClientRenderOptions {
   r: number;
   g: number;
   b: number;
+  bgR?: number;
+  bgG?: number;
+  bgB?: number;
   delim: AutoLatexCommon.Delimiter;
   equation: string;
   equationLinkEncoded: string;
@@ -379,11 +382,12 @@ function findAllClientRenderEquationsInTextElement(
     const size = getSlideTextSize(renderOptions.size, renderOptions.defaultSize, equationRange);
     const colorRangeEnd = Math.max(equationOffsets.start + renderOptions.delim[4], equationOffsets.end);
     const textColor = getRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
+    const bgColor = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum) || getShapeFillRgbColor(textElement, slideNum);
     // REASON: collapse the encoded four-backslash newline marker in ENCODED space
     // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
     // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
     // \hline" after a derender round-trip) and align/matrix row breaks.
-    const clientEquation = decodeURIComponent(equationOriginal.split("%5C%5C%5C%5C").join("%5C%5C"));
+    const clientEquation = Common.getClientEquation(equationOriginal, IntegratedApp);
 
     results.push({
       size,
@@ -391,6 +395,7 @@ function findAllClientRenderEquationsInTextElement(
       r: textColor[0],
       g: textColor[1],
       b: textColor[2],
+      ...(bgColor ? { bgR: bgColor[0], bgG: bgColor[1], bgB: bgColor[2] } : {}),
       delim: renderOptions.delim,
       equation: clientEquation,
       equationLinkEncoded: encodeURIComponent(clientEquation),
@@ -576,6 +581,55 @@ function getRgbColor(textRange: GoogleAppsScript.Slides.TextRange, slideNum: num
   return [red, green, blue];
 }
 
+// REASON: equations inside highlighted text render as transparent PNGs, which show
+// the slide/shape background through the highlight band and made light-colored
+// equations invisible (user report). Sample the text's highlight color so the
+// shared canvas renderer bakes it into the image; null (no highlight) keeps the
+// image transparent, which composites correctly over shape fills.
+function getBgRgbColor(textRange: GoogleAppsScript.Slides.TextRange, slideNum: number): [number, number, number] | null {
+  let backgroundColor = textRange.getTextStyle().getBackgroundColor();
+  if (backgroundColor == null) {
+    return null;
+  }
+  if (backgroundColor.getColorType() !== SlidesApp.ColorType.RGB) {
+    const slide = IntegratedApp.getBody()[slideNum];
+    backgroundColor = slide.getColorScheme().getConcreteColor(backgroundColor.asThemeColor().getThemeColorType());
+  }
+  return [
+    backgroundColor.asRgbColor().getRed(),
+    backgroundColor.asRgbColor().getGreen(),
+    backgroundColor.asRgbColor().getBlue(),
+  ];
+}
+
+// REASON: rendering deletes the equation's text box when the equation was its only
+// content — taking the box's fill with it — and oversized equations overflow the
+// box anyway (user report: image doesn't fit, box gone, background lost). Bake the
+// box/cell SOLID fill into the image when the text has no explicit highlight.
+// Gradient/image fills can't be represented by one color; those stay transparent.
+function getShapeFillRgbColor(element: PageElement, slideNum: number): [number, number, number] | null {
+  try {
+    const fill = element.getFill();
+    if (!fill) return null;
+    const solid = fill.getSolidFill();
+    if (!solid) return null;
+    let color = solid.getColor();
+    if (color.getColorType() !== SlidesApp.ColorType.RGB) {
+      const slide = IntegratedApp.getBody()[slideNum];
+      color = slide.getColorScheme().getConcreteColor(color.asThemeColor().getThemeColorType());
+    }
+    return [
+      color.asRgbColor().getRed(),
+      color.asRgbColor().getGreen(),
+      color.asRgbColor().getBlue(),
+    ];
+  } catch (err) {
+    // elements without a fill API (or transparent fills) simply stay transparent
+    console.log("getShapeFillRgbColor: no usable fill; keeping transparent.", String(err));
+    return null;
+  }
+}
+
 function unwrapEQ(element: PageElement) {
   let textValue: GoogleAppsScript.Slides.TextRange | null = null;
   // test if it's a text box (table cells work)
@@ -719,11 +773,12 @@ function findClientRenderEquationInTextElement(
     const size = getSlideTextSize(renderOptions.size, renderOptions.defaultSize, equationRange);
     const colorRangeEnd = Math.max(equationOffsets.start + renderOptions.delim[4], equationOffsets.end);
     const textColor = getRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
+    const bgColor = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum) || getShapeFillRgbColor(textElement, slideNum);
     // REASON: collapse the encoded four-backslash newline marker in ENCODED space
     // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
     // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
     // \hline" after a derender round-trip) and align/matrix row breaks.
-    const clientEquation = decodeURIComponent(equationOriginal.split("%5C%5C%5C%5C").join("%5C%5C"));
+    const clientEquation = Common.getClientEquation(equationOriginal, IntegratedApp);
 
     return {
       size,
@@ -731,6 +786,7 @@ function findClientRenderEquationInTextElement(
       r: textColor[0],
       g: textColor[1],
       b: textColor[2],
+      ...(bgColor ? { bgR: bgColor[0], bgG: bgColor[1], bgB: bgColor[2] } : {}),
       delim: renderOptions.delim,
       equation: clientEquation,
       equationLinkEncoded: encodeURIComponent(clientEquation),
@@ -1170,7 +1226,15 @@ function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoL
   if (!origURL) return Common.DerenderResult.NullUrl;
 
   Common.debugLog("Original URL from image", origURL);
-  const result = Common.derenderEquation(origURL, IntegratedApp);
+  // REASON: same escape()-era %uXXXX guard as Docs — decodeURIComponent rejects those
+  // legacy URLs (URIError) and an uncaught throw crashed the whole derender pass.
+  let result: ReturnType<typeof Common.derenderEquation>;
+  try {
+    result = Common.derenderEquation(origURL, IntegratedApp);
+  } catch (err) {
+    console.error("derenderImage: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
+    return Common.DerenderResult.InvalidUrl;
+  }
   if (!result) return Common.DerenderResult.InvalidUrl;
   const { delim: newDelim, origEq } = result;
   const delim = newDelim || defaultDelim;
@@ -1220,14 +1284,29 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
   Common.debugLog("selection Type is: " + selectionType);
 
   if (selectionType == SlidesApp.SelectionType.PAGE_ELEMENT) {
-    // if they're selecting an image inside a group, the image is the second element in the selection
-    const image = selection.getPageElementRange().getPageElements().find(el => el.getPageElementType() === SlidesApp.PageElementType.IMAGE)?.asImage();
-    if (image) {
-      return derenderImage(image, defaultDelim, currentPage);
-    } else {
-      return Common.DerenderResult.NonExistentElement;
+    // REASON: derender EVERY selected image, not just the first — shift-clicking
+    // several equations and hitting De-render only restored one (user report).
+    // Non-ALE images (no parseable title JSON) are skipped by derenderImage.
+    const images = selection.getPageElementRange().getPageElements()
+      .filter(el => el.getPageElementType() === SlidesApp.PageElementType.IMAGE)
+      .map(el => el.asImage());
+    if (images.length === 0) {
+      return { result: Common.DerenderResult.NonExistentElement, successCount: 0 };
     }
+    let successCount = 0;
+    let lastFailureResult = Common.DerenderResult.InvalidUrl;
+    for (const image of images) {
+      const result = derenderImage(image, defaultDelim, currentPage);
+      if (result === Common.DerenderResult.Success) {
+        successCount++;
+      } else {
+        lastFailureResult = result;
+      }
+    }
+    return successCount > 0
+      ? { result: Common.DerenderResult.Success, successCount }
+      : { result: lastFailureResult, successCount: 0 };
   } else {
-    return Common.DerenderResult.CursorNotFound;
+    return { result: Common.DerenderResult.CursorNotFound, successCount: 0 };
   }
 }

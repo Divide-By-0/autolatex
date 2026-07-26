@@ -444,8 +444,12 @@ function findPos(index, renderOptions, prevFailedStartElemIfIsEmpty) {
     Common.reportDeltaTime(195);
     var docBody = getBodyFromIndex(index);
     if (docBody == null) {
+        // REASON: an unrecognized section type means "nothing to scan here", not "the
+        // document failed to load". Returning NoDocument here aborted the whole render
+        // with a misleading auth error for any doc containing such a section (silently —
+        // this path logged nothing, which is why user reports were undiagnosable).
         return {
-            status: 5 /* DocsEquationRenderStatus.NoDocument */
+            status: 7 /* DocsEquationRenderStatus.NoStartDelimiter */
         };
     }
     var startElement = findNextDelimiter(docBody, renderOptions, prevFailedStartElemIfIsEmpty, 2);
@@ -606,6 +610,7 @@ function getSize(size, defaultSize, rangeElement) {
 function clientRenderComplete(equations) {
     var mathjaxRenderer = Common.getRenderer(Common.rendererIds.MATHJAX);
     var c = 0;
+    var alreadyRenderedCount = 0;
     console.log("MathJax client render completion received equations:", equations.length);
     // Go backwards so that the named ranges for multiple equations in the same paragraph don't get removed
     equations.reverse();
@@ -623,6 +628,14 @@ function clientRenderComplete(equations) {
                 console.warn("MathJax client render range is empty:", equation.options.rangeId);
                 continue;
             }
+            // REASON: if the range element is no longer Text (most commonly it's already an
+            // INLINE_IMAGE from a double-click render or an overlapping batch), placeImage's
+            // asText() threw a locale-dependent cast error — thousands of ERROR lines/day for
+            // what is a benign "already done" state. Skip quietly instead.
+            if (rangeElements[0].getElement().getType() !== DocumentApp.ElementType.TEXT) {
+                alreadyRenderedCount++;
+                continue;
+            }
             var equationBlob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
             var result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equationLinkEncoded, equation.options.size, equation.options.delim);
             if (result.status === 8 /* DocsEquationRenderStatus.Success */) {
@@ -635,6 +648,9 @@ function clientRenderComplete(equations) {
         finally {
             namedRange === null || namedRange === void 0 ? void 0 : namedRange.remove();
         }
+    }
+    if (alreadyRenderedCount > 0) {
+        console.log("MathJax client render completion skipped already-rendered ranges:", alreadyRenderedCount);
     }
     return {
         lastStatus: 8 /* DocsEquationRenderStatus.Success */,
@@ -673,8 +689,15 @@ function findEquationAndPlaceImage(startElement, renderOptions) {
     var colorHex = textElement.getForegroundColor(startElement.getStartOffset());
     // Docs can return null or malformed colors in some edge cases. Fall back to black.
     var _a = getRgbFromHex(colorHex), r = _a[0], g = _a[1], b = _a[2];
+    // REASON: users build dark documents by highlighting text with a dark background
+    // color; the transparent equation PNG then shows the white page through the
+    // highlight band, making light-colored equations invisible. Sample the text's
+    // background color so the client bakes it into the image. No highlight (null)
+    // keeps the image transparent, exactly as before.
+    var bgHex = textElement.getBackgroundColor(startElement.getStartOffset());
+    var bgColor = bgHex ? getRgbFromHex(bgHex) : null;
     // add color info to render options
-    var coloredRenderOptions = __assign(__assign({}, renderOptions), { r: r, g: g, b: b });
+    var coloredRenderOptions = __assign(__assign(__assign({}, renderOptions), { r: r, g: g, b: b }), (bgColor ? { bgR: bgColor[0], bgG: bgColor[1], bgB: bgColor[2] } : {}));
     // REASON: Explicit MathJax and Automatic both render on the client first.
     // Automatic falls back to server renderers from the sidebar only if MathJax fails.
     if (renderOptions.clientRender || renderOptions.autoFallbackToClient) {
@@ -703,7 +726,7 @@ function buildClientRenderResponse(textElement, startElement, equationOriginal, 
     // silently merging align/matrix rows and degrading "\\\hline" -> "\\hline" ->
     // (after a derender round-trip) a bare "\hline", which MathJax rejects as
     // "Misplaced \hline".
-    var clientEquation = decodeURIComponent(equationOriginal.split("%5C%5C%5C%5C").join("%5C%5C"));
+    var clientEquation = Common.getClientEquation(equationOriginal, getDocsApp());
     var doc = DocumentApp.getActiveDocument();
     var range = doc.newRange()
         .addElement(textElement, startElement.getStartOffset(), startElement.getEndOffsetInclusive())
@@ -807,17 +830,46 @@ function findInsertableAncestor(element) {
     }
     return null;
 }
+// REASON: a doc with several unplaceable equations logged the same failure for every
+// equation on every retry (observed: one stuck user emitted ~2300 ERROR lines/day).
+// Log each distinct container type once per execution; the thrown error still carries
+// the message for the per-equation failure details.
+var reportedPlaceImageFailureTypes = new Set();
 function placeImage(startElement, renderedEquation, renderer, equation, size, delim) {
     // GET VARIABLES
     var textElement = startElement.getElement().asText();
-    var text = textElement.getText();
+    var startOffset = startElement.getStartOffset();
+    var endOffsetInclusive = startElement.getEndOffsetInclusive();
     var ancestor = findInsertableAncestor(textElement);
+    if (!ancestor) {
+        // REASON: prod logs show Text elements living DIRECTLY under a section
+        // (directParentType=BODY_SECTION) — no Paragraph wrapper, so no ancestor exposes
+        // insertInlineImage and rendering hard-failed for those docs. Sections do expose
+        // insertParagraph, so wrap the text in a fresh Paragraph at the same position and
+        // continue normally. The equations themselves are valid; only the container is odd.
+        var directParent = textElement.getParent();
+        var sectionLike = directParent;
+        if (directParent && typeof sectionLike.insertParagraph === "function" &&
+            typeof sectionLike.getChildIndex === "function" && typeof sectionLike.removeChild === "function") {
+            var idx = sectionLike.getChildIndex(textElement);
+            var wrapper = sectionLike.insertParagraph(idx, "");
+            var movedText = wrapper.appendText(textElement.getText());
+            sectionLike.removeChild(textElement);
+            textElement = movedText;
+            ancestor = { container: wrapper, directChild: movedText };
+            console.log("placeImage: wrapped section-level text in a paragraph to place the equation.");
+        }
+    }
     if (!ancestor) {
         var directParent = textElement.getParent();
         var parentType = directParent && typeof directParent.getType === "function" ? String(directParent.getType()) : "<unknown>";
-        console.error("placeImage: no ancestor within 6 levels supports insertInlineImage. directParentType=", parentType, " equation=", equation);
+        if (!reportedPlaceImageFailureTypes.has(parentType)) {
+            reportedPlaceImageFailureTypes.add(parentType);
+            console.error("placeImage: no ancestor within 6 levels supports insertInlineImage. directParentType=", parentType, " equation=", equation);
+        }
         throw new Error("Cannot place image: equation is in an unsupported container (direct parent type ".concat(parentType, "). Inline images can't be inserted here."));
     }
+    var text = textElement.getText();
     // REASON: TypeScript's union of insertable containers (Body, TableCell, FootnoteSection,
     // Paragraph, ListItem, ...) is wide; the methods we actually call (insertInlineImage,
     // insertText, getChild, getChildIndex) exist on all of them at runtime. Cast to the
@@ -826,12 +878,12 @@ function placeImage(startElement, renderedEquation, renderer, equation, size, de
     var paragraph = ancestor.container;
     var childIndex = paragraph.getChildIndex(ancestor.directChild); //gets index of found text (or its containing wrapper) in the insertable ancestor
     var textCopy = textElement.asText().copy();
-    var endLimit = startElement.getEndOffsetInclusive();
+    var endLimit = endOffsetInclusive;
     if (text.length - 1 < endLimit)
         endLimit = text.length - 1;
     textCopy.asText().editAsText().deleteText(0, endLimit); // the copy only has the stuff after the equation
     Common.reportDeltaTime(522);
-    textElement.editAsText().deleteText(startElement.getStartOffset(), text.length - 1); // from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
+    textElement.editAsText().deleteText(startOffset, text.length - 1); // from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
     Common.reportDeltaTime(526);
     // try inserting twice
     for (var tryNum = 1; tryNum <= 2; tryNum++) {
@@ -916,10 +968,19 @@ function getBodyFromIndex(index) {
     Common.assert(index < all, "index < all");
     var body = p.getChild(index);
     var type = body.getType();
-    if (type === DocumentApp.ElementType.BODY_SECTION || type === DocumentApp.ElementType.HEADER_SECTION || type === DocumentApp.ElementType.FOOTER_SECTION) {
+    // REASON: FOOTNOTE_SECTION included — academic docs commonly have footnotes, and
+    // before 2026-07 hitting one aborted the entire render with a misleading
+    // "conflicting authorizations" error (the section walker returned null and findPos
+    // mapped null to NoDocument). Footnote equations render fine: FootnoteSection
+    // supports findText/getImages, and placeImage already walks up to it.
+    if (type === DocumentApp.ElementType.BODY_SECTION ||
+        type === DocumentApp.ElementType.HEADER_SECTION ||
+        type === DocumentApp.ElementType.FOOTER_SECTION ||
+        type === DocumentApp.ElementType.FOOTNOTE_SECTION) {
         // handles alternating footers etc.
         return body;
     }
+    console.log("Skipping non-scannable document section", index, String(type));
     return null;
 }
 /**
@@ -931,7 +992,9 @@ function removeAll(defaultDelimRaw) {
     var defaultDelim = Common.getDelimiters(defaultDelimRaw);
     for (var index = 0; index < getDocsApp().getBody().getParent().getNumChildren(); index++) {
         var body = getBodyFromIndex(index);
-        var img = body === null || body === void 0 ? void 0 : body.getImages(); //places all InlineImages from the active document into the array img
+        // REASON: FootnoteSection has findText (so rendering works there) but no
+        // getImages; De-render All just skips footnote sections.
+        var img = body && "getImages" in body ? body.getImages() : undefined; //places all InlineImages from the active document into the array img
         for (var i = 0; i < ((img === null || img === void 0 ? void 0 : img.length) || 0); i++) {
             var image = img[i];
             var origURL = new String(image.getLinkUrl()).toString(); //becomes "null", not null, if no equation link
@@ -940,7 +1003,16 @@ function removeAll(defaultDelimRaw) {
             }
             // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
             // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
-            var result = Common.derenderEquation(origURL, getDocsApp());
+            // REASON: same escape()-era %uXXXX guard as derenderInlineImage — one ancient
+            // image must not crash De-render All for the whole document.
+            var result = void 0;
+            try {
+                result = Common.derenderEquation(origURL, getDocsApp());
+            }
+            catch (err) {
+                console.error("removeAll: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
+                continue;
+            }
             if (!result)
                 continue;
             var origEq = result.origEq, newDelim = result.delim;
@@ -966,17 +1038,100 @@ function removeAll(defaultDelimRaw) {
  * @param {string} sizeRaw     Sidebar-selected size.
  * @public
  */
+// Derender one equation image in place: insert the recovered LaTeX text at the
+// image's position in its parent and remove the image.
+function derenderInlineImage(image, defaultDelim) {
+    var origURL = image.getLinkUrl();
+    if (!origURL) {
+        return 4 /* Common.DerenderResult.NullUrl */;
+    }
+    // REASON: images rendered in the escape()-encoding era carry %uXXXX sequences that
+    // decodeURIComponent rejects (URIError: URI malformed). Uncaught, one ancient image
+    // crashed the whole De-render run. Log WITH the URL so the offending encoding is
+    // visible, and skip just this image.
+    var result;
+    try {
+        result = Common.derenderEquation(origURL, getDocsApp());
+    }
+    catch (err) {
+        console.error("derenderInlineImage: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
+        return 2 /* Common.DerenderResult.InvalidUrl */;
+    }
+    if (!result)
+        return 2 /* Common.DerenderResult.InvalidUrl */;
+    var newDelim = result.delim, origEq = result.origEq;
+    var delim = newDelim || defaultDelim;
+    if (origEq.length <= 0) {
+        console.log("Empty equation derender.");
+        return 1 /* Common.DerenderResult.EmptyEquation */;
+    }
+    var parent = image.getParent();
+    var imageIndex = parent.getChildIndex(image);
+    parent.insertText(imageIndex, delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
+    image.removeFromParent();
+    return 5 /* Common.DerenderResult.Success */;
+}
+// Collect equation-candidate inline images from the user's selection, in document
+// order. Handles both a directly selected image and selections that span
+// paragraphs/list items containing images.
+function collectSelectedInlineImages(selection) {
+    var images = [];
+    for (var _i = 0, _a = selection.getRangeElements(); _i < _a.length; _i++) {
+        var rangeElement = _a[_i];
+        var el = rangeElement.getElement();
+        var elType = el.getType();
+        if (elType === DocumentApp.ElementType.INLINE_IMAGE) {
+            images.push(el.asInlineImage());
+        }
+        else if (elType === DocumentApp.ElementType.PARAGRAPH || elType === DocumentApp.ElementType.LIST_ITEM) {
+            var container = el;
+            for (var i = 0; i < container.getNumChildren(); i++) {
+                var child = container.getChild(i);
+                if (child.getType() === DocumentApp.ElementType.INLINE_IMAGE) {
+                    images.push(child.asInlineImage());
+                }
+            }
+        }
+    }
+    return images;
+}
 function editEquations(sizeRaw, delimiter, renderer) {
     if (renderer === void 0) { renderer = "auto"; }
     var defaultDelim = Common.getDelimiters(delimiter);
     Common.savePrefs(sizeRaw, delimiter, renderer);
+    // REASON: users naturally click/select the equation image itself and hit
+    // De-render; the cursor-only flow returned CursorNotFound for that (a selection
+    // means there is no cursor). Derender every equation image in the selection —
+    // in reverse document order so earlier removals can't shift later indices.
+    var selection = DocumentApp.getActiveDocument().getSelection();
+    if (selection) {
+        var images = collectSelectedInlineImages(selection);
+        if (images.length === 0) {
+            return { result: 3 /* Common.DerenderResult.NonExistentElement */, successCount: 0 };
+        }
+        var successCount = 0;
+        var lastFailureResult = 2 /* Common.DerenderResult.InvalidUrl */;
+        for (var _i = 0, _a = images.reverse(); _i < _a.length; _i++) {
+            var image_1 = _a[_i];
+            var result = derenderInlineImage(image_1, defaultDelim);
+            if (result === 5 /* Common.DerenderResult.Success */) {
+                successCount++;
+            }
+            else {
+                lastFailureResult = result;
+            }
+        }
+        return successCount > 0
+            ? { result: 5 /* Common.DerenderResult.Success */, successCount: successCount }
+            : { result: lastFailureResult, successCount: 0 };
+    }
     var cursor = DocumentApp.getActiveDocument().getCursor();
     if (!cursor) {
-        return 0 /* Common.DerenderResult.CursorNotFound */;
+        return { result: 0 /* Common.DerenderResult.CursorNotFound */, successCount: 0 };
     }
     var elementRaw = cursor.getElement();
     if (!elementRaw) {
-        return 3 /* Common.DerenderResult.NonExistentElement */;
+        return { result: 3 /* Common.DerenderResult.NonExistentElement */, successCount: 0 };
     }
     // REASON: Cursor.getElement() can return any Element subtype (Table, TableOfContents,
     // FootnoteSection, etc.) - not just Paragraph/ListItem. The previous code did an unchecked
@@ -986,13 +1141,13 @@ function editEquations(sizeRaw, delimiter, renderer) {
     var elementType = elementRaw.getType();
     if (elementType !== DocumentApp.ElementType.PARAGRAPH && elementType !== DocumentApp.ElementType.LIST_ITEM) {
         console.log("editEquations: cursor is in unsupported element type", elementType);
-        return 3 /* Common.DerenderResult.NonExistentElement */;
+        return { result: 3 /* Common.DerenderResult.NonExistentElement */, successCount: 0 };
     }
     var element = elementRaw;
     console.log("Valid cursor.");
     var position = cursor.getOffset(); //offset
     if (position >= element.getNumChildren()) {
-        return 0 /* Common.DerenderResult.CursorNotFound */;
+        return { result: 0 /* Common.DerenderResult.CursorNotFound */, successCount: 0 };
     }
     // REASON: getChild(position).asInlineImage() throws "TEXT can't be cast to INLINE_IMAGE"
     // when the user's cursor is on text instead of an equation image. Check the child type
@@ -1000,25 +1155,13 @@ function editEquations(sizeRaw, delimiter, renderer) {
     var childAtCursor = element.getChild(position);
     if (childAtCursor.getType() !== DocumentApp.ElementType.INLINE_IMAGE) {
         console.log("editEquations: child at cursor is not an inline image", childAtCursor.getType());
-        return 3 /* Common.DerenderResult.NonExistentElement */;
+        return { result: 3 /* Common.DerenderResult.NonExistentElement */, successCount: 0 };
     }
     var image = childAtCursor.asInlineImage();
     Common.debugLog("Image height", image.getHeight());
-    var origURL = image.getLinkUrl();
-    if (!origURL) {
-        return 4 /* Common.DerenderResult.NullUrl */;
-    }
-    Common.debugLog("Original URL from image", origURL);
-    var result = Common.derenderEquation(origURL, getDocsApp());
-    if (!result)
-        return 2 /* Common.DerenderResult.InvalidUrl */;
-    var newDelim = result.delim, origEq = result.origEq;
-    var delim = newDelim || defaultDelim;
-    if (origEq.length <= 0) {
-        console.log("Empty equation derender.");
-        return 1 /* Common.DerenderResult.EmptyEquation */;
-    }
-    cursor.insertText(delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
-    element.getChild(position + 1).removeFromParent();
-    return 5 /* Common.DerenderResult.Success */;
+    var cursorResult = derenderInlineImage(image, defaultDelim);
+    return {
+        result: cursorResult,
+        successCount: cursorResult === 5 /* Common.DerenderResult.Success */ ? 1 : 0
+    };
 }

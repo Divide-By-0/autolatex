@@ -256,13 +256,46 @@ function reEncode(equation, app) {
     return getCustomEncode(encodeURIComponent(equation), 0, 0, app); //escape deprecated
 }
 /**
+ * Decode a reEncoded equation for the client-side (MathJax) renderer.
+ *
+ * REASON: reEncode turns each in-equation newline into an encoded four-backslash
+ * marker ("%5C%5C%5C%5C%20"). Restore it to the app's literal newline character
+ * (Docs \r, Slides \v, Sheets \n) so the sidebar can decide per-position whether
+ * a newline is a row break or cosmetic paste formatting, and collapse legacy
+ * doubled row breaks in ENCODED space exactly like the Codecogs path — a
+ * three-backslash run (e.g. "\\\hline") encodes to three %5C tokens and cannot
+ * false-match. Never collapse pairs in decoded space: that halving corrupted
+ * tables and align/matrix row breaks (fixed 2026-07).
+ * @public
+ */
+function getClientEquation(equationOriginal, app) {
+    return decodeURIComponent(equationOriginal
+        .split("%5C%5C%5C%5C%20").join(app.newlineCharacter)
+        .split("%5C%5C%5C%5C").join("%5C%5C"));
+}
+// REASON: equation URLs written before the encodeURIComponent migration were encoded
+// with escape(), whose %uXXXX (non-Latin-1) and lone Latin-1 %XX byte sequences
+// decodeURIComponent rejects with "URIError: URI malformed" — making every ancient
+// image containing a non-ASCII character underenderable. unescape() still decodes
+// both legacy forms, so fall back to it on failure and recover the equation. Never
+// try unescape() first: it mangles valid modern UTF-8 pairs (%C3%A9 -> "Ã©").
+function decodeEquationComponent(encoded) {
+    try {
+        return decodeURIComponent(encoded);
+    }
+    catch (err) {
+        console.log("decodeEquationComponent: legacy escape()-era encoding; decoding with unescape().", String(err));
+        return unescape(encoded);
+    }
+}
+/**
  * returns the deencoded equation as a string.
  */
 function deEncode(equation, app) {
     reportDeltaTime(269);
     debugLog("Equation to derender", equation);
     // First decode pass - handles newlines, #, and +
-    var decoded = decodeURIComponent(getCustomEncode(getFilenameEncode(equation, 1), 1, 0, app));
+    var decoded = decodeEquationComponent(getCustomEncode(getFilenameEncode(equation, 1), 1, 0, app));
     debugLog("First decode pass", decoded);
     reportDeltaTime(274);
     // Second pass - handles quotes and other characters
@@ -409,6 +442,14 @@ function renderEquation(equationOriginal, renderOptionsOrQuality, legacyDelim, l
             debugLog("Cached equation: " + renderer[2] + renderer[6] + equation);
             reportDeltaTime(453);
             debugLog("Fetching ", renderer[1], " and ", renderer[2] + renderer[6] + equation);
+            // REASON: GET-based renderers 400 (Codecogs) or hang on very long URLs, and the
+            // sidebar could only guess "the equation was too long". Skip the fetch with an
+            // explicit error so the log states the real cause (with the equation, via the
+            // catch below) and the next renderer is tried. 8000 chars is beyond every
+            // observed successful render but under the point where Codecogs starts 400ing.
+            if (renderer[1].length > 8000) {
+                throw new Error("Equation URL too long for " + rendererType + " (" + renderer[1].length + " chars > 8000)");
+            }
             var _createFileInCache = UrlFetchApp.fetch(renderer[2] + renderer[6] + equation);
             // simulates putting text into text renderer => creates link for cached image which is accessed later
             // needed for codecogs to generate equation properly, need to figure out which other renderers need this. to test, use align* equations.

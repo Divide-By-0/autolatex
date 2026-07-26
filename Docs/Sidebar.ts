@@ -16,6 +16,7 @@ interface Window {
 
 declare const MathJax: MathJaxApi;
 
+
 // animation timeout ID
 // REASON: setInterval return type conflicts between DOM lib (number) and Node @types
 // (Timeout) when both are in scope during Sidebar.ts compilation. The runtime contract is
@@ -217,139 +218,19 @@ window.addEventListener("unhandledrejection", event => {
   reportMathJaxClientError("window.unhandledrejection", event.reason);
 });
 
-// REASON: MathJax rendering is CPU-heavy (SVG → canvas → PNG). Running too many in parallel
-// (e.g. 1000 equations) would freeze the browser. This limits concurrency to a safe number.
-const MATHJAX_CONCURRENCY_LIMIT = 4;
-
-async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let nextIndex = 0;
-
-  async function worker() {
-    while (nextIndex < items.length) {
-      const index = nextIndex++;
-      results[index] = await fn(items[index]);
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
-  return results;
-}
-
-/**
-* Convert a Blob to a base64 string for transmission to the server
-*
-* @param blob the blob to convert
-* @returns
-*/
-async function blobToB64(blob: Blob) {
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = err => reject(err);
-    reader.readAsDataURL(blob);
-  });
-  return dataUrl.substring(dataUrl.indexOf(",") + 1); // strip dataurl header
-}
-
-function hasNonAsciiText(value: string) {
-  return value.split("").some(char => char.charCodeAt(0) > 0x7F);
-}
+// Shared MathJax machinery (mapWithConcurrency, blobToB64, MATHJAX_CONCURRENCY_LIMIT,
+// renderEquationPngWithMathJax) is implemented in ../SidebarMathJaxShared.ts and
+// injected ahead of this file by BuildSidebarJS.js.
+declare const MATHJAX_CONCURRENCY_LIMIT: number;
+declare function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]>;
+declare function blobToB64(blob: Blob): Promise<string>;
+declare function renderEquationPngWithMathJax(
+  renderOptions: { equation: string; inline: boolean; size: number; r: number; g: number; b: number; bgR?: number; bgG?: number; bgB?: number },
+  reportError?: (context: string, error: unknown, extra?: Record<string, unknown>) => void
+): Promise<Blob>;
 
 async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRenderOptions) {
-  const equationForMathJax = renderOptions.equation
-    .replace(/\\mbox\s*\{([^{}]*)\}/g, (match, text) => hasNonAsciiText(text) ? `\\text{${text}}` : match)
-    .replace(/\\mathrm\s*\{([^{}]*)\}/g, (match, text) => hasNonAsciiText(text) ? `\\text{${text}}` : match);
-  // apply RGB coloring + newline becomes \\
-  const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + equationForMathJax.replace(/\n|\r|\r\n/g, "\\\\");
-  
-  if (!window.MathJax || typeof window.MathJax.tex2svgPromise !== "function") {
-    throw new Error("MathJax is still loading. Please try again in a moment.");
-  }
-
-  const result = await window.MathJax.tex2svgPromise(equation, {
-    display: !renderOptions.inline,
-    em: renderOptions.size
-  });
-  const svg: SVGSVGElement = result.querySelector("svg");
-  if (!svg) {
-    throw new Error("MathJax did not return an SVG element.");
-  }
-
-  // REASON: tex2svgPromise RESOLVES on TeX syntax errors, embedding the message as a
-  // red merror node — so bad equations were silently inserted as error images with no
-  // trace in Cloud Logging. Report them (with the equation) so they're debuggable;
-  // rendering still proceeds so one bad equation can't fail the whole batch.
-  const mjxErrorNode = svg.querySelector("[data-mjx-error]");
-  if (mjxErrorNode) {
-    reportMathJaxClientError("mathjax.merror", mjxErrorNode.getAttribute("data-mjx-error") || "unknown TeX error", {
-      equation: renderOptions.equation,
-    });
-  }
-  
-  // calculate width and height by rendering this svg with the specified font size
-  svg.classList.add("mathjax-equation-hidden-render");
-  svg.style.fontSize = `${renderOptions.size}px`;
-  document.body.appendChild(svg);
-  
-  // scale up by 5
-  const width = svg.clientWidth * 5;
-  const height = svg.clientHeight * 5;
-  
-  svg.remove();
-  
-  // set width/height explicitly on the svg
-  svg.setAttribute("width", `${width}px`);
-  svg.setAttribute("height", `${height}px`);
-  
-  const styles = MathJax.svgStylesheet().outerHTML;
-  
-  // create a URL for this svg
-  const svgString = new XMLSerializer().serializeToString(svg)
-    // inject css
-    .replace("</svg>", styles + "</svg>");
-  const svgBlob = new Blob([svgString], {
-    type: "image/svg+xml"
-  });
-  
-  const svgUrl = URL.createObjectURL(svgBlob);
-  
-  const canvas = typeof OffscreenCanvas !== "undefined"
-    ? new OffscreenCanvas(width, height)
-    : Object.assign(document.createElement("canvas"), { width, height });
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    throw new Error("Could not initialize a 2D canvas for MathJax rendering.");
-  }
-  
-  try {
-    // load this svg on an image
-    const svgImage = new Image(width, height);
-    svgImage.src = svgUrl;
-    // wait for load
-    await new Promise<void>((resolve, reject) => {
-      svgImage.onload = () => resolve();
-      svgImage.onerror = err => reject(err);
-    });
-    
-    // draw onto canvas
-    ctx.drawImage(svgImage, 0, 0);
-    
-    const pngBlob = "convertToBlob" in canvas
-      ? await canvas.convertToBlob({ type: "image/png" })
-      : await new Promise<Blob>((resolve, reject) => {
-          (canvas as HTMLCanvasElement).toBlob(blob => {
-            if (blob) {
-              resolve(blob);
-            } else {
-              reject(new Error("Could not convert MathJax canvas to a PNG blob."));
-            }
-          }, "image/png");
-        });
-    return pngBlob;
-  } finally {
-    URL.revokeObjectURL(svgUrl);
-  }
+  return renderEquationPngWithMathJax(renderOptions, reportMathJaxClientError);
 }
 
 /**
@@ -769,17 +650,14 @@ function editText(){
   const {sizeRaw, delimiter, renderer} = getCurrentSettings();
   google.script.run
     .withSuccessHandler(
-      function(returnSuccess: AutoLatexCommon.DerenderResult, element) {
+      function(returnSuccess: { result: AutoLatexCommon.DerenderResult, successCount: number }, element) {
         if (isStaleSidebarAction(actionId)) {
           return;
         }
         $("#loading").html('');
         restoreIdleSidebarControls();
-        $("#loading").html("Status: " + "1"             + " equation replaced.");
-        if(returnSuccess < 0)
-          $("#loading").html("Status: " + "No"          + " equations replaced.");
 
-        switch (returnSuccess) {
+        switch (returnSuccess.result) {
           case AutoLatexCommon.DerenderResult.InvalidUrl:
             showError("Cannot retrieve equation. The equation may not have been rendered by Auto-LaTeX.", "Status: Error, please ensure link is still on equation.");
             break;
@@ -795,15 +673,17 @@ function editText(){
             // (b) the cursor is inside an unsupported element type (table cell, footnote,
             // table of contents). Both used to crash with a TypeError. The combined hint
             // covers both without forcing a new enum value.
-            showError("Place your cursor immediately before the rendered equation image and try again. De-render only works on equations rendered by Auto-LaTeX inside a normal paragraph - it doesn't work inside tables, footnotes, or on plain text.", "Status: Error, please move cursor before the equation image.");
+            showError("Click (or select) the rendered equation image and try again \u2014 selection-based de-render works anywhere, including headers and footers. The cursor-before-the-image flow only works in normal paragraphs.", "Status: Error, please select the equation image.");
             break;
           case AutoLatexCommon.DerenderResult.CursorNotFound:
             showError("Cannot find a cursor/equation. Please click before an equation.", "Status: Error, please move cursor before equation.");
             break;
           case AutoLatexCommon.DerenderResult.Success:
-          default:
-            $("#loading").html("Status: 1 equation de-rendered.");
+          default: {
+            const n = returnSuccess.successCount || 1;
+            $("#loading").html(`Status: ${n} equation${n === 1 ? "" : "s"} de-rendered.`);
             break;
+          }
         }
       })
     .withFailureHandler(
