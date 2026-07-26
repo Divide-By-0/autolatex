@@ -24,7 +24,7 @@ function generateWorkspaceHomepage(status: string, error: string | null = null) 
     ["All supported delimiters", "all"],
     ["\\[ ... \\]", "["],
     ["\\( ... \\)", "("],
-    ["$ ... $", "$"]
+    ["$ ... $ (Beta)", "$"]
   ];
   const renderers = [
     ["Automatic", "auto"],

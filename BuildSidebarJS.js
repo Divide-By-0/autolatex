@@ -16,14 +16,19 @@ function getMathJaxSetup() {
   //   - caption becomes a centered text row inside the gathered; label/centering/
   //     noindent/vspace are display no-ops
   //   - toprule/midrule/bottomrule cover ChatGPT-generated booktabs tables
-  // configmacros (which reads 'macros'/'environments') is already in tex-svg's default
-  // package set, so only 'color' needs explicit loading. Verified against MathJax 3.2.2:
-  // both user-reported table equations plus align/plain-math regressions all render.
+  // configmacros (which reads 'macros'/'environments') and textmacros are already in
+  // tex-svg's default package set, so only 'color' needs explicit loading.
+  //
+  // REASON: do not put the combined `tex-svg` component in loader.load. The component
+  // is loaded directly by the script tag below; asking the loader to load it again
+  // re-enters configuration startup. In the Google Apps Script iframe that exposed
+  // MathJax v3's `Package` getter collision and aborted every client render before
+  // tex2svgPromise existed.
   return `
 window.MathJax = {
-  loader: { load: ['tex-svg', '[tex]/color', '[tex]/textmacros'] },
+  loader: { load: ['[tex]/color'] },
   tex: {
-    packages: { '[+]': ['color', 'textmacros'] },
+    packages: { '[+]': ['color'] },
     macros: {
       centering: '',
       caption: ['\\\\\\\\[0.5em]\\\\text{#1}', 1],
@@ -58,14 +63,19 @@ window.MathJax = {
 function wrapJS(sidebarJS, includeMathJax, sharedJS) {
   const mathJaxSetup = includeMathJax ? getMathJaxSetup() : "";
   const sharedBlock = includeMathJax && sharedJS ? `\n${sharedJS}` : "";
-  // REASON: crossorigin="anonymous" makes the browser surface real error
+  // REASON: pin MathJax 4.1.2. The prior v3 bundle crashes during configuration in
+  // Google Apps Script sidebars with "Cannot set property Package ... which has only
+  // a getter"; MathJax v4 fixes that exact getter-only configuration bug. Keep the
+  // version explicit so a future CDN release cannot silently change rendering.
+  //
+  // crossorigin="anonymous" makes the browser surface real error
   // details (message/filename/lineno/stack) in window.onerror for this
   // cross-origin script. Without it, every MathJax failure inside the sandboxed
   // iframe gets reported as the opaque "Script error." — which dominated our
   // Cloud Logging signal. The jsdelivr CDN serves the proper
   // Access-Control-Allow-Origin header, so this is purely an opt-in on our side.
   const mathJaxScript = includeMathJax
-    ? '\n<script type="text/javascript" id="MathJax-script" async crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>'
+    ? '\n<script type="text/javascript" id="MathJax-script" async crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/mathjax@4.1.2/tex-svg.js"></script>'
     : "";
 
   return `<script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>

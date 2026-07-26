@@ -69,7 +69,7 @@
             <!-- $("#instructions").val("<p>Replace all valid mathematical equations with high-quality LaTeX rendered images. Remember to wrap all latex in \[ ... \]. </p>"); -->
             <option value="\[">\[ ... \]</option>
             <option value="(">\( ... \)</option>
-            <option value="$">$ ... $</option>
+            <option value="$">$ ... $ (Beta)</option>
           </select>
           <br />
           <label id="select_size">Preferred Renderer:<br /></label>
@@ -88,7 +88,7 @@
           <div id="button-container" class="button-container">
             <div id="render" class="button-row">
               <button id="insert-text" class="action button-in-row1">Render Equations</button>
-              <button id="edit-text" class="button-in-row1">De-render Equation</button>
+              <button id="edit-text" class="button-in-row1">De-render Selection</button>
             </div>
             <div id="derenderall" class="button-row">
               <button id="undo-all" class="create button-in-row2">De-render All Equations</button>
@@ -104,7 +104,7 @@
           <label id="tips">
             <br />
             <b>Tips:</b> <br />
-            • Click a rendered equation (or select several) and click "De-render Equation" to convert back to code. <br />
+            • Click a rendered equation (or select several) and click "De-render Selection" to convert back to code. <br />
             • Use shift+enter instead of enter for newlines in multi-line equations. Shift+enter auto-converts to \\.
             <!-- <br> • Click the sidebar and press ctrl+q to derender all equations. (beta) -->
             <br />

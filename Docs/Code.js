@@ -416,7 +416,17 @@ function tryAutoMergeMultiParagraphEquation(body, startParaIdx, endParaIdx) {
         // \r (\u000D) is the in-text representation of a Shift+Enter line break in Docs.
         // See newlineCharacter comment near top of this file.
         startPara.editAsText().appendText("\r" + text);
-        nextPara.removeFromParent();
+        // REASON: Docs forbids deleting the final paragraph of a section — removeFromParent()
+        // throws "Can't remove the last paragraph in a document section" (seen in prod when an
+        // equation spans into the section's last paragraph). Its text is already merged into
+        // startPara, so when nextPara is that final paragraph, empty it in place instead of
+        // removing it; a trailing empty paragraph is harmless and the scan re-runs from scratch.
+        if (startParaIdx + 1 >= body.getNumChildren() - 1) {
+            nextPara.clear();
+        }
+        else {
+            nextPara.removeFromParent();
+        }
     }
     return { success: true, reason: "Merged " + numToMerge + " paragraph(s) with line breaks" };
 }
@@ -469,7 +479,12 @@ function findPos(index, renderOptions, prevFailedStartElemIfIsEmpty) {
     var placeHolderEnd = endElement.getEndOffsetInclusive(); //text between placeHolderStart and placeHolderEnd will be permanently deleted
     Common.debugLog(renderOptions.delim[2], " single escaped delimiters ", placeHolderEnd - placeHolderStart, " characters long");
     Common.reportDeltaTime(214);
-    if (placeHolderEnd - placeHolderStart == 2.0) {
+    // REASON: an empty equation contains only its opening and closing delimiters, so its
+    // inclusive span is exactly 2 * delimiter length. The legacy hard-coded `== 2` treated
+    // every one-character single-dollar equation (`$1$`, `$x$`) as empty, while failing to
+    // recognize actually-empty `$$$$`, `\[\]`, and `\(\)` pairs.
+    var isEmptyEquation = placeHolderEnd - placeHolderStart + 1 === 2 * renderOptions.delim[4];
+    if (isEmptyEquation) {
         // empty equation
         console.log("Empty equation! In index " + index + " and offset " + placeHolderStart);
         return {
@@ -477,6 +492,26 @@ function findPos(index, renderOptions, prevFailedStartElemIfIsEmpty) {
             nextStartElement: endElement,
             status: 3 /* DocsEquationRenderStatus.EmptyEquation */
         };
+    }
+    // REASON: an equation whose content is only whitespace (most commonly a lone "\r" from an
+    // empty `$...$` that straddled a paragraph break and got auto-merged with a line break) is
+    // not a real equation. The old `== 2` empty check happened to skip it because its content was
+    // one character; the delimiter-length check above intentionally no longer does, so it now
+    // slips through to MathJax, which renders a 0x0 SVG and crashes convertToBlob with
+    // "OffscreenCanvas ... size is zero" (seen in prod as "MathJax failed to render 1 equation").
+    // Skip it exactly like an empty equation, resuming past the closing delimiter (endElement) so
+    // the scan can't re-pair the closing delimiter with the next equation. Only when start and end
+    // share a Text element (the common case); cross-element spans fall through to the logic below.
+    if (startElement.getElement() === endElement.getElement()) {
+        var between = startElement.getElement().asText().getText()
+            .substring(placeHolderStart + renderOptions.delim[4], placeHolderEnd - renderOptions.delim[4] + 1);
+        if (between.trim() === "") {
+            console.log("Whitespace-only equation skipped. In index " + index + " and offset " + placeHolderStart);
+            return {
+                nextStartElement: endElement,
+                status: 3 /* DocsEquationRenderStatus.EmptyEquation */
+            };
+        }
     }
     // REASON: The legacy assumption was "start and end delimiters live in the same Text element."
     // That breaks in two real-world cases:
@@ -562,7 +597,11 @@ function findPos(index, renderOptions, prevFailedStartElemIfIsEmpty) {
             }
         };
     }
-    return findEquationAndPlaceImage(range.getRangeElements()[0], renderOptions);
+    // REASON: pass endElement (the closing-delimiter findText result) so the deferred MathJax path
+    // can resume the scan strictly after this equation. Resuming from the equation span instead
+    // (which starts at the opening delimiter) makes findText re-find this equation's own closing
+    // `$` and pair it forward — see buildClientRenderResponse.
+    return findEquationAndPlaceImage(range.getRangeElements()[0], renderOptions, endElement);
 }
 function getEquation(rangeElement, delimiters) {
     var textElement = rangeElement.getElement().asText();
@@ -670,7 +709,7 @@ function clientRenderComplete(equations) {
  * @param {integer} defaultSize  The default/previous size of the text, in case size is null.
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
-function findEquationAndPlaceImage(startElement, renderOptions) {
+function findEquationAndPlaceImage(startElement, renderOptions, endElement) {
     Common.reportDeltaTime(411);
     Common.reportDeltaTime(413);
     // GET VARIABLES
@@ -701,7 +740,7 @@ function findEquationAndPlaceImage(startElement, renderOptions) {
     // REASON: Explicit MathJax and Automatic both render on the client first.
     // Automatic falls back to server renderers from the sidebar only if MathJax fails.
     if (renderOptions.clientRender || renderOptions.autoFallbackToClient) {
-        return buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size);
+        return buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size, endElement);
     }
     var _b = renderEquationWithCompatibility(equationOriginal, coloredRenderOptions), resp = _b.resp, renderer = _b.renderer, worked = _b.worked, authorizationError = _b.authorizationError;
     if (worked > Common.capableRenderers || !resp || !renderer)
@@ -716,7 +755,7 @@ function findEquationAndPlaceImage(startElement, renderOptions) {
     Common.reportDeltaTime(517);
     return placeImage(startElement, resp.getBlob(), renderer, equationOriginal, size, renderOptions.delim);
 }
-function buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size) {
+function buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size, endElement) {
     // REASON: reEncode turns each in-equation newline into an encoded four-backslash
     // marker ("%5C%5C%5C%5C%20"), which must collapse back to a "\\ " row break for the
     // client renderer. Collapse it in ENCODED space (exactly like the Codecogs path in
@@ -731,14 +770,27 @@ function buildClientRenderResponse(textElement, startElement, equationOriginal, 
     var range = doc.newRange()
         .addElement(textElement, startElement.getStartOffset(), startElement.getEndOffsetInclusive())
         .build();
-    // save this range for later
+    // save this range for later (used by clientRenderComplete to place the image)
     var namedRange = doc.addNamedRange("ale-equation-range", range);
+    // REASON: resume the scan from the CLOSING-delimiter findText result (endElement), NOT from a
+    // range derived from the equation span. findText(pattern, from) continues from `from`'s
+    // position; for single-`$` the opening and closing delimiter are the same character, so if we
+    // resume from anything anchored at the OPENING delimiter (the whole-equation range, the
+    // named-range span — both start at the opening `$`), findText re-finds this equation's own
+    // CLOSING `$` and pairs it forward with the next equation's opening `$`, rendering the prose
+    // between (and crossing paragraph breaks -> spurious "multi-paragraph" merges). endElement is a
+    // genuine findText result positioned at the closing delimiter, so the next search lands strictly
+    // after it on the following equation's opening delimiter. This mirrors the empty-equation path,
+    // which already resumes from endElement. (A previous fix re-read the named range's span here and
+    // passed the unit tests, but that span still starts at the opening `$`, so it mis-paired in
+    // production — confirmed via the Cloud Logging trace for a live user.)
+    var nextStartElement = endElement;
     var clientRenderOptions = __assign(__assign({}, coloredRenderOptions), { size: size, rangeId: namedRange.getId(), equation: clientEquation, equationLinkEncoded: encodeURIComponent(clientEquation) });
     return {
         status: 2 /* DocsEquationRenderStatus.ClientRender */,
         equationSize: size,
         clientRenderOptions: clientRenderOptions,
-        nextStartElement: startElement
+        nextStartElement: nextStartElement
     };
 }
 /**

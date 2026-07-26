@@ -16,7 +16,16 @@ interface DerenderData {
   origURL: string,
   size: number,
   width: number,
-  height: number
+  height: number,
+  // Space-fill bookkeeping: when the equation's source text was replaced by `spaceCount` spaces in
+  // its original box (so surrounding prose held its position), derender restores the equation into
+  // that gap instead of spawning a new text box. Absent on images placed the old (clear) way.
+  slideId?: string,
+  pageElementId?: string,
+  tableRow?: number,
+  tableColumn?: number,
+  spaceCount?: number,
+  spaceStart?: number
 }
 
 interface SlidesClientRenderOptions {
@@ -37,6 +46,18 @@ interface SlidesClientRenderOptions {
   tableColumn?: number;
   rangeStart: number;
   rangeEnd: number;
+  // Estimated position of the equation inside its text box, in points from the box's top-left.
+  // Computed at scan time (drift-free) so placement can put each image roughly where its source
+  // text was instead of stacking them all in the box corner. posLineHeight lets placement anchor
+  // the image's bottom to the text line's bottom. See estimateInBoxOffset.
+  posDx?: number;
+  posDy?: number;
+  posLineHeight?: number;
+  // The equation's font family (server) so the sidebar can load it and measure it.
+  fontFamily?: string;
+  // Per-glyph advance widths in em, measured on the CLIENT with Canvas measureText for fontFamily
+  // (exact for any font). The server cursor uses these instead of the hardcoded Arial table.
+  glyphWidths?: { [ch: string]: number };
 }
 
 interface SlidesClientRenderPayload {
@@ -374,7 +395,10 @@ function findAllClientRenderEquationsInTextElement(
     const endOffset = Math.min(textRange.getLength(), equationOffsets.end + renderOptions.delim[4]);
     const equationRange = textRange.getRange(equationOffsets.start, endOffset);
     const equationOriginal = getEquation(equationRange, renderOptions.delim);
-    if (!equationOriginal) {
+    // REASON: skip empty AND whitespace-only equations (e.g. a lone line break). They typeset
+    // to a 0x0 SVG and would crash the shared client canvas renderer. Mirrors the Docs findPos
+    // guard so no surface sends a blank equation to MathJax.
+    if (!equationOriginal || equationOriginal.trim() === "") {
       searchOffset = equationOffsets.end + renderOptions.delim[4];
       continue;
     }
@@ -382,12 +406,17 @@ function findAllClientRenderEquationsInTextElement(
     const size = getSlideTextSize(renderOptions.size, renderOptions.defaultSize, equationRange);
     const colorRangeEnd = Math.max(equationOffsets.start + renderOptions.delim[4], equationOffsets.end);
     const textColor = getRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
-    const bgColor = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum) || getShapeFillRgbColor(textElement, slideNum);
+    const bgColorRaw = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum) || getShapeFillRgbColor(textElement, slideNum);
+    // REASON: a white / near-white background should render as transparent, not a baked white box.
+    // Otherwise every equation on a normal white slide gets an opaque rectangle. Only a genuinely
+    // colored highlight/fill is baked in.
+    const bgColor = bgColorRaw && !isNearWhite(bgColorRaw) ? bgColorRaw : null;
     // REASON: collapse the encoded four-backslash newline marker in ENCODED space
     // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
     // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
     // \hline" after a derender round-trip) and align/matrix row breaks.
     const clientEquation = Common.getClientEquation(equationOriginal, IntegratedApp);
+    const eqOffset = estimateInBoxOffset(renderedText.substring(0, equationOffsets.start), size, getBounds(textElement).width - 2 * BOX_LEFT_INSET_PT);
 
     results.push({
       size,
@@ -404,7 +433,11 @@ function findAllClientRenderEquationsInTextElement(
       tableRow: isTableCell(textElement) ? textElement.getRowIndex() : undefined,
       tableColumn: isTableCell(textElement) ? textElement.getColumnIndex() : undefined,
       rangeStart: equationOffsets.start,
-      rangeEnd: endOffset
+      rangeEnd: endOffset,
+      posDx: eqOffset.dx,
+      posDy: eqOffset.dy,
+      posLineHeight: eqOffset.lineHeight,
+      fontFamily: getFontFamilySafe(equationRange)
     });
 
     searchOffset = equationOffsets.end + renderOptions.delim[4];
@@ -765,7 +798,10 @@ function findClientRenderEquationInTextElement(
     const endOffset = Math.min(textRange.getLength(), equationOffsets.end + renderOptions.delim[4]);
     const equationRange = textRange.getRange(equationOffsets.start, endOffset);
     const equationOriginal = getEquation(equationRange, renderOptions.delim);
-    if (!equationOriginal) {
+    // REASON: skip empty AND whitespace-only equations (e.g. a lone line break). They typeset
+    // to a 0x0 SVG and would crash the shared client canvas renderer. Mirrors the Docs findPos
+    // guard so no surface sends a blank equation to MathJax.
+    if (!equationOriginal || equationOriginal.trim() === "") {
       searchOffset = equationOffsets.end + renderOptions.delim[4];
       continue;
     }
@@ -773,12 +809,17 @@ function findClientRenderEquationInTextElement(
     const size = getSlideTextSize(renderOptions.size, renderOptions.defaultSize, equationRange);
     const colorRangeEnd = Math.max(equationOffsets.start + renderOptions.delim[4], equationOffsets.end);
     const textColor = getRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
-    const bgColor = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum) || getShapeFillRgbColor(textElement, slideNum);
+    const bgColorRaw = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum) || getShapeFillRgbColor(textElement, slideNum);
+    // REASON: a white / near-white background should render as transparent, not a baked white box.
+    // Otherwise every equation on a normal white slide gets an opaque rectangle. Only a genuinely
+    // colored highlight/fill is baked in.
+    const bgColor = bgColorRaw && !isNearWhite(bgColorRaw) ? bgColorRaw : null;
     // REASON: collapse the encoded four-backslash newline marker in ENCODED space
     // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
     // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
     // \hline" after a derender round-trip) and align/matrix row breaks.
     const clientEquation = Common.getClientEquation(equationOriginal, IntegratedApp);
+    const eqOffset = estimateInBoxOffset(renderedText.substring(0, equationOffsets.start), size, getBounds(textElement).width - 2 * BOX_LEFT_INSET_PT);
 
     return {
       size,
@@ -795,7 +836,11 @@ function findClientRenderEquationInTextElement(
       tableRow: isTableCell(textElement) ? textElement.getRowIndex() : undefined,
       tableColumn: isTableCell(textElement) ? textElement.getColumnIndex() : undefined,
       rangeStart: equationOffsets.start,
-      rangeEnd: endOffset
+      rangeEnd: endOffset,
+      posDx: eqOffset.dx,
+      posDy: eqOffset.dy,
+      posLineHeight: eqOffset.lineHeight,
+      fontFamily: getFontFamilySafe(equationRange)
     };
   }
 
@@ -852,29 +897,151 @@ function getBounds(textElement: PageElement) {
   }
 }
 
-function resize(eqnImage: GoogleAppsScript.Slides.Image, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment, bounds: ReturnType<typeof getBounds>) {
+// REASON: Slides exposes no geometry for a substring inside a text box, so estimate where an
+// equation sits from the text that PRECEDES it, returning an (dx, dy) offset in points from the
+// box's top-left. Heuristic: average glyph advance ~= 0.5 * fontSize and line height ~= 1.2 *
+// fontSize, with a soft wrap when a visual line exceeds the box width. Graceful degradation
+// matching the requested fallback chain:
+//   - full inline: font size + box width known -> real column (dx) and wrapped line (dy)
+//   - line-aware:  no font metrics -> dx pinned to 0 (box edge), dy counts explicit breaks only
+//   - side-by-side/corner: empty prefix -> (0, 0); the placement step keeps alignment there and
+//     the slide-edge clamp guarantees nothing lands off-page (overlap is acceptable, off-slide is
+//     not).
+const LINE_HEIGHT_RATIO = 1.2; // line height as a fraction of the font size
+// Slides' default text-box insets (padding) — text starts this far from the box's top-left, so
+// the estimated position must too. Not readable via Apps Script, so use the product defaults.
+// Nudged slightly below the geometric 0.1" left inset to absorb the rendered image's own left
+// bearing (a small whitespace margin baked into the PNG), which read as "a tad too far right".
+const BOX_LEFT_INSET_PT = 5.4;
+const BOX_TOP_INSET_PT = 3.6;  // 0.05"
+// REASON: per-glyph advance widths in em (fraction of font size), Helvetica/Arial metrics — the
+// default Slides font. A flat 0.5 overestimated narrow glyphs (i, l, spaces, punctuation) and
+// pushed images right of their text. Digits are 0.556; anything unlisted falls back to 0.5.
+const GLYPH_WIDTHS_EM: { [ch: string]: number } = {
+  " ": 0.278, "!": 0.278, "\"": 0.355, "#": 0.556, "$": 0.556, "%": 0.889, "&": 0.667, "'": 0.191,
+  "(": 0.333, ")": 0.333, "*": 0.389, "+": 0.584, ",": 0.278, "-": 0.333, ".": 0.278, "/": 0.278,
+  ":": 0.278, ";": 0.278, "<": 0.584, "=": 0.584, ">": 0.584, "?": 0.556, "@": 1.015,
+  "A": 0.667, "B": 0.667, "C": 0.722, "D": 0.722, "E": 0.667, "F": 0.611, "G": 0.778, "H": 0.722,
+  "I": 0.278, "J": 0.5, "K": 0.667, "L": 0.556, "M": 0.833, "N": 0.722, "O": 0.778, "P": 0.667,
+  "Q": 0.778, "R": 0.722, "S": 0.667, "T": 0.611, "U": 0.722, "V": 0.667, "W": 0.944, "X": 0.667,
+  "Y": 0.667, "Z": 0.611, "[": 0.278, "\\": 0.278, "]": 0.278, "^": 0.469, "_": 0.556, "`": 0.333,
+  "a": 0.556, "b": 0.556, "c": 0.5, "d": 0.556, "e": 0.556, "f": 0.278, "g": 0.556, "h": 0.556,
+  "i": 0.222, "j": 0.222, "k": 0.5, "l": 0.222, "m": 0.833, "n": 0.556, "o": 0.556, "p": 0.556,
+  "q": 0.556, "r": 0.333, "s": 0.5, "t": 0.278, "u": 0.556, "v": 0.5, "w": 0.722, "x": 0.5,
+  "y": 0.5, "z": 0.5, "{": 0.334, "|": 0.26, "}": 0.334, "~": 0.584
+};
+function glyphWidthEm(ch: string, table?: { [ch: string]: number }) {
+  // Prefer the client-measured table for the actual font; fall back to the Arial estimate.
+  if (table && ch in table) return table[ch];
+  if (ch in GLYPH_WIDTHS_EM) return GLYPH_WIDTHS_EM[ch];
+  if (ch >= "0" && ch <= "9") return 0.556;
+  return 0.5;
+}
+
+// A white / near-white background is treated as "no background" (transparent equation image).
+function isNearWhite(rgb: number[]) {
+  return rgb[0] >= 250 && rgb[1] >= 250 && rgb[2] >= 250;
+}
+
+// The font family of a text range, for the sidebar to load + measure. Null for mixed runs.
+function getFontFamilySafe(range: GoogleAppsScript.Slides.TextRange): string | undefined {
+  try {
+    return range.getTextStyle().getFontFamily() || undefined;
+  } catch (e) {
+    return undefined;
+  }
+}
+
+// REASON: Slides exposes no geometry for a substring inside a text box, so estimate where an
+// equation sits from the text that PRECEDES it, returning an (dx, dy) offset in points from the
+// box's top-left content origin. Sum real per-glyph advances for the horizontal position and
+// soft-wrap when the running width exceeds the box's usable width. Graceful degradation:
+//   - full inline: font size known -> real glyph-width column (dx) and wrapped line (dy)
+//   - line-aware:  no font size -> dx = 0 (box edge), dy counts explicit breaks only
+//   - box start:   empty prefix -> (0, 0); placement keeps alignment there.
+function estimateInBoxOffset(textBefore: string, fontSizePt: number, usableWidthPt: number) {
+  const hasMetrics = typeof fontSizePt === "number" && fontSizePt > 0;
+  const fontPt = hasMetrics ? fontSizePt : 12;
+  const lineH = Math.max(1, fontPt * LINE_HEIGHT_RATIO);
+  const maxLineWidth = hasMetrics && usableWidthPt > 0 ? usableWidthPt : Infinity;
+
+  let line = 0;
+  let x = 0; // width accumulated on the current line, in points
+  for (let i = 0; i < textBefore.length; i++) {
+    const ch = textBefore.charAt(i);
+    // \n \r \v are all in-text line breaks across Docs/Slides.
+    if (ch === "\n" || ch === "\r" || ch === "\v") {
+      line++;
+      x = 0;
+      continue;
+    }
+    const w = glyphWidthEm(ch) * fontPt;
+    if (x + w > maxLineWidth) { // soft wrap
+      line++;
+      x = 0;
+    }
+    x += w;
+  }
+  // dy is the TOP of the equation's line; lineHeight lets placement anchor the image's BOTTOM to
+  // the line's bottom (equations should sit on the text baseline, not float at the line top).
+  return { dx: hasMetrics ? x : 0, dy: line * lineH, lineHeight: lineH };
+}
+
+function resize(eqnImage: GoogleAppsScript.Slides.Image, scale: number, horizontalAlignment: GoogleAppsScript.Slides.ParagraphAlignment, verticalAlignment: GoogleAppsScript.Slides.ContentAlignment, bounds: ReturnType<typeof getBounds>, posOffset?: { dx: number; dy: number; lineHeight: number }) {
   const width = eqnImage.getWidth() * scale;
   const height = eqnImage.getHeight() * scale;
-  
+
   eqnImage.setWidth(width);
   eqnImage.setHeight(height);
-  
-  // try to match the horizontal alignment of the text
-  if (horizontalAlignment === SlidesApp.ParagraphAlignment.END)
-    // subtracting the image width emulates "setRight"
-    eqnImage.setLeft(bounds.x + bounds.width - width); 
-  else if (horizontalAlignment === SlidesApp.ParagraphAlignment.CENTER)
-    eqnImage.setLeft(bounds.x + bounds.width / 2 - width / 2);
-  else
-    eqnImage.setLeft(bounds.x);
 
-  // match the vertical alignment
-  if (verticalAlignment === SlidesApp.ContentAlignment.TOP)
-    eqnImage.setTop(bounds.y);
-  else if (verticalAlignment === SlidesApp.ContentAlignment.BOTTOM)
-    eqnImage.setTop(bounds.y + bounds.height - height); // emulating "setBottom"
-  else
-    eqnImage.setTop(bounds.y + bounds.height / 2 - height / 2);
+  let left: number;
+  let top: number;
+  // Primary: the estimated inline position, but only when the equation actually has preceding
+  // content (dx>0 or dy>0). An equation at the very start of the box keeps the alignment-based
+  // placement below, which is correct for a single centered/right-aligned equation.
+  if (posOffset && (posOffset.dx > 0 || posOffset.dy > 0)) {
+    // add the box insets so the image lines up with the text's actual content origin, not the
+    // box's outer corner (this is what pulled images up-and-right of their source text).
+    left = bounds.x + BOX_LEFT_INSET_PT + posOffset.dx;
+    // anchor the image's BOTTOM to the bottom of the equation's text line (posDy is the line top,
+    // so posDy + lineHeight is the line bottom). Anchoring the top made tall equation images float
+    // above the text; equations should sit on the baseline.
+    top = bounds.y + BOX_TOP_INSET_PT + posOffset.dy + posOffset.lineHeight - height;
+  } else {
+    // horizontal: match the text alignment (box-edge / line-aware fallback)
+    if (horizontalAlignment === SlidesApp.ParagraphAlignment.END)
+      left = bounds.x + bounds.width - width; // subtracting the image width emulates "setRight"
+    else if (horizontalAlignment === SlidesApp.ParagraphAlignment.CENTER)
+      left = bounds.x + bounds.width / 2 - width / 2;
+    else
+      left = bounds.x;
+
+    // match the vertical alignment
+    if (verticalAlignment === SlidesApp.ContentAlignment.TOP)
+      top = bounds.y;
+    else if (verticalAlignment === SlidesApp.ContentAlignment.BOTTOM)
+      top = bounds.y + bounds.height - height; // emulating "setBottom"
+    else
+      top = bounds.y + bounds.height / 2 - height / 2;
+  }
+
+  // REASON: keep the image inside its own text box first — the inline estimate can overshoot the
+  // box's right/bottom edge (long lines, imperfect wrap estimate). Clamp so the image's far edge
+  // stays within the box; if the image is wider/taller than the box, pin it to the box's top-left
+  // (it will overflow, but starts in the right place).
+  left = Math.max(bounds.x, Math.min(left, bounds.x + bounds.width - width));
+  top = Math.max(bounds.y, Math.min(top, bounds.y + bounds.height - height));
+
+  // REASON: then the outer safety — never let the image run off the right/bottom edge of the
+  // slide. Overlapping another element is acceptable, disappearing off-slide is not (user spec).
+  const presentation = SlidesApp.getActivePresentation();
+  const slideWidth = presentation.getPageWidth();
+  const slideHeight = presentation.getPageHeight();
+  left = Math.max(0, Math.min(left, slideWidth - width));
+  top = Math.max(0, Math.min(top, slideHeight - height));
+
+  eqnImage.setLeft(left);
+  eqnImage.setTop(top);
 }
 
 /**
@@ -1030,68 +1197,151 @@ function resolveClientRenderTarget(options: SlidesClientRenderOptions) {
   };
 }
 
-function placeClientRenderedImage(
-  slide: GoogleAppsScript.Slides.Slide,
-  textElement: PageElement,
-  text: GoogleAppsScript.Slides.TextRange,
-  renderOptions: SlidesClientRenderOptions,
-  renderedEquation: GoogleAppsScript.Base.Blob
+// Advance a { x, line } cursor over plain text using per-glyph widths (points), wrapping when the
+// running line width exceeds usableWidthPt. Mutates the cursor.
+function advanceCursorOverText(cursor: { x: number; line: number }, text: string, fontPt: number, usableWidthPt: number, table?: { [ch: string]: number }) {
+  const maxWidth = usableWidthPt > 0 ? usableWidthPt : Infinity;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charAt(i);
+    if (ch === "\n" || ch === "\r" || ch === "\v") {
+      cursor.line++;
+      cursor.x = 0;
+      continue;
+    }
+    const w = glyphWidthEm(ch, table) * fontPt;
+    if (cursor.x + w > maxWidth && cursor.x > 0) {
+      cursor.line++;
+      cursor.x = 0;
+    }
+    cursor.x += w;
+  }
+}
+
+type SlidesRenderTarget = NonNullable<ReturnType<typeof resolveClientRenderTarget>>;
+
+// Place one rendered image at an explicit box-relative (dx, dy) position, then replace the
+// equation's live source range with spaces whose combined width matches the image, so the
+// surrounding prose keeps its place and the image slots into the gap. Records the box + space
+// count in the image title so derender can restore the equation into that exact gap.
+function placeImageAndFillSpaces(
+  target: SlidesRenderTarget,
+  options: SlidesClientRenderOptions,
+  bounds: ReturnType<typeof getBounds>,
+  equationRange: GoogleAppsScript.Slides.TextRange,
+  liveStart: number,
+  renderedEquation: GoogleAppsScript.Base.Blob,
+  pos: { dx: number; dy: number; lineHeight: number }
 ) {
-  const equationRange = text.getRange(1, text.getLength());
   const textHorizontalAlignment = equationRange
     .getParagraphs()[0]
     .getRange()
     .getParagraphStyle()
     .getParagraphAlignment();
-  const textVerticalAlignment = textElement.getContentAlignment();
-  const bounds = getBounds(textElement);
+  const textVerticalAlignment = target.textElement.getContentAlignment();
   const mathJaxRenderer = Common.getRenderer(Common.rendererIds.MATHJAX);
+
+  const image = target.slide.insertImage(renderedEquation);
+  resize(image, 1.26 / 5, textHorizontalAlignment, textVerticalAlignment, bounds, pos);
+  const imageWidth = image.getWidth();
+
+  // Replace the equation source with spaces sized to the rendered image (real font's space width).
+  const fontPt = options.size > 0 ? options.size : 12;
+  const spaceWidthPt = glyphWidthEm(" ", options.glyphWidths) * fontPt;
+  const spaceCount = Math.max(1, Math.round(imageWidth / spaceWidthPt));
+  equationRange.clear();
+  target.textRange.insertText(liveStart, " ".repeat(spaceCount));
+
   const derenderData: DerenderData = {
-    red: renderOptions.r,
-    green: renderOptions.g,
-    blue: renderOptions.b,
-    origURL: mathJaxRenderer[2] + renderOptions.equationLinkEncoded + "#" + renderOptions.delim[6],
-    size: renderOptions.size,
+    red: options.r,
+    green: options.g,
+    blue: options.b,
+    origURL: mathJaxRenderer[2] + options.equationLinkEncoded + "#" + options.delim[6],
+    size: options.size,
     width: bounds.width,
-    height: bounds.height
+    height: bounds.height,
+    slideId: options.slideId,
+    pageElementId: options.pageElementId,
+    tableRow: options.tableRow,
+    tableColumn: options.tableColumn,
+    spaceCount,
+    spaceStart: liveStart
   };
-
-  text.clear();
-
-  const image = slide.insertImage(renderedEquation);
-  resize(image, 1.26 / 5, textHorizontalAlignment, textVerticalAlignment, bounds);
-
-  if (
-    !isTableCell(textElement) &&
-    textElement.getShapeType() === SlidesApp.ShapeType.TEXT_BOX &&
-    textElement.getText().asRenderedString().length <= 1
-  ) {
-    textElement.remove();
-  }
-
   image.setTitle(JSON.stringify(derenderData));
+
+  return { imageWidth, spaceCount };
 }
 
 function clientRenderComplete(equations: SlidesClientRenderPayload[]): SlidesEquationRenderResult {
   let successCount = 0;
 
+  // REASON: lay out each box's equations left-to-right with a running cursor that advances by each
+  // equation's RENDERED image width (not its wider source-text width). That is what stops a second
+  // equation on the same line from drifting right, and it's why we group by box first.
+  const boxes = new Map<string, SlidesClientRenderPayload[]>();
   for (const equation of equations) {
+    const o = equation.options;
+    const key = [o.slideId, o.pageElementId, o.tableRow ?? "", o.tableColumn ?? ""].join("|");
+    const list = boxes.get(key);
+    if (list) list.push(equation);
+    else boxes.set(key, [equation]);
+  }
+
+  for (const group of Array.from(boxes.values())) {
     try {
-      const target = resolveClientRenderTarget(equation.options);
+      const target = resolveClientRenderTarget(group[0].options);
       if (!target) {
-        console.warn("MathJax Slides target disappeared before completion:", equation.options.pageElementId);
+        console.warn("MathJax Slides target disappeared before completion:", group[0].options.pageElementId);
         continue;
       }
+      const originalText = target.textRange.asRenderedString();
+      const bounds = getBounds(target.textElement);
+      const usableWidth = bounds.width - 2 * BOX_LEFT_INSET_PT;
 
-      const safeEnd = Math.min(target.textRange.getLength(), equation.options.rangeEnd);
-      if (equation.options.rangeStart >= safeEnd) {
-        continue;
+      group.sort((a, b) => a.options.rangeStart - b.options.rangeStart);
+
+      const cursor = { x: 0, line: 0 };
+      let prevEnd = 0;   // end offset (in ORIGINAL text) of the previous equation
+      let liveDelta = 0; // running length change to the box text as equations become spaces
+
+      for (const equation of group) {
+        const o = equation.options;
+        const fontPt = o.size > 0 ? o.size : 12;
+        const lineHeight = fontPt * LINE_HEIGHT_RATIO;
+
+        // walk the plain text between the previous equation and this one (real font widths)
+        advanceCursorOverText(cursor, originalText.substring(prevEnd, o.rangeStart), fontPt, usableWidth, o.glyphWidths);
+        const posDx = cursor.x;
+        const posDy = cursor.line * lineHeight;
+
+        // the equation's live range shifts as earlier equations in this box become spaces
+        const liveStart = o.rangeStart + liveDelta;
+        const liveEnd = Math.min(target.textRange.getLength(), o.rangeEnd + liveDelta);
+        if (liveStart >= liveEnd) {
+          prevEnd = o.rangeEnd;
+          continue;
+        }
+
+        const equationRange = target.textRange.getRange(liveStart, liveEnd);
+        const blob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
+        const placed = placeImageAndFillSpaces(target, o, bounds, equationRange, liveStart, blob, { dx: posDx, dy: posDy, lineHeight });
+
+        // REASON: advance by the GAP width (the spaces the box actually lays out), not the image
+        // width. If these differ, the next equation's image lands off its own gap (first-right /
+        // second-left). Keeping the cursor in lockstep with the box's spaces keeps them aligned.
+        cursor.x += placed.spaceCount * (glyphWidthEm(" ", o.glyphWidths) * fontPt);
+        liveDelta += placed.spaceCount - (o.rangeEnd - o.rangeStart); // net length change from the space-fill
+        prevEnd = o.rangeEnd;
+        successCount++;
       }
 
-      const equationRange = target.textRange.getRange(equation.options.rangeStart, safeEnd);
-      const equationBlob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
-      placeClientRenderedImage(target.slide, target.textElement, equationRange, equation.options, equationBlob);
-      successCount++;
+      // REASON: a box that is now only whitespace held nothing but equations — drop it so the image
+      // floats on its own (the old behavior) instead of leaving an empty spaces box behind. Boxes
+      // that still contain prose keep their placeholder spaces so derender can restore inline.
+      if (!isTableCell(target.textElement) &&
+          target.textElement.getShapeType() === SlidesApp.ShapeType.TEXT_BOX &&
+          target.textRange.asRenderedString().trim().length === 0) {
+        target.textElement.remove();
+      }
     } catch (error) {
       console.error("MathJax Slides client render completion failed.", error);
     }
@@ -1219,8 +1469,6 @@ function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoL
   // these _should_ be numbers already, but I'm leaving this here in case it's needed for backwards compatibility
   const colors = [red, green, blue].map((x: string | number) => Number(x)) as [number, number, number];
 
-  image.remove();
-
   Common.debugLog("image description is: " + origURL);
 
   if (!origURL) return Common.DerenderResult.NullUrl;
@@ -1244,22 +1492,98 @@ function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoL
     return Common.DerenderResult.EmptyEquation;
   }
 
-  // insert textbox
+  const equationText = delim[0] + origEq + delim[1];
+
+  // Preferred path: images placed with the space-fill recorded their original box + the number of
+  // placeholder spaces. Restore the equation into that exact gap so the surrounding prose is
+  // untouched, then remove the image.
+  if (derenderData.spaceCount && derenderData.pageElementId) {
+    if (restoreEquationIntoSpaceGap(slide, derenderData, equationText, colors, size)) {
+      image.remove();
+      return Common.DerenderResult.Success;
+    }
+    // gap not found (box deleted or spaces edited) — fall through to the legacy new-box path
+  }
+
+  image.remove();
+
+  // Legacy / fallback path: drop a fresh text box at the image's former position.
   const shape = slide.insertShape(SlidesApp.ShapeType.TEXT_BOX, positionX, positionY, width, height);
   const textRange = shape.getText();
 
   const textStyle = textRange
-    .insertText(0, delim[0] + origEq + delim[1])
+    .insertText(0, equationText)
     .getTextStyle()
     .setForegroundColor(...colors);
 
   if (size) {
     textStyle.setFontSize(size);
   }
-  
+
   Common.debugLog("textRange: " + textRange + "type: " + typeof textRange);
-  
+
   return Common.DerenderResult.Success;
+}
+
+// Find where to reinsert an equation over its placeholder spaces. The `count` placeholder spaces
+// usually merge with the prose spaces that surrounded the equation, so the visible run is >= count.
+// Return the offset (within a run of >= count spaces) closest to the recorded hint, or -1.
+function findSpaceGap(boxText: string, count: number, hint: number): number {
+  let best = -1;
+  let bestDist = Infinity;
+  let i = 0;
+  while (i < boxText.length) {
+    if (boxText.charAt(i) === " ") {
+      let j = i;
+      while (j < boxText.length && boxText.charAt(j) === " ") j++;
+      if (j - i >= count) {
+        // any offset in [i, j-count] can host the `count`-space placeholder; pick nearest the hint
+        const candidate = Math.max(i, Math.min(hint, j - count));
+        const dist = Math.abs(candidate - hint);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = candidate;
+        }
+      }
+      i = j;
+    } else {
+      i++;
+    }
+  }
+  return best;
+}
+
+// Resolve the TextRange of the box (shape or table cell) recorded in a space-fill DerenderData.
+function resolveDerenderBoxTextRange(slide: GoogleAppsScript.Slides.Page | GoogleAppsScript.Slides.Slide, derenderData: DerenderData) {
+  if (!derenderData.pageElementId) return null;
+  const pageElement = findPageElementById(slide.getPageElements(), derenderData.pageElementId);
+  if (!pageElement) return null;
+  if (derenderData.tableRow != null && derenderData.tableColumn != null) {
+    if (pageElement.getPageElementType() !== SlidesApp.PageElementType.TABLE) return null;
+    return pageElement.asTable().getCell(derenderData.tableRow, derenderData.tableColumn).getText();
+  }
+  if (pageElement.getPageElementType() !== SlidesApp.PageElementType.SHAPE) return null;
+  return pageElement.asShape().getText();
+}
+
+// Replace the placeholder space gap in the original box with the equation text. Returns false if
+// the box or a matching gap can't be found, so the caller can fall back to a new text box.
+function restoreEquationIntoSpaceGap(
+  slide: GoogleAppsScript.Slides.Page | GoogleAppsScript.Slides.Slide,
+  derenderData: DerenderData,
+  equationText: string,
+  colors: [number, number, number],
+  size: number
+): boolean {
+  const boxTextRange = resolveDerenderBoxTextRange(slide, derenderData);
+  if (!boxTextRange) return false;
+  const gapStart = findSpaceGap(boxTextRange.asRenderedString(), derenderData.spaceCount as number, derenderData.spaceStart ?? 0);
+  if (gapStart < 0) return false;
+
+  boxTextRange.getRange(gapStart, gapStart + (derenderData.spaceCount as number)).clear();
+  const textStyle = boxTextRange.insertText(gapStart, equationText).getTextStyle().setForegroundColor(...colors);
+  if (size) textStyle.setFontSize(size);
+  return true;
 }
 
 /**
