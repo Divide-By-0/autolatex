@@ -17,7 +17,13 @@ function getMathJaxSetup() {
   //     noindent/vspace are display no-ops
   //   - toprule/midrule/bottomrule cover ChatGPT-generated booktabs tables
   // configmacros (which reads 'macros'/'environments') and textmacros are already in
-  // tex-svg's default package set, so only 'color' needs explicit loading.
+  // tex-svg's default package set.
+  // REASON: preload the small upgreek, gensymb, and boldsymbol extensions. Their
+  // combined transfer is only a few kilobytes, and keeping the package list explicit
+  // is simpler and more deterministic than maintaining a second command-to-package
+  // autoload map. `bm` remains a compatibility spelling for the common LaTeX
+  // package's primary command; it delegates to MathJax's boldsymbol implementation
+  // rather than pretending to implement the full bm package.
   //
   // REASON: do not put the combined `tex-svg` component in loader.load. The component
   // is loaded directly by the script tag below; asking the loader to load it again
@@ -26,10 +32,11 @@ function getMathJaxSetup() {
   // tex2svgPromise existed.
   return `
 window.MathJax = {
-  loader: { load: ['[tex]/color'] },
+  loader: { load: ['[tex]/color', '[tex]/upgreek', '[tex]/gensymb', '[tex]/boldsymbol'] },
   tex: {
-    packages: { '[+]': ['color'] },
+    packages: { '[+]': ['color', 'upgreek', 'gensymb', 'boldsymbol'] },
     macros: {
+      bm: ['\\\\boldsymbol{#1}', 1],
       centering: '',
       caption: ['\\\\\\\\[0.5em]\\\\text{#1}', 1],
       label: ['', 1],

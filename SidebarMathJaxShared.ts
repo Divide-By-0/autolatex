@@ -159,6 +159,78 @@ function hasNonAsciiText(value: string) {
   return value.split("").some(char => char.charCodeAt(0) > 0x7F);
 }
 
+// REASON: Common.reEncode converts pasted Unicode Greek to unicode-math's
+// per-character \mup... commands so the legacy server renderers preserve upright
+// glyphs. MathJax 4 supports the base \mathup command but not those \mup... names.
+// They appeared 225 times in a 5,000-entry production error sample (not always as
+// the primary error), so translate the exact generated command set for the client
+// renderer. Unknown \mup... commands stay untouched instead of being guessed.
+const UNICODE_MATH_UPRIGHT_GREEK: Record<string, string> = {
+  mupAlpha: "Α",
+  mupBeta: "Β",
+  mupGamma: "Γ",
+  mupDelta: "Δ",
+  mupEpsilon: "Ε",
+  mupZeta: "Ζ",
+  mupEta: "Η",
+  mupTheta: "Θ",
+  mupIota: "Ι",
+  mupKappa: "Κ",
+  mupLambda: "Λ",
+  mupMu: "Μ",
+  mupNu: "Ν",
+  mupXi: "Ξ",
+  mupOmicron: "Ο",
+  mupPi: "Π",
+  mupRho: "Ρ",
+  mupSigma: "Σ",
+  mupTau: "Τ",
+  mupUpsilon: "Υ",
+  mupPhi: "Φ",
+  mupChi: "Χ",
+  mupPsi: "Ψ",
+  mupOmega: "Ω",
+  mupalpha: "α",
+  mupbeta: "β",
+  mupgamma: "γ",
+  mupdelta: "δ",
+  mupvarepsilon: "ε",
+  mupzeta: "ζ",
+  mupeta: "η",
+  muptheta: "θ",
+  mupiota: "ι",
+  mupkappa: "κ",
+  muplambda: "λ",
+  mupmu: "μ",
+  mupnu: "ν",
+  mupxi: "ξ",
+  mupomicron: "ο",
+  muppi: "π",
+  muprho: "ρ",
+  mupvarsigma: "ς",
+  mupsigma: "σ",
+  muptau: "τ",
+  mupupsilon: "υ",
+  mupvarphi: "φ",
+  mupchi: "χ",
+  muppsi: "ψ",
+  mupomega: "ω",
+  mupvartheta: "ϑ",
+  mupphi: "ϕ",
+  mupvarpi: "ϖ",
+  mupvarkappa: "ϰ",
+  mupvarrho: "ϱ",
+  mupvarTheta: "ϴ",
+  mupepsilon: "ϵ"
+};
+
+function normalizeUnicodeMathUprightGreek(equation: string) {
+  return equation.replace(/\\mup[A-Za-z]+/g, command => {
+    const symbol = UNICODE_MATH_UPRIGHT_GREEK[command.substring(1)];
+    return symbol ? `\\mathup{${symbol}}` : command;
+  });
+}
+
 // REASON: Newlines inside a \begin{...}\end{...} environment are cosmetic (pasted
 // LaTeX formatting) — turning them into \\ injected phantom rows into bmatrix/align
 // content. Depth-0 newlines adjacent to \begin/\end are also layout (pasted LaTeX
@@ -209,7 +281,7 @@ function replaceNewlinesDepthAware(equation: string) {
  * Returns the equation body (color prefix is applied by the caller).
  */
 function prepareEquationForMathJax(rawEquation: string) {
-  const preprocessed = rawEquation
+  const preprocessed = normalizeUnicodeMathUprightGreek(rawEquation)
     // Unicode text inside \mbox/\mathrm needs \text for MathJax's textmacros path
     .replace(/\\mbox\s*\{([^{}]*)\}/g, (match, text) => hasNonAsciiText(text) ? `\\text{${text}}` : match)
     .replace(/\\mathrm\s*\{([^{}]*)\}/g, (match, text) => hasNonAsciiText(text) ? `\\text{${text}}` : match)
