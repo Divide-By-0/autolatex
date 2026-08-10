@@ -1092,15 +1092,16 @@ function placeImage(startElement: GoogleAppsScript.Document.RangeElement, render
   let endLimit = endOffsetInclusive;
   if (text.length - 1 < endLimit) endLimit = text.length - 1;
   textCopy.asText().editAsText().deleteText(0, endLimit); // the copy only has the stuff after the equation
-  Common.reportDeltaTime(522);
-  textElement.editAsText().deleteText(startOffset, text.length - 1); // from the original, yeet the equation and all the remaining text so its possible to insert the equation (try moving after the equation insertion?)
-  Common.reportDeltaTime(526);
-  
-  // try inserting twice
+  let insertedImage: GoogleAppsScript.Document.InlineImage | null = null;
+
+  // REASON: Insert the rendered image before deleting any source text. Google Docs can
+  // transiently reject insertInlineImage with "Service unavailable: Documents"; the old
+  // order had already deleted the equation and its trailing text by then, so both retries
+  // left the user's LaTeX missing. Keeping the source intact makes insertion failures safe.
   for (let tryNum = 1; tryNum <= 2; tryNum++) {
     try {
-      paragraph.insertInlineImage(childIndex + 1, renderedEquation); // TODO ISSUE: sometimes fails because it times out and yeets
-      return repairImage(paragraph, childIndex, size, renderer, delim, textCopy, renderedEquation, equation);
+      insertedImage = paragraph.insertInlineImage(childIndex + 1, renderedEquation);
+      break;
     } catch (err) {
       console.log(`Could not insert image try ${tryNum}`);
       console.error(err);
@@ -1109,10 +1110,34 @@ function placeImage(startElement: GoogleAppsScript.Document.RangeElement, render
     }
   }
 
-  throw new Error("Could not insert image at childindex!");
+  if (!insertedImage) {
+    throw new Error("Could not insert image at childindex; original LaTeX was preserved.");
+  }
+
+  let result: DocsEquationRenderResult;
+  try {
+    // Configure and size the image while the source equation is still present. Only
+    // commit the text replacement after all image-side operations have succeeded.
+    result = repairImage(paragraph, childIndex, size, renderer, delim, renderedEquation, equation);
+  } catch (err) {
+    // REASON: If image configuration fails, remove the uncommitted image and leave the
+    // original equation untouched. Cleanup itself is best-effort during a Docs outage.
+    try {
+      insertedImage.removeFromParent();
+    } catch (cleanupErr) {
+      console.error("Could not remove an uncommitted equation image.", cleanupErr);
+    }
+    throw err;
+  }
+
+  Common.reportDeltaTime(522);
+  textElement.editAsText().deleteText(startOffset, text.length - 1);
+  Common.reportDeltaTime(526);
+  if (textCopy.getText() != "") paragraph.insertText(childIndex + 2, textCopy); // reinsert text after the image, with all the formatting
+  return result;
 }
 
-function repairImage(paragraph: GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph, childIndex: number, size:  number, renderer: AutoLatexCommon.Renderer, delim: AutoLatexCommon.Delimiter, textCopy: GoogleAppsScript.Document.Text, resp: GoogleAppsScript.Base.Blob, equationOriginal: string): DocsEquationRenderResult {
+function repairImage(paragraph: GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph, childIndex: number, size:  number, renderer: AutoLatexCommon.Renderer, delim: AutoLatexCommon.Delimiter, resp: GoogleAppsScript.Base.Blob, equationOriginal: string): DocsEquationRenderResult {
   let attemptsToSetImageUrl = 3;
   Common.reportDeltaTime(552); // 3 seconds!! inserting an inline image takes time
   while (attemptsToSetImageUrl > 0) {
@@ -1133,7 +1158,6 @@ function repairImage(paragraph: GoogleAppsScript.Document.ListItem | GoogleAppsS
   }
 
   Common.reportDeltaTime(570);
-  if (textCopy.getText() != "") paragraph.insertText(childIndex + 2, textCopy); // reinsert deleted text after the image, with all the formatting
   const height = paragraph.getChild(childIndex + 1).asInlineImage().getHeight();
   const width = paragraph.getChild(childIndex + 1).asInlineImage().getWidth();
   Common.debugLog("Pre-fixing size, width, height: " + size + ", " + width + ", " + height); //only a '1' is rendered as a 100 height (as of 10/20/19, now it is fetched as 90 height). putting an equationrendertime here just doesnt work
