@@ -228,6 +228,7 @@ declare function renderEquationPngWithMathJax(
   renderOptions: { equation: string; inline: boolean; size: number; r: number; g: number; b: number; bgR?: number; bgG?: number; bgB?: number },
   reportError?: (context: string, error: unknown, extra?: Record<string, unknown>) => void
 ): Promise<Blob>;
+declare function getMathJaxTimeoutErrorMessage(errors: unknown[]): string | null;
 
 async function renderMathJaxEquation(renderOptions: AutoLatexCommon.ClientRenderOptions) {
   return renderEquationPngWithMathJax(renderOptions, reportMathJaxClientError);
@@ -424,7 +425,8 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
         });
         return {
           ok: false as const,
-          options: c
+          options: c,
+          error: err
         };
       }
     })
@@ -438,6 +440,9 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
         const failed = results
           .filter(result => !result.ok)
           .map(result => ({ options: result.options }));
+        const timeoutErrorMessage = getMathJaxTimeoutErrorMessage(
+          results.filter(result => !result.ok).map(result => result.error)
+        );
 
         // REASON: In auto mode, equations MathJax couldn't render fall back to the
         // server-side renderers (Texrendr/Sciweavers) per equation, so one bad
@@ -454,7 +459,11 @@ function successHandler({ lastStatus, successCount, clientEquations, autoFixedCo
               .withUserObject(element)
               .clientRenderFailed(failed);
           } else {
-            errorHandler(new Error(`MathJax failed to render ${failed.length} equation(s).`), element, actionId);
+            errorHandler(
+              new Error(timeoutErrorMessage || `MathJax failed to render ${failed.length} equation(s).`),
+              element,
+              actionId
+            );
           }
         };
 
