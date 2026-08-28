@@ -6,10 +6,13 @@
 // project-specific references — it must compile standalone and run inside every
 // sidebar's sandboxed iframe.
 
-declare const MathJax: {
-  tex2svgPromise(equation: string, options: { display: boolean, em: number }): Promise<Element>;
-  svgStylesheet(): Element;
-};
+interface SharedMathJaxApi {
+  tex2svgPromise?: (equation: string, options: { display: boolean, em: number }) => Promise<Element>;
+  svgStylesheet?: () => Element;
+  startup?: {
+    promise?: Promise<unknown>;
+  };
+}
 
 interface SharedMathJaxRenderOptions {
   equation: string;
@@ -26,6 +29,178 @@ interface SharedMathJaxRenderOptions {
 // REASON: MathJax rendering is CPU-heavy (SVG → canvas → PNG). Running too many in
 // parallel (e.g. 1000 equations) would freeze the browser; this caps concurrency.
 const MATHJAX_CONCURRENCY_LIMIT = 4;
+
+// REASON: MathJax 4's startup can leave its promise pending forever when a bundled
+// worker fails to load in the Apps Script iframe. Keep startup's deadline short
+// because it is independent of equation complexity. Typesetting and rasterization
+// get a separate equation-scaled budget below so a large, valid equation is not
+// mistaken for the startup deadlock.
+const MATHJAX_STARTUP_TIMEOUT_MS = 30000;
+const MATHJAX_EQUATION_BASE_TIMEOUT_MS = 120000;
+const MATHJAX_EQUATION_TIMEOUT_PER_CHARACTER_MS = 250;
+const MATHJAX_EQUATION_MAX_TIMEOUT_MS = 15 * 60 * 1000;
+let mathJaxStartupWait: Promise<SharedMathJaxApi> | null = null;
+let mathJaxReadyInstance: SharedMathJaxApi | null = null;
+
+class MathJaxTimeoutError extends Error {
+  constructor(readonly stage: string, readonly timeoutMs: number) {
+    super(`MathJax stopped responding while ${stage}. Try again, or use Automatic/Texrendr.`);
+    this.name = "MathJaxTimeoutError";
+  }
+}
+
+function getMathJaxTimeoutErrorMessage(errors: unknown[]) {
+  const timeoutError = errors.find(error =>
+    typeof error === "object"
+      && error !== null
+      && (error as { name?: string }).name === "MathJaxTimeoutError"
+  ) as { message?: string } | undefined;
+  return timeoutError?.message || null;
+}
+
+function getMathJaxEquationTimeoutMs(equationLength: number) {
+  const safeLength = Number.isFinite(equationLength) ? Math.max(0, equationLength) : 0;
+  return Math.min(
+    MATHJAX_EQUATION_MAX_TIMEOUT_MS,
+    MATHJAX_EQUATION_BASE_TIMEOUT_MS + safeLength * MATHJAX_EQUATION_TIMEOUT_PER_CHARACTER_MS
+  );
+}
+
+function withMathJaxTimeout<T>(promise: PromiseLike<T>, timeoutMs: number, stage: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timerId = window.setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new MathJaxTimeoutError(stage, timeoutMs));
+      }
+    }, timeoutMs);
+
+    Promise.resolve(promise).then(
+      value => {
+        if (!settled) {
+          settled = true;
+          window.clearTimeout(timerId);
+          resolve(value);
+        }
+      },
+      error => {
+        if (!settled) {
+          settled = true;
+          window.clearTimeout(timerId);
+          reject(error);
+        }
+      }
+    );
+  });
+}
+
+function isMathJaxReady(mathJaxGlobal: SharedMathJaxApi | undefined): mathJaxGlobal is Required<Pick<SharedMathJaxApi, "tex2svgPromise" | "svgStylesheet">> & SharedMathJaxApi {
+  return typeof mathJaxGlobal?.tex2svgPromise === "function"
+    && typeof mathJaxGlobal.svgStylesheet === "function";
+}
+
+function getMathJaxGlobal() {
+  return (window as unknown as { MathJax?: SharedMathJaxApi }).MathJax;
+}
+
+async function waitForMathJaxStartupInternal(timeoutMs: number): Promise<SharedMathJaxApi> {
+  const startedAt = Date.now();
+  let mathJaxGlobal = getMathJaxGlobal();
+  // REASON: tex2svgPromise/svgStylesheet may be installed before MathJax's startup
+  // promise settles. The SRE worker failure observed in production happens in that
+  // interval, so the presence of those methods alone must not bypass the startup
+  // deadline.
+  if (mathJaxGlobal?.startup?.promise) {
+    await withMathJaxTimeout(mathJaxGlobal.startup.promise, timeoutMs, "starting");
+    mathJaxGlobal = getMathJaxGlobal();
+    if (isMathJaxReady(mathJaxGlobal)) {
+      return mathJaxGlobal;
+    }
+  } else if (isMathJaxReady(mathJaxGlobal)) {
+    return mathJaxGlobal;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    let timerId: number | undefined;
+    let watchedScript: HTMLScriptElement | null = null;
+
+    const cleanup = () => {
+      if (timerId !== undefined) {
+        window.clearTimeout(timerId);
+      }
+      watchedScript?.removeEventListener("error", handleScriptError);
+    };
+    const handleScriptError = () => {
+      cleanup();
+      reject(new Error("MathJax could not be loaded from the CDN. Check your connection and try again."));
+    };
+    const checkStartup = () => {
+      const currentMathJax = getMathJaxGlobal();
+      if (isMathJaxReady(currentMathJax) || currentMathJax?.startup?.promise) {
+        cleanup();
+        resolve();
+        return;
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        cleanup();
+        reject(new MathJaxTimeoutError("starting", timeoutMs));
+        return;
+      }
+
+      // The async script tag appears after this shared inline script, so it may not
+      // exist on the first check. Attach the network-error listener once it does.
+      const script = document.getElementById("MathJax-script") as HTMLScriptElement | null;
+      if (script && script !== watchedScript) {
+        watchedScript?.removeEventListener("error", handleScriptError);
+        watchedScript = script;
+        watchedScript.addEventListener("error", handleScriptError, { once: true });
+      }
+      timerId = window.setTimeout(checkStartup, 25);
+    };
+
+    checkStartup();
+  });
+  mathJaxGlobal = getMathJaxGlobal();
+
+  if (mathJaxGlobal?.startup?.promise) {
+    const remainingMs = Math.max(1, timeoutMs - (Date.now() - startedAt));
+    await withMathJaxTimeout(mathJaxGlobal.startup.promise, remainingMs, "starting");
+  }
+
+  mathJaxGlobal = getMathJaxGlobal();
+  if (!isMathJaxReady(mathJaxGlobal)) {
+    throw new Error("MathJax finished loading without its SVG renderer. Reload the sidebar and try again.");
+  }
+  return mathJaxGlobal;
+}
+
+function waitForMathJaxStartup(timeoutMs = MATHJAX_STARTUP_TIMEOUT_MS): Promise<SharedMathJaxApi> {
+  const readyMathJax = getMathJaxGlobal();
+  if (isMathJaxReady(readyMathJax) && readyMathJax === mathJaxReadyInstance) {
+    return Promise.resolve(readyMathJax);
+  }
+  if (!mathJaxStartupWait) {
+    const startupWait = waitForMathJaxStartupInternal(timeoutMs);
+    mathJaxStartupWait = startupWait;
+    const clearStartupWait = () => {
+      if (mathJaxStartupWait === startupWait) {
+        mathJaxStartupWait = null;
+      }
+    };
+    // REASON: cache only the in-flight startup wait. A failed worker can poison its
+    // promise, so retries must be allowed to observe a newly loaded instance; a
+    // successfully confirmed instance gets its own fast path above.
+    void startupWait.then(
+      ready => {
+        mathJaxReadyInstance = ready;
+        clearStartupWait();
+      },
+      clearStartupWait
+    );
+  }
+  return mathJaxStartupWait;
+}
 
 async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length);
@@ -65,16 +240,18 @@ async function renderEquationPngWithMathJax(
 ): Promise<Blob> {
   const equationBody = prepareEquationForMathJax(renderOptions.equation);
   const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + equationBody;
+  const equationTimeoutMs = getMathJaxEquationTimeoutMs(renderOptions.equation.length);
 
-  const mathJaxGlobal = (window as unknown as { MathJax?: typeof MathJax }).MathJax;
-  if (!mathJaxGlobal || typeof mathJaxGlobal.tex2svgPromise !== "function") {
-    throw new Error("MathJax is still loading. Please try again in a moment.");
-  }
+  const mathJaxGlobal = await waitForMathJaxStartup();
 
-  const result = await mathJaxGlobal.tex2svgPromise(equation, {
-    display: !renderOptions.inline,
-    em: renderOptions.size
-  });
+  const result = await withMathJaxTimeout(
+    mathJaxGlobal.tex2svgPromise(equation, {
+      display: !renderOptions.inline,
+      em: renderOptions.size
+    }),
+    equationTimeoutMs,
+    "typesetting an equation"
+  );
   const svg = result.querySelector("svg") as SVGSVGElement | null;
   if (!svg) {
     throw new Error("MathJax did not return an SVG element.");
@@ -131,17 +308,18 @@ async function renderEquationPngWithMathJax(
 
   try {
     const svgImage = new Image(width, height);
-    svgImage.src = svgUrl;
-    await new Promise<void>((resolve, reject) => {
+    const imageLoad = new Promise<void>((resolve, reject) => {
       svgImage.onload = () => resolve();
       svgImage.onerror = err => reject(err);
     });
+    svgImage.src = svgUrl;
+    await withMathJaxTimeout(imageLoad, equationTimeoutMs, "loading the rendered equation image");
 
     ctx.drawImage(svgImage, 0, 0);
 
-    return "convertToBlob" in canvas
-      ? await (canvas as OffscreenCanvas).convertToBlob({ type: "image/png" })
-      : await new Promise<Blob>((resolve, reject) => {
+    const pngExport = "convertToBlob" in canvas
+      ? (canvas as OffscreenCanvas).convertToBlob({ type: "image/png" })
+      : new Promise<Blob>((resolve, reject) => {
           (canvas as HTMLCanvasElement).toBlob(blob => {
             if (blob) {
               resolve(blob);
@@ -150,6 +328,7 @@ async function renderEquationPngWithMathJax(
             }
           }, "image/png");
         });
+    return await withMathJaxTimeout(pngExport, equationTimeoutMs, "creating the equation image");
   } finally {
     URL.revokeObjectURL(svgUrl);
   }
