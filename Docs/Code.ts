@@ -32,13 +32,34 @@ interface EquationFailureDetail {
   hint: string;    // user-facing remediation suggestion
 }
 
+interface DocsClientRenderOptions extends AutoLatexCommon.ClientRenderOptions {
+  customAltText?: string;
+}
+
+interface DocsRenderOptions extends AutoLatexCommon.RenderOptions {
+  useCustomAltText: boolean;
+}
+
 interface DocsEquationRenderResult {
   status: DocsEquationRenderStatus,
   equationSize?: number,
   nextStartElement?: GoogleAppsScript.Document.RangeElement,
-  clientRenderOptions?: AutoLatexCommon.ClientRenderOptions,
+  clientRenderOptions?: DocsClientRenderOptions,
   failureDetail?: EquationFailureDetail
 }
+
+interface AccessibleAltTextSuffix {
+  description: string;
+  endOffsetInclusive: number;
+}
+
+const CUSTOM_ALT_TEXT_PREF_KEY = "customAltText";
+// REASON: The image description itself cannot tell us whether it came from an explicit
+// `_{...}` suffix or the automatic raw-LaTeX fallback. Keep a tiny flag in the existing
+// equation link so de-rendering restores only explicit suffixes. It is appended to the
+// existing fragment (never sent to the linked renderer) and stripped before
+// Common.derenderEquation sees the URL.
+const CUSTOM_ALT_TEXT_LINK_MARKER = "&ale_custom_alt=1";
 
 interface DocsIntegratedApp extends AutoLatexCommon.IntegratedApp {
   getActive(): GoogleAppsScript.Document.Document;
@@ -113,7 +134,14 @@ function showSidebar() {
  * @public
  */
 function getPrefs() {
-  return Common.getPrefs();
+  return {
+    ...Common.getPrefs(),
+    customAltText: getCustomAltTextPreference()
+  };
+}
+
+function getCustomAltTextPreference() {
+  return PropertiesService.getUserProperties().getProperty(CUSTOM_ALT_TEXT_PREF_KEY) === "true";
 }
 
 /**
@@ -189,8 +217,13 @@ function renderEquationWithCompatibility(equationOriginal: string, renderOptions
  * Constantly keep replacing latex till all are finished
  * @public
  */
-function replaceEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
+function replaceEquations(sizeRaw: string, delimiter: string, renderer: string = "auto", customAltText?: boolean) {
   const quality = 900;
+  // REASON: A sidebar already open during a deployment still calls the legacy three-argument
+  // signature. Keep that user's saved choice instead of silently switching the feature off.
+  const customAltTextEnabled = customAltText === undefined
+    ? getCustomAltTextPreference()
+    : customAltText;
   const clientRender = renderer === "mathjax";
   // REASON: In auto mode, start with MathJax on the client (never Codecogs first —
   // both because a Codecogs outage can hang UrlFetchApp long enough for
@@ -211,6 +244,9 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
   Common.reportDeltaTime(140);
   const delimiterSet = Common.getDelimiterSet(delimiter);
   Common.savePrefs(sizeRaw, delimiter, renderer);
+  if (customAltText !== undefined) {
+    PropertiesService.getUserProperties().setProperty(CUSTOM_ALT_TEXT_PREF_KEY, String(customAltText));
+  }
   let c = 0; //counter
   Common.reportDeltaTime(146);
   let body: GoogleAppsScript.Document.Document;
@@ -234,7 +270,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
   // Surfaced in the sidebar so the user knows we changed their doc on their behalf.
   let autoFixedCount = 0;
   
-  const baseRenderOptions: AutoLatexCommon.RenderOptions = {
+  const baseRenderOptions: DocsRenderOptions = {
     size,
     defaultSize: 11,
     inline: isInline,
@@ -242,6 +278,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     
     clientRender,
     autoFallbackToClient,
+    useCustomAltText: customAltTextEnabled,
 
     // TODO: color support for Docs
     r: 0,
@@ -252,7 +289,7 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
   // REASON: Collect equations that need client-side MathJax rendering instead of returning
   // on the first one. This allows the server scan to finish across the document, then send
   // ALL MathJax work to the client for parallel rendering.
-  const clientRenderBatch: AutoLatexCommon.ClientRenderOptions[] = [];
+  const clientRenderBatch: DocsClientRenderOptions[] = [];
 
   const childCount = body.getBody().getParent().getNumChildren();
   Common.reportDeltaTime(156);
@@ -549,7 +586,7 @@ function buildEquationSnippet(startElement: GoogleAppsScript.Document.RangeEleme
   }
 }
 
-function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, prevFailedStartElemIfIsEmpty = null): DocsEquationRenderResult {
+function findPos(index: number, renderOptions: DocsRenderOptions, prevFailedStartElemIfIsEmpty = null): DocsEquationRenderResult {
   Common.debugLog("Checking document section index # ", index);
   Common.reportDeltaTime(195);
   const docBody = getBodyFromIndex(index);
@@ -704,11 +741,71 @@ function findPos(index: number, renderOptions: AutoLatexCommon.RenderOptions, pr
     };
   }
 
-  // REASON: pass endElement (the closing-delimiter findText result) so the deferred MathJax path
+  const equationRangeElement = range.getRangeElements()[0];
+  let replacementRangeElement = equationRangeElement;
+  let nextStartElement = endElement;
+  let customAltText: string | undefined;
+  if (renderOptions.useCustomAltText) {
+    const suffix = getAccessibleAltTextSuffix(endElement);
+    if (suffix) {
+      const doc = getDocsApp().getActive();
+      replacementRangeElement = doc.newRange()
+        .addElement(
+          equationRangeElement.getElement().asText(),
+          equationRangeElement.getStartOffset(),
+          suffix.endOffsetInclusive
+        )
+        .build()
+        .getRangeElements()[0];
+      // REASON: while MathJax images render asynchronously, the suffix remains in the
+      // document. Resume after it so `$` or delimiter-like prose inside the description
+      // cannot be mistaken for another equation during the same scan.
+      nextStartElement = doc.newRange()
+        .addElement(equationRangeElement.getElement().asText(), suffix.endOffsetInclusive, suffix.endOffsetInclusive)
+        .build()
+        .getRangeElements()[0];
+      customAltText = suffix.description;
+    }
+  }
+
+  // REASON: pass endElement (or the end of an explicit alt-text suffix) so the deferred MathJax path
   // can resume the scan strictly after this equation. Resuming from the equation span instead
   // (which starts at the opening delimiter) makes findText re-find this equation's own closing
   // `$` and pair it forward — see buildClientRenderResponse.
-  return findEquationAndPlaceImage(range.getRangeElements()[0], renderOptions, endElement);
+  return findEquationAndPlaceImage(equationRangeElement, replacementRangeElement, renderOptions, nextStartElement, customAltText);
+}
+
+// Parse an immediately-adjacent `_{...}` accessibility suffix. Nested braces are allowed,
+// and escaped braces do not affect balancing. Malformed or empty suffixes are ordinary doc
+// text and are deliberately left untouched.
+function getAccessibleAltTextSuffix(endElement: GoogleAppsScript.Document.RangeElement): AccessibleAltTextSuffix | null {
+  const text = endElement.getElement().asText().getText();
+  const suffixStart = endElement.getEndOffsetInclusive() + 1;
+  if (text.substring(suffixStart, suffixStart + 2) !== "_{") {
+    return null;
+  }
+
+  let depth = 1;
+  for (let i = suffixStart + 2; i < text.length; i++) {
+    let slashCount = 0;
+    for (let j = i - 1; j >= 0 && text.charAt(j) === "\\"; j--) {
+      slashCount++;
+    }
+    const escaped = slashCount % 2 === 1;
+    const char = text.charAt(i);
+    if (!escaped && char === "{") {
+      depth++;
+    } else if (!escaped && char === "}") {
+      depth--;
+      if (depth === 0) {
+        const description = text.substring(suffixStart + 2, i);
+        return description.trim() === ""
+          ? null
+          : { description, endOffsetInclusive: i };
+      }
+    }
+  }
+  return null;
 }
 
 
@@ -759,7 +856,7 @@ function getSize(size: number, defaultSize: number, rangeElement: GoogleAppsScri
 * @param equations The rendered equations
 * @public
 */
-function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRenderOptions, renderedEquationB64: string }[]) {
+function clientRenderComplete(equations: { options: DocsClientRenderOptions, renderedEquationB64: string }[]) {
   const mathjaxRenderer = Common.getRenderer(Common.rendererIds.MATHJAX);
   let c = 0;
   let alreadyRenderedCount = 0;
@@ -793,7 +890,7 @@ function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRender
       }
 
       const equationBlob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
-      const result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equationLinkEncoded, equation.options.size, equation.options.delim);
+      const result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equationLinkEncoded, equation.options.size, equation.options.delim, equation.options.customAltText);
 
       if (result.status === DocsEquationRenderStatus.Success) {
         c++;
@@ -829,26 +926,32 @@ function clientRenderComplete(equations: { options: AutoLatexCommon.ClientRender
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
 
-function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.RangeElement,  renderOptions: AutoLatexCommon.RenderOptions, endElement: GoogleAppsScript.Document.RangeElement): DocsEquationRenderResult {
+function findEquationAndPlaceImage(
+  equationElement: GoogleAppsScript.Document.RangeElement,
+  replacementElement: GoogleAppsScript.Document.RangeElement,
+  renderOptions: DocsRenderOptions,
+  nextStartElement: GoogleAppsScript.Document.RangeElement,
+  customAltText?: string
+): DocsEquationRenderResult {
   Common.reportDeltaTime(411);
   Common.reportDeltaTime(413);
   // GET VARIABLES
-  const textElement = startElement.getElement().asText();
-  const size = getSize(renderOptions.size, renderOptions.defaultSize, startElement);
-  const equationOriginal = getEquation(startElement, renderOptions.delim);
+  const textElement = equationElement.getElement().asText();
+  const size = getSize(renderOptions.size, renderOptions.defaultSize, equationElement);
+  const equationOriginal = getEquation(equationElement, renderOptions.delim);
 
   if (equationOriginal == "") {
-    console.log("No equation but undetected start and end as ", startElement.getStartOffset(), " ", startElement.getEndOffsetInclusive());
+    console.log("No equation but undetected start and end as ", equationElement.getStartOffset(), " ", equationElement.getEndOffsetInclusive());
     
     return {
       status: DocsEquationRenderStatus.EmptyEquation,
       // TODO: this _should_ be impossible - empty equations should be detected in findPos()
-      nextStartElement: startElement
+      nextStartElement: equationElement
     };
   }
   
   // get font color
-  const colorHex = textElement.getForegroundColor(startElement.getStartOffset());
+  const colorHex = textElement.getForegroundColor(equationElement.getStartOffset());
   // Docs can return null or malformed colors in some edge cases. Fall back to black.
   const [r, g, b] = getRgbFromHex(colorHex);
 
@@ -857,7 +960,7 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
   // highlight band, making light-colored equations invisible. Sample the text's
   // background color so the client bakes it into the image. No highlight (null)
   // keeps the image transparent, exactly as before.
-  const bgHex = textElement.getBackgroundColor(startElement.getStartOffset());
+  const bgHex = textElement.getBackgroundColor(equationElement.getStartOffset());
   const bgColor = bgHex ? getRgbFromHex(bgHex) : null;
 
   // add color info to render options
@@ -870,7 +973,7 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
   // REASON: Explicit MathJax and Automatic both render on the client first.
   // Automatic falls back to server renderers from the sidebar only if MathJax fails.
   if (renderOptions.clientRender || renderOptions.autoFallbackToClient) {
-    return buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size, endElement);
+    return buildClientRenderResponse(textElement, replacementElement, equationOriginal, coloredRenderOptions, size, nextStartElement, customAltText);
   }
 
   let { resp, renderer, worked, authorizationError } = renderEquationWithCompatibility(equationOriginal, coloredRenderOptions);
@@ -884,16 +987,17 @@ function findEquationAndPlaceImage(startElement: GoogleAppsScript.Document.Range
   }
   Common.reportDeltaTime(517);
   
-  return placeImage(startElement, resp.getBlob(), renderer, equationOriginal, size, renderOptions.delim);
+  return placeImage(replacementElement, resp.getBlob(), renderer, equationOriginal, size, renderOptions.delim, customAltText);
 }
   
 function buildClientRenderResponse(
   textElement: GoogleAppsScript.Document.Text,
   startElement: GoogleAppsScript.Document.RangeElement,
   equationOriginal: string,
-  coloredRenderOptions: AutoLatexCommon.RenderOptions & { r: number; g: number; b: number },
+  coloredRenderOptions: DocsRenderOptions & { r: number; g: number; b: number },
   size: number,
-  endElement: GoogleAppsScript.Document.RangeElement
+  nextStartElement: GoogleAppsScript.Document.RangeElement,
+  customAltText?: string
 ): DocsEquationRenderResult {
   // REASON: reEncode turns each in-equation newline into an encoded four-backslash
   // marker ("%5C%5C%5C%5C%20"), which must collapse back to a "\\ " row break for the
@@ -911,7 +1015,7 @@ function buildClientRenderResponse(
     .build();
   // save this range for later (used by clientRenderComplete to place the image)
   const namedRange = doc.addNamedRange("ale-equation-range", range);
-  // REASON: resume the scan from the CLOSING-delimiter findText result (endElement), NOT from a
+  // REASON: resume the scan from the CLOSING-delimiter findText result (nextStartElement), NOT from a
   // range derived from the equation span. findText(pattern, from) continues from `from`'s
   // position; for single-`$` the opening and closing delimiter are the same character, so if we
   // resume from anything anchored at the OPENING delimiter (the whole-equation range, the
@@ -922,14 +1026,15 @@ function buildClientRenderResponse(
   // after it on the following equation's opening delimiter. This mirrors the empty-equation path,
   // which already resumes from endElement. (A previous fix re-read the named range's span here and
   // passed the unit tests, but that span still starts at the opening `$`, so it mis-paired in
-  // production — confirmed via the Cloud Logging trace for a live user.)
-  const nextStartElement = endElement;
-  const clientRenderOptions: AutoLatexCommon.ClientRenderOptions = {
+  // production — confirmed via the Cloud Logging trace for a live user.) When a custom alt-text
+  // suffix is present, findPos supplies a one-character range at the suffix end instead.
+  const clientRenderOptions: DocsClientRenderOptions = {
     ...coloredRenderOptions,
     size,
     rangeId: namedRange.getId(),
     equation: clientEquation,
-    equationLinkEncoded: encodeURIComponent(clientEquation)
+    equationLinkEncoded: encodeURIComponent(clientEquation),
+    ...(customAltText !== undefined ? { customAltText } : {})
   };
   return {
     status: DocsEquationRenderStatus.ClientRender,
@@ -944,7 +1049,7 @@ function buildClientRenderResponse(
  * Tries remaining server-side renderers (Texrendr, Sciweavers) for the failed equations.
  * @public
  */
-function clientRenderFailed(equations: { options: AutoLatexCommon.ClientRenderOptions }[]) {
+function clientRenderFailed(equations: { options: DocsClientRenderOptions }[]) {
   let c = 0;
   let authorizationFailure = false;
   console.log("MathJax client render failed, trying server fallback for", equations.length, "equations");
@@ -991,7 +1096,7 @@ function clientRenderFailed(equations: { options: AutoLatexCommon.ClientRenderOp
       }
 
       const equationBlob = fallbackResult.resp.getBlob();
-      const result = placeImage(rangeElements[0], equationBlob, fallbackResult.renderer, equationOriginal, equation.options.size, equation.options.delim);
+      const result = placeImage(rangeElements[0], equationBlob, fallbackResult.renderer, equationOriginal, equation.options.size, equation.options.delim, equation.options.customAltText);
 
       if (result.status === DocsEquationRenderStatus.Success) {
         c++;
@@ -1042,7 +1147,15 @@ function findInsertableAncestor(element: GoogleAppsScript.Document.Element) {
 // the message for the per-equation failure details.
 const reportedPlaceImageFailureTypes = new Set<string>();
 
-function placeImage(startElement: GoogleAppsScript.Document.RangeElement, renderedEquation: GoogleAppsScript.Base.Blob, renderer: AutoLatexCommon.Renderer, equation: string, size: number, delim: AutoLatexCommon.Delimiter) {
+function placeImage(
+  startElement: GoogleAppsScript.Document.RangeElement,
+  renderedEquation: GoogleAppsScript.Base.Blob,
+  renderer: AutoLatexCommon.Renderer,
+  equation: string,
+  size: number,
+  delim: AutoLatexCommon.Delimiter,
+  customAltText?: string
+) {
   // GET VARIABLES
   let textElement = startElement.getElement().asText();
   const startOffset = startElement.getStartOffset();
@@ -1118,7 +1231,7 @@ function placeImage(startElement: GoogleAppsScript.Document.RangeElement, render
   try {
     // Configure and size the image while the source equation is still present. Only
     // commit the text replacement after all image-side operations have succeeded.
-    result = repairImage(paragraph, childIndex, size, renderer, delim, renderedEquation, equation);
+    result = repairImage(paragraph, childIndex, size, renderer, delim, renderedEquation, equation, customAltText);
   } catch (err) {
     // REASON: If image configuration fails, remove the uncommitted image and leave the
     // original equation untouched. Cleanup itself is best-effort during a Docs outage.
@@ -1137,12 +1250,22 @@ function placeImage(startElement: GoogleAppsScript.Document.RangeElement, render
   return result;
 }
 
-function repairImage(paragraph: GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph, childIndex: number, size:  number, renderer: AutoLatexCommon.Renderer, delim: AutoLatexCommon.Delimiter, resp: GoogleAppsScript.Base.Blob, equationOriginal: string): DocsEquationRenderResult {
+function repairImage(
+  paragraph: GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph,
+  childIndex: number,
+  size: number,
+  renderer: AutoLatexCommon.Renderer,
+  delim: AutoLatexCommon.Delimiter,
+  resp: GoogleAppsScript.Base.Blob,
+  equationOriginal: string,
+  customAltText?: string
+): DocsEquationRenderResult {
   let attemptsToSetImageUrl = 3;
   Common.reportDeltaTime(552); // 3 seconds!! inserting an inline image takes time
   while (attemptsToSetImageUrl > 0) {
     try {
-      paragraph.getChild(childIndex + 1).asInlineImage().setLinkUrl(renderer[2] + equationOriginal + "#" + delim[6]); //added % delim 6 to keep track of which delimiter was used to render
+      const customAltMarker = customAltText !== undefined ? CUSTOM_ALT_TEXT_LINK_MARKER : "";
+      paragraph.getChild(childIndex + 1).asInlineImage().setLinkUrl(renderer[2] + equationOriginal + "#" + delim[6] + customAltMarker); //added % delim 6 to keep track of which delimiter was used to render
       break;
     } catch (err) {
       console.log("Couldn't insert child index!");
@@ -1157,9 +1280,27 @@ function repairImage(paragraph: GoogleAppsScript.Document.ListItem | GoogleAppsS
     }
   }
 
+  const equationImage = paragraph.getChild(childIndex + 1).asInlineImage();
+  const imageAltText = customAltText !== undefined
+    ? customAltText
+    : getRawEquationAltText(equationOriginal);
+  try {
+    equationImage.setAltDescription(imageAltText);
+  } catch (err) {
+    // REASON: raw LaTeX alt text is a backwards-compatible accessibility improvement,
+    // not a prerequisite for rendering. If Docs rejects unusually large metadata, keep
+    // the successfully rendered equation. Explicit custom text is different: deleting its
+    // source suffix without storing the description would lose user-authored content, so
+    // fail before the source is removed and let placeImage roll back the uncommitted image.
+    if (customAltText !== undefined) {
+      throw err;
+    }
+    console.warn("Could not set raw LaTeX image alt text; continuing with the rendered equation.", err);
+  }
+
   Common.reportDeltaTime(570);
-  const height = paragraph.getChild(childIndex + 1).asInlineImage().getHeight();
-  const width = paragraph.getChild(childIndex + 1).asInlineImage().getWidth();
+  const height = equationImage.getHeight();
+  const width = equationImage.getWidth();
   Common.debugLog("Pre-fixing size, width, height: " + size + ", " + width + ", " + height); //only a '1' is rendered as a 100 height (as of 10/20/19, now it is fetched as 90 height). putting an equationrendertime here just doesnt work
 
   //SET PROPERTIES OF IMAGE (Height, Width)
@@ -1201,6 +1342,38 @@ function repairImage(paragraph: GoogleAppsScript.Document.ListItem | GoogleAppsS
     status: DocsEquationRenderStatus.Success,
     equationSize: oldSize
   };
+}
+
+function getRawEquationAltText(equationEncoded: string): string {
+  try {
+    return Common.getClientEquation(equationEncoded, getDocsApp());
+  } catch (err) {
+    // Newly rendered equations use encodeURIComponent and should always decode. Preserve
+    // rendering if a legacy/custom renderer returns an unusual encoding.
+    console.warn("Could not decode raw LaTeX for image alt text; using the stored equation form.", err);
+    return equationEncoded;
+  }
+}
+
+function getDocsEquationLinkData(origURL: string) {
+  const markerPattern = /&ale_custom_alt=1$/;
+  return {
+    equationUrl: origURL.replace(markerPattern, ""),
+    hasCustomAltText: markerPattern.test(origURL)
+  };
+}
+
+function getCustomAltTextSuffix(image: GoogleAppsScript.Document.InlineImage, hasCustomAltText: boolean): string {
+  if (!hasCustomAltText) {
+    return "";
+  }
+  try {
+    const description = image.getAltDescription();
+    return description ? `_{${description}}` : "";
+  } catch (err) {
+    console.warn("Could not read custom image alt text while de-rendering.", err);
+    return "";
+  }
 }
 
 function getBodyFromIndex(index: number) {
@@ -1245,13 +1418,14 @@ function removeAll(defaultDelimRaw: string) {
       if (image.getLinkUrl() === null) {
         continue;
       }
+      const linkData = getDocsEquationLinkData(origURL);
       // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
       // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
       // REASON: same escape()-era %uXXXX guard as derenderInlineImage — one ancient
       // image must not crash De-render All for the whole document.
       let result: ReturnType<typeof Common.derenderEquation>;
       try {
-        result = Common.derenderEquation(origURL, getDocsApp());
+        result = Common.derenderEquation(linkData.equationUrl, getDocsApp());
       } catch (err) {
         console.error("removeAll: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
         continue;
@@ -1266,7 +1440,7 @@ function removeAll(defaultDelimRaw: string) {
         continue;
       }
       const parent = image.getParent() as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph;
-      parent.insertText(imageIndex, delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
+      parent.insertText(imageIndex, delim[0] + origEq + delim[1] + getCustomAltTextSuffix(image, linkData.hasCustomAltText)); //INSERTS DELIMITERS
       image.removeFromParent();
       counter += 1;
     }
@@ -1292,13 +1466,14 @@ function derenderInlineImage(
   if (!origURL) {
     return Common.DerenderResult.NullUrl;
   }
+  const linkData = getDocsEquationLinkData(origURL);
   // REASON: images rendered in the escape()-encoding era carry %uXXXX sequences that
   // decodeURIComponent rejects (URIError: URI malformed). Uncaught, one ancient image
   // crashed the whole De-render run. Log WITH the URL so the offending encoding is
   // visible, and skip just this image.
   let result: ReturnType<typeof Common.derenderEquation>;
   try {
-    result = Common.derenderEquation(origURL, getDocsApp());
+    result = Common.derenderEquation(linkData.equationUrl, getDocsApp());
   } catch (err) {
     console.error("derenderInlineImage: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
     return Common.DerenderResult.InvalidUrl;
@@ -1312,7 +1487,7 @@ function derenderInlineImage(
   }
   const parent = image.getParent() as GoogleAppsScript.Document.ListItem | GoogleAppsScript.Document.Paragraph;
   const imageIndex = parent.getChildIndex(image);
-  parent.insertText(imageIndex, delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
+  parent.insertText(imageIndex, delim[0] + origEq + delim[1] + getCustomAltTextSuffix(image, linkData.hasCustomAltText)); //INSERTS DELIMITERS
   image.removeFromParent();
   return Common.DerenderResult.Success;
 }
