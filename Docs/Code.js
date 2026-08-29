@@ -15,6 +15,13 @@ var __assign = (this && this.__assign) || function () {
 };
 /* exported onOpen, showSidebar, replaceEquations */
 var DEBUG = false; //doing ctrl + m to get key to see errors is still needed; DEBUG is for all nondiagnostic information
+var CUSTOM_ALT_TEXT_PREF_KEY = "customAltText";
+// REASON: The image description itself cannot tell us whether it came from an explicit
+// `_{...}` suffix or the automatic raw-LaTeX fallback. Keep a tiny flag in the existing
+// equation link so de-rendering restores only explicit suffixes. It is appended to the
+// existing fragment (never sent to the linked renderer) and stripped before
+// Common.derenderEquation sees the URL.
+var CUSTOM_ALT_TEXT_LINK_MARKER = "&ale_custom_alt=1";
 function getDocsApp() {
     return {
         getUi: function () {
@@ -79,7 +86,10 @@ function showSidebar() {
  * @public
  */
 function getPrefs() {
-    return Common.getPrefs();
+    return __assign(__assign({}, Common.getPrefs()), { customAltText: getCustomAltTextPreference() });
+}
+function getCustomAltTextPreference() {
+    return PropertiesService.getUserProperties().getProperty(CUSTOM_ALT_TEXT_PREF_KEY) === "true";
 }
 /**
  * @public
@@ -134,9 +144,14 @@ function renderEquationWithCompatibility(equationOriginal, renderOptions) {
  * Constantly keep replacing latex till all are finished
  * @public
  */
-function replaceEquations(sizeRaw, delimiter, renderer) {
+function replaceEquations(sizeRaw, delimiter, renderer, customAltText) {
     if (renderer === void 0) { renderer = "auto"; }
     var quality = 900;
+    // REASON: A sidebar already open during a deployment still calls the legacy three-argument
+    // signature. Keep that user's saved choice instead of silently switching the feature off.
+    var customAltTextEnabled = customAltText === undefined
+        ? getCustomAltTextPreference()
+        : customAltText;
     var clientRender = renderer === "mathjax";
     // REASON: In auto mode, start with MathJax on the client (never Codecogs first —
     // both because a Codecogs outage can hang UrlFetchApp long enough for
@@ -157,6 +172,9 @@ function replaceEquations(sizeRaw, delimiter, renderer) {
     Common.reportDeltaTime(140);
     var delimiterSet = Common.getDelimiterSet(delimiter);
     Common.savePrefs(sizeRaw, delimiter, renderer);
+    if (customAltText !== undefined) {
+        PropertiesService.getUserProperties().setProperty(CUSTOM_ALT_TEXT_PREF_KEY, String(customAltText));
+    }
     var c = 0; //counter
     Common.reportDeltaTime(146);
     var body;
@@ -185,6 +203,7 @@ function replaceEquations(sizeRaw, delimiter, renderer) {
         delim: delimiterSet[0],
         clientRender: clientRender,
         autoFallbackToClient: autoFallbackToClient,
+        useCustomAltText: customAltTextEnabled,
         // TODO: color support for Docs
         r: 0,
         g: 0,
@@ -597,11 +616,65 @@ function findPos(index, renderOptions, prevFailedStartElemIfIsEmpty) {
             }
         };
     }
-    // REASON: pass endElement (the closing-delimiter findText result) so the deferred MathJax path
+    var equationRangeElement = range.getRangeElements()[0];
+    var replacementRangeElement = equationRangeElement;
+    var nextStartElement = endElement;
+    var customAltText;
+    if (renderOptions.useCustomAltText) {
+        var suffix = getAccessibleAltTextSuffix(endElement);
+        if (suffix) {
+            var doc = getDocsApp().getActive();
+            replacementRangeElement = doc.newRange()
+                .addElement(equationRangeElement.getElement().asText(), equationRangeElement.getStartOffset(), suffix.endOffsetInclusive)
+                .build()
+                .getRangeElements()[0];
+            // REASON: while MathJax images render asynchronously, the suffix remains in the
+            // document. Resume after it so `$` or delimiter-like prose inside the description
+            // cannot be mistaken for another equation during the same scan.
+            nextStartElement = doc.newRange()
+                .addElement(equationRangeElement.getElement().asText(), suffix.endOffsetInclusive, suffix.endOffsetInclusive)
+                .build()
+                .getRangeElements()[0];
+            customAltText = suffix.description;
+        }
+    }
+    // REASON: pass endElement (or the end of an explicit alt-text suffix) so the deferred MathJax path
     // can resume the scan strictly after this equation. Resuming from the equation span instead
     // (which starts at the opening delimiter) makes findText re-find this equation's own closing
     // `$` and pair it forward — see buildClientRenderResponse.
-    return findEquationAndPlaceImage(range.getRangeElements()[0], renderOptions, endElement);
+    return findEquationAndPlaceImage(equationRangeElement, replacementRangeElement, renderOptions, nextStartElement, customAltText);
+}
+// Parse an immediately-adjacent `_{...}` accessibility suffix. Nested braces are allowed,
+// and escaped braces do not affect balancing. Malformed or empty suffixes are ordinary doc
+// text and are deliberately left untouched.
+function getAccessibleAltTextSuffix(endElement) {
+    var text = endElement.getElement().asText().getText();
+    var suffixStart = endElement.getEndOffsetInclusive() + 1;
+    if (text.substring(suffixStart, suffixStart + 2) !== "_{") {
+        return null;
+    }
+    var depth = 1;
+    for (var i = suffixStart + 2; i < text.length; i++) {
+        var slashCount = 0;
+        for (var j = i - 1; j >= 0 && text.charAt(j) === "\\"; j--) {
+            slashCount++;
+        }
+        var escaped = slashCount % 2 === 1;
+        var char = text.charAt(i);
+        if (!escaped && char === "{") {
+            depth++;
+        }
+        else if (!escaped && char === "}") {
+            depth--;
+            if (depth === 0) {
+                var description = text.substring(suffixStart + 2, i);
+                return description.trim() === ""
+                    ? null
+                    : { description: description, endOffsetInclusive: i };
+            }
+        }
+    }
+    return null;
 }
 function getEquation(rangeElement, delimiters) {
     var textElement = rangeElement.getElement().asText();
@@ -676,7 +749,7 @@ function clientRenderComplete(equations) {
                 continue;
             }
             var equationBlob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
-            var result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equationLinkEncoded, equation.options.size, equation.options.delim);
+            var result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equationLinkEncoded, equation.options.size, equation.options.delim, equation.options.customAltText);
             if (result.status === 8 /* DocsEquationRenderStatus.Success */) {
                 c++;
             }
@@ -709,23 +782,23 @@ function clientRenderComplete(equations) {
  * @param {integer} defaultSize  The default/previous size of the text, in case size is null.
  * @param {string}  delim[6]     The text delimiters and regex delimiters for start and end in that order, and offset from front and back.
  */
-function findEquationAndPlaceImage(startElement, renderOptions, endElement) {
+function findEquationAndPlaceImage(equationElement, replacementElement, renderOptions, nextStartElement, customAltText) {
     Common.reportDeltaTime(411);
     Common.reportDeltaTime(413);
     // GET VARIABLES
-    var textElement = startElement.getElement().asText();
-    var size = getSize(renderOptions.size, renderOptions.defaultSize, startElement);
-    var equationOriginal = getEquation(startElement, renderOptions.delim);
+    var textElement = equationElement.getElement().asText();
+    var size = getSize(renderOptions.size, renderOptions.defaultSize, equationElement);
+    var equationOriginal = getEquation(equationElement, renderOptions.delim);
     if (equationOriginal == "") {
-        console.log("No equation but undetected start and end as ", startElement.getStartOffset(), " ", startElement.getEndOffsetInclusive());
+        console.log("No equation but undetected start and end as ", equationElement.getStartOffset(), " ", equationElement.getEndOffsetInclusive());
         return {
             status: 3 /* DocsEquationRenderStatus.EmptyEquation */,
             // TODO: this _should_ be impossible - empty equations should be detected in findPos()
-            nextStartElement: startElement
+            nextStartElement: equationElement
         };
     }
     // get font color
-    var colorHex = textElement.getForegroundColor(startElement.getStartOffset());
+    var colorHex = textElement.getForegroundColor(equationElement.getStartOffset());
     // Docs can return null or malformed colors in some edge cases. Fall back to black.
     var _a = getRgbFromHex(colorHex), r = _a[0], g = _a[1], b = _a[2];
     // REASON: users build dark documents by highlighting text with a dark background
@@ -733,14 +806,14 @@ function findEquationAndPlaceImage(startElement, renderOptions, endElement) {
     // highlight band, making light-colored equations invisible. Sample the text's
     // background color so the client bakes it into the image. No highlight (null)
     // keeps the image transparent, exactly as before.
-    var bgHex = textElement.getBackgroundColor(startElement.getStartOffset());
+    var bgHex = textElement.getBackgroundColor(equationElement.getStartOffset());
     var bgColor = bgHex ? getRgbFromHex(bgHex) : null;
     // add color info to render options
     var coloredRenderOptions = __assign(__assign(__assign({}, renderOptions), { r: r, g: g, b: b }), (bgColor ? { bgR: bgColor[0], bgG: bgColor[1], bgB: bgColor[2] } : {}));
     // REASON: Explicit MathJax and Automatic both render on the client first.
     // Automatic falls back to server renderers from the sidebar only if MathJax fails.
     if (renderOptions.clientRender || renderOptions.autoFallbackToClient) {
-        return buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size, endElement);
+        return buildClientRenderResponse(textElement, replacementElement, equationOriginal, coloredRenderOptions, size, nextStartElement, customAltText);
     }
     var _b = renderEquationWithCompatibility(equationOriginal, coloredRenderOptions), resp = _b.resp, renderer = _b.renderer, worked = _b.worked, authorizationError = _b.authorizationError;
     if (worked > Common.capableRenderers || !resp || !renderer)
@@ -753,9 +826,9 @@ function findEquationAndPlaceImage(startElement, renderOptions, endElement) {
         renderer = Common.getRenderer(Common.rendererIds.CODECOGS);
     }
     Common.reportDeltaTime(517);
-    return placeImage(startElement, resp.getBlob(), renderer, equationOriginal, size, renderOptions.delim);
+    return placeImage(replacementElement, resp.getBlob(), renderer, equationOriginal, size, renderOptions.delim, customAltText);
 }
-function buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size, endElement) {
+function buildClientRenderResponse(textElement, startElement, equationOriginal, coloredRenderOptions, size, nextStartElement, customAltText) {
     // REASON: reEncode turns each in-equation newline into an encoded four-backslash
     // marker ("%5C%5C%5C%5C%20"), which must collapse back to a "\\ " row break for the
     // client renderer. Collapse it in ENCODED space (exactly like the Codecogs path in
@@ -772,7 +845,7 @@ function buildClientRenderResponse(textElement, startElement, equationOriginal, 
         .build();
     // save this range for later (used by clientRenderComplete to place the image)
     var namedRange = doc.addNamedRange("ale-equation-range", range);
-    // REASON: resume the scan from the CLOSING-delimiter findText result (endElement), NOT from a
+    // REASON: resume the scan from the CLOSING-delimiter findText result (nextStartElement), NOT from a
     // range derived from the equation span. findText(pattern, from) continues from `from`'s
     // position; for single-`$` the opening and closing delimiter are the same character, so if we
     // resume from anything anchored at the OPENING delimiter (the whole-equation range, the
@@ -783,9 +856,9 @@ function buildClientRenderResponse(textElement, startElement, equationOriginal, 
     // after it on the following equation's opening delimiter. This mirrors the empty-equation path,
     // which already resumes from endElement. (A previous fix re-read the named range's span here and
     // passed the unit tests, but that span still starts at the opening `$`, so it mis-paired in
-    // production — confirmed via the Cloud Logging trace for a live user.)
-    var nextStartElement = endElement;
-    var clientRenderOptions = __assign(__assign({}, coloredRenderOptions), { size: size, rangeId: namedRange.getId(), equation: clientEquation, equationLinkEncoded: encodeURIComponent(clientEquation) });
+    // production — confirmed via the Cloud Logging trace for a live user.) When a custom alt-text
+    // suffix is present, findPos supplies a one-character range at the suffix end instead.
+    var clientRenderOptions = __assign(__assign(__assign({}, coloredRenderOptions), { size: size, rangeId: namedRange.getId(), equation: clientEquation, equationLinkEncoded: encodeURIComponent(clientEquation) }), (customAltText !== undefined ? { customAltText: customAltText } : {}));
     return {
         status: 2 /* DocsEquationRenderStatus.ClientRender */,
         equationSize: size,
@@ -839,7 +912,7 @@ function clientRenderFailed(equations) {
                 continue;
             }
             var equationBlob = fallbackResult.resp.getBlob();
-            var result = placeImage(rangeElements[0], equationBlob, fallbackResult.renderer, equationOriginal, equation.options.size, equation.options.delim);
+            var result = placeImage(rangeElements[0], equationBlob, fallbackResult.renderer, equationOriginal, equation.options.size, equation.options.delim, equation.options.customAltText);
             if (result.status === 8 /* DocsEquationRenderStatus.Success */) {
                 c++;
             }
@@ -887,7 +960,7 @@ function findInsertableAncestor(element) {
 // Log each distinct container type once per execution; the thrown error still carries
 // the message for the per-equation failure details.
 var reportedPlaceImageFailureTypes = new Set();
-function placeImage(startElement, renderedEquation, renderer, equation, size, delim) {
+function placeImage(startElement, renderedEquation, renderer, equation, size, delim, customAltText) {
     // GET VARIABLES
     var textElement = startElement.getElement().asText();
     var startOffset = startElement.getStartOffset();
@@ -957,7 +1030,7 @@ function placeImage(startElement, renderedEquation, renderer, equation, size, de
     try {
         // Configure and size the image while the source equation is still present. Only
         // commit the text replacement after all image-side operations have succeeded.
-        result = repairImage(paragraph, childIndex, size, renderer, delim, renderedEquation, equation);
+        result = repairImage(paragraph, childIndex, size, renderer, delim, renderedEquation, equation, customAltText);
     }
     catch (err) {
         // REASON: If image configuration fails, remove the uncommitted image and leave the
@@ -977,12 +1050,13 @@ function placeImage(startElement, renderedEquation, renderer, equation, size, de
         paragraph.insertText(childIndex + 2, textCopy); // reinsert text after the image, with all the formatting
     return result;
 }
-function repairImage(paragraph, childIndex, size, renderer, delim, resp, equationOriginal) {
+function repairImage(paragraph, childIndex, size, renderer, delim, resp, equationOriginal, customAltText) {
     var attemptsToSetImageUrl = 3;
     Common.reportDeltaTime(552); // 3 seconds!! inserting an inline image takes time
     while (attemptsToSetImageUrl > 0) {
         try {
-            paragraph.getChild(childIndex + 1).asInlineImage().setLinkUrl(renderer[2] + equationOriginal + "#" + delim[6]); //added % delim 6 to keep track of which delimiter was used to render
+            var customAltMarker = customAltText !== undefined ? CUSTOM_ALT_TEXT_LINK_MARKER : "";
+            paragraph.getChild(childIndex + 1).asInlineImage().setLinkUrl(renderer[2] + equationOriginal + "#" + delim[6] + customAltMarker); //added % delim 6 to keep track of which delimiter was used to render
             break;
         }
         catch (err) {
@@ -997,9 +1071,27 @@ function repairImage(paragraph, childIndex, size, renderer, delim, resp, equatio
             throw new Error("Couldn't get equation child!"); // of image immediately after inserting
         }
     }
+    var equationImage = paragraph.getChild(childIndex + 1).asInlineImage();
+    var imageAltText = customAltText !== undefined
+        ? customAltText
+        : getRawEquationAltText(equationOriginal);
+    try {
+        equationImage.setAltDescription(imageAltText);
+    }
+    catch (err) {
+        // REASON: raw LaTeX alt text is a backwards-compatible accessibility improvement,
+        // not a prerequisite for rendering. If Docs rejects unusually large metadata, keep
+        // the successfully rendered equation. Explicit custom text is different: deleting its
+        // source suffix without storing the description would lose user-authored content, so
+        // fail before the source is removed and let placeImage roll back the uncommitted image.
+        if (customAltText !== undefined) {
+            throw err;
+        }
+        console.warn("Could not set raw LaTeX image alt text; continuing with the rendered equation.", err);
+    }
     Common.reportDeltaTime(570);
-    var height = paragraph.getChild(childIndex + 1).asInlineImage().getHeight();
-    var width = paragraph.getChild(childIndex + 1).asInlineImage().getWidth();
+    var height = equationImage.getHeight();
+    var width = equationImage.getWidth();
     Common.debugLog("Pre-fixing size, width, height: " + size + ", " + width + ", " + height); //only a '1' is rendered as a 100 height (as of 10/20/19, now it is fetched as 90 height). putting an equationrendertime here just doesnt work
     //SET PROPERTIES OF IMAGE (Height, Width)
     var oldSize = size; // why use oldsize instead of new size
@@ -1036,6 +1128,37 @@ function repairImage(paragraph, childIndex, size, renderer, delim, resp, equatio
         status: 8 /* DocsEquationRenderStatus.Success */,
         equationSize: oldSize
     };
+}
+function getRawEquationAltText(equationEncoded) {
+    try {
+        return Common.getClientEquation(equationEncoded, getDocsApp());
+    }
+    catch (err) {
+        // Newly rendered equations use encodeURIComponent and should always decode. Preserve
+        // rendering if a legacy/custom renderer returns an unusual encoding.
+        console.warn("Could not decode raw LaTeX for image alt text; using the stored equation form.", err);
+        return equationEncoded;
+    }
+}
+function getDocsEquationLinkData(origURL) {
+    var markerPattern = /&ale_custom_alt=1$/;
+    return {
+        equationUrl: origURL.replace(markerPattern, ""),
+        hasCustomAltText: markerPattern.test(origURL)
+    };
+}
+function getCustomAltTextSuffix(image, hasCustomAltText) {
+    if (!hasCustomAltText) {
+        return "";
+    }
+    try {
+        var description = image.getAltDescription();
+        return description ? "_{".concat(description, "}") : "";
+    }
+    catch (err) {
+        console.warn("Could not read custom image alt text while de-rendering.", err);
+        return "";
+    }
 }
 function getBodyFromIndex(index) {
     var doc = getDocsApp().getActive();
@@ -1077,13 +1200,14 @@ function removeAll(defaultDelimRaw) {
             if (image.getLinkUrl() === null) {
                 continue;
             }
+            var linkData = getDocsEquationLinkData(origURL);
             // console.log("Current origURL " + origURL, origURL == "null", origURL === null, typeof origURL, Object.is(origURL, null), null instanceof Object, origURL instanceof Object, origURL instanceof String, !origURL)
             // console.log("Current origURL " + image.getLinkUrl(), image.getLinkUrl() === null, typeof image.getLinkUrl(), Object.is(image.getLinkUrl(), null), !image.getLinkUrl())
             // REASON: same escape()-era %uXXXX guard as derenderInlineImage — one ancient
             // image must not crash De-render All for the whole document.
             var result = void 0;
             try {
-                result = Common.derenderEquation(origURL, getDocsApp());
+                result = Common.derenderEquation(linkData.equationUrl, getDocsApp());
             }
             catch (err) {
                 console.error("removeAll: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
@@ -1100,7 +1224,7 @@ function removeAll(defaultDelimRaw) {
                 continue;
             }
             var parent_2 = image.getParent();
-            parent_2.insertText(imageIndex, delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
+            parent_2.insertText(imageIndex, delim[0] + origEq + delim[1] + getCustomAltTextSuffix(image, linkData.hasCustomAltText)); //INSERTS DELIMITERS
             image.removeFromParent();
             counter += 1;
         }
@@ -1121,13 +1245,14 @@ function derenderInlineImage(image, defaultDelim) {
     if (!origURL) {
         return 4 /* Common.DerenderResult.NullUrl */;
     }
+    var linkData = getDocsEquationLinkData(origURL);
     // REASON: images rendered in the escape()-encoding era carry %uXXXX sequences that
     // decodeURIComponent rejects (URIError: URI malformed). Uncaught, one ancient image
     // crashed the whole De-render run. Log WITH the URL so the offending encoding is
     // visible, and skip just this image.
     var result;
     try {
-        result = Common.derenderEquation(origURL, getDocsApp());
+        result = Common.derenderEquation(linkData.equationUrl, getDocsApp());
     }
     catch (err) {
         console.error("derenderInlineImage: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
@@ -1143,7 +1268,7 @@ function derenderInlineImage(image, defaultDelim) {
     }
     var parent = image.getParent();
     var imageIndex = parent.getChildIndex(image);
-    parent.insertText(imageIndex, delim[0] + origEq + delim[1]); //INSERTS DELIMITERS
+    parent.insertText(imageIndex, delim[0] + origEq + delim[1] + getCustomAltTextSuffix(image, linkData.hasCustomAltText)); //INSERTS DELIMITERS
     image.removeFromParent();
     return 5 /* Common.DerenderResult.Success */;
 }

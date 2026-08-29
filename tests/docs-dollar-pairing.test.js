@@ -183,7 +183,7 @@ const delimiters = {
   parentheses: ["\\(", "\\)", "\\\\\\(", "\\\\\\)", 2, 1, 3],
 };
 
-function collectClientEquations(paragraphTexts, delimiter = delimiters.singleDollar) {
+function collectClientRenderOptions(paragraphTexts, delimiter = delimiters.singleDollar, useCustomAltText = false) {
   const { context } = loadDocsCode(paragraphTexts, delimiter);
   const renderOptions = {
     size: 11,
@@ -192,6 +192,7 @@ function collectClientEquations(paragraphTexts, delimiter = delimiters.singleDol
     delim: delimiter,
     clientRender: true,
     autoFallbackToClient: false,
+    useCustomAltText,
     r: 0,
     g: 0,
     b: 0,
@@ -215,11 +216,15 @@ function collectClientEquations(paragraphTexts, delimiter = delimiters.singleDol
 
     assert.equal(result.status, 2, "expected a MathJax client-render result");
     assert.ok(result.nextStartElement, "the batch scan must advance its cursor");
-    equations.push(result.clientRenderOptions.equation);
+    equations.push(result.clientRenderOptions);
     cursor = result.nextStartElement;
   }
 
   assert.fail("delimiter scan did not terminate");
+}
+
+function collectClientEquations(paragraphTexts, delimiter = delimiters.singleDollar) {
+  return collectClientRenderOptions(paragraphTexts, delimiter).map(options => options.equation);
 }
 
 test("MathJax batch keeps adjacent inline equations paired", () => {
@@ -244,6 +249,32 @@ test("the cursor fix preserves double-dollar equation pairing", () => {
     ),
     ["a+b", "c"],
   );
+});
+
+test("custom alt-text suffixes are attached to their equation and skipped by the batch scanner", () => {
+  const options = collectClientRenderOptions(
+    ["$$x$$_{read $$five$$ aloud} then $$y$$_{why}"],
+    delimiters.doubleDollar,
+    true,
+  );
+  assert.deepEqual(
+    options.map(option => ({ equation: option.equation, customAltText: option.customAltText })),
+    [
+      { equation: "x", customAltText: "read $$five$$ aloud" },
+      { equation: "y", customAltText: "why" },
+    ],
+  );
+});
+
+test("custom alt-text suffix syntax remains ordinary text when the option is disabled", () => {
+  const options = collectClientRenderOptions(
+    ["$$x$$_{x squared}"],
+    delimiters.doubleDollar,
+    false,
+  );
+  assert.equal(options.length, 1);
+  assert.equal(options[0].equation, "x");
+  assert.equal(options[0].customAltText, undefined);
 });
 
 test("the cursor fix preserves bracket-delimited equation pairing", () => {
