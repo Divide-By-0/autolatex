@@ -60,6 +60,8 @@ interface SlidesClientRenderOptions {
   glyphWidths?: { [ch: string]: number };
 }
 
+type SlidesMathJaxBackgroundOptions = Pick<SlidesClientRenderOptions, "bgR" | "bgG" | "bgB">;
+
 interface SlidesClientRenderPayload {
   options: SlidesClientRenderOptions;
   renderedEquationB64: string;
@@ -406,11 +408,11 @@ function findAllClientRenderEquationsInTextElement(
     const size = getSlideTextSize(renderOptions.size, renderOptions.defaultSize, equationRange);
     const colorRangeEnd = Math.max(equationOffsets.start + renderOptions.delim[4], equationOffsets.end);
     const textColor = getRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
-    const bgColorRaw = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum) || getShapeFillRgbColor(textElement, slideNum);
-    // REASON: a white / near-white background should render as transparent, not a baked white box.
-    // Otherwise every equation on a normal white slide gets an opaque rectangle. Only a genuinely
-    // colored highlight/fill is baked in.
-    const bgColor = bgColorRaw && !isNearWhite(bgColorRaw) ? bgColorRaw : null;
+    const backgroundOptions = getMathJaxBackgroundOptions(
+      textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd),
+      textElement,
+      slideNum
+    );
     // REASON: collapse the encoded four-backslash newline marker in ENCODED space
     // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
     // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
@@ -424,7 +426,7 @@ function findAllClientRenderEquationsInTextElement(
       r: textColor[0],
       g: textColor[1],
       b: textColor[2],
-      ...(bgColor ? { bgR: bgColor[0], bgG: bgColor[1], bgB: bgColor[2] } : {}),
+      ...backgroundOptions,
       delim: renderOptions.delim,
       equation: clientEquation,
       equationLinkEncoded: encodeURIComponent(clientEquation),
@@ -635,17 +637,36 @@ function getBgRgbColor(textRange: GoogleAppsScript.Slides.TextRange, slideNum: n
   ];
 }
 
+// REASON: absence of bgR/bgG/bgB is the client renderer's transparency contract.
+// A no-fill box must therefore return an empty object, not white sentinel values;
+// the shared canvas renderer fills the whole PNG whenever bgR is present.
+// White/near-white also stays unspecified: treating a normal white slide as a
+// background previously put an opaque rectangle behind every equation.
+function getMathJaxBackgroundOptions(
+  textRange: GoogleAppsScript.Slides.TextRange,
+  textElement: PageElement,
+  slideNum: number
+): SlidesMathJaxBackgroundOptions {
+  const bgColor = getBgRgbColor(textRange, slideNum) || getShapeFillRgbColor(textElement, slideNum);
+  if (!bgColor || isNearWhite(bgColor)) {
+    return {};
+  }
+  return { bgR: bgColor[0], bgG: bgColor[1], bgB: bgColor[2] };
+}
+
 // REASON: rendering deletes the equation's text box when the equation was its only
 // content — taking the box's fill with it — and oversized equations overflow the
 // box anyway (user report: image doesn't fit, box gone, background lost). Bake the
 // box/cell SOLID fill into the image when the text has no explicit highlight.
 // Gradient/image fills can't be represented by one color; those stay transparent.
+// FillType.NONE, an invisible fill, or alpha 0 all mean there is no background and
+// must remain null so bgR/bgG/bgB are omitted from the MathJax payload.
 function getShapeFillRgbColor(element: PageElement, slideNum: number): [number, number, number] | null {
   try {
     const fill = element.getFill();
-    if (!fill) return null;
+    if (!fill || !fill.isVisible()) return null;
     const solid = fill.getSolidFill();
-    if (!solid) return null;
+    if (!solid || solid.getAlpha() <= 0) return null;
     let color = solid.getColor();
     if (color.getColorType() !== SlidesApp.ColorType.RGB) {
       const slide = IntegratedApp.getBody()[slideNum];
@@ -809,11 +830,11 @@ function findClientRenderEquationInTextElement(
     const size = getSlideTextSize(renderOptions.size, renderOptions.defaultSize, equationRange);
     const colorRangeEnd = Math.max(equationOffsets.start + renderOptions.delim[4], equationOffsets.end);
     const textColor = getRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum);
-    const bgColorRaw = getBgRgbColor(textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd), slideNum) || getShapeFillRgbColor(textElement, slideNum);
-    // REASON: a white / near-white background should render as transparent, not a baked white box.
-    // Otherwise every equation on a normal white slide gets an opaque rectangle. Only a genuinely
-    // colored highlight/fill is baked in.
-    const bgColor = bgColorRaw && !isNearWhite(bgColorRaw) ? bgColorRaw : null;
+    const backgroundOptions = getMathJaxBackgroundOptions(
+      textRange.getRange(equationOffsets.start + renderOptions.delim[4], colorRangeEnd),
+      textElement,
+      slideNum
+    );
     // REASON: collapse the encoded four-backslash newline marker in ENCODED space
     // (like the Codecogs path); the old decoded-space `.replace(/\\\\/g, "\\")`
     // halved every backslash pair and broke "\\\hline" in tables ("Misplaced
@@ -827,7 +848,7 @@ function findClientRenderEquationInTextElement(
       r: textColor[0],
       g: textColor[1],
       b: textColor[2],
-      ...(bgColor ? { bgR: bgColor[0], bgG: bgColor[1], bgB: bgColor[2] } : {}),
+      ...backgroundOptions,
       delim: renderOptions.delim,
       equation: clientEquation,
       equationLinkEncoded: encodeURIComponent(clientEquation),
