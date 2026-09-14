@@ -1,10 +1,10 @@
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
+const { compileScript } = require("./helpers/compile-script");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
-const workspaceDocsPath = path.join(__dirname, "..", "Workspace", "Docs.js");
+const workspaceDocsPath = path.join(__dirname, "..", "Workspace", "Docs.ts");
 const singleDollarDelimiter = ["$", "$", "\\$", "\\$", 1, 0, 2];
 
 function exerciseWorkspaceFindPos(text) {
@@ -33,7 +33,7 @@ function exerciseWorkspaceFindPos(text) {
   };
 
   vm.createContext(context);
-  vm.runInContext(fs.readFileSync(workspaceDocsPath, "utf8"), context, {
+  vm.runInContext(compileScript(workspaceDocsPath), context, {
     filename: workspaceDocsPath,
   });
 
