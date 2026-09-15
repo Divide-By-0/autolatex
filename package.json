@@ -15,7 +15,8 @@
   "homepage": "https://github.com/Divide-By-0/autolatex#readme",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "test:docs": "node --test tests/docs-dollar-pairing.test.js"
+    "test:docs": "node --test tests/docs-*.test.js",
+    "test:slides": "node --test tests/slides-*.test.js"
   },
   "devDependencies": {
     "@grimsteel/clasp-types": "^1.7.3",
