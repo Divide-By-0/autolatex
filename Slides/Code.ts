@@ -9,6 +9,19 @@
 
 type PageElement = GoogleAppsScript.Slides.Shape | GoogleAppsScript.Slides.TableCell;
 
+// REASON: Common's const enum is erased from its published JavaScript. Clasp's
+// isolated transpilation leaves Common.DerenderResult accesses at runtime, so
+// both de-render actions crash even with an image selected. Keep these local
+// values aligned with AutoLatexCommon.DerenderResult (the sidebar wire format).
+const enum SlidesDerenderResult {
+  CursorNotFound = 0,
+  EmptyEquation = 1,
+  InvalidUrl = 2,
+  NonExistentElement = 3,
+  NullUrl = 4,
+  Success = 5
+}
+
 interface DerenderData {
   red: number,
   green: number,
@@ -1442,7 +1455,7 @@ function removeAll(defaultDelimRaw: string) {
   const defaultDelim = Common.getDelimiters(defaultDelimRaw);
   for (const slide of IntegratedApp.getBody()) {
     for (const image of slide.getImages()) {
-      if (derenderImage(image, defaultDelim, slide) === Common.DerenderResult.Success) counter++;
+      if (derenderImage(image, defaultDelim, slide) === SlidesDerenderResult.Success) counter++;
     }
   }
   return counter;
@@ -1460,14 +1473,14 @@ function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoL
   // bail out cleanly so the iteration in removeAll just skips this one.
   const rawTitle = image.getTitle();
   if (!rawTitle || !rawTitle.trim()) {
-    return Common.DerenderResult.InvalidUrl;
+    return SlidesDerenderResult.InvalidUrl;
   }
   let derenderData: DerenderData | [number, number, number, string, number];
   try {
     derenderData = JSON.parse(rawTitle);
   } catch (err) {
     console.log("derenderImage: image title is not Auto-LaTeX JSON; skipping.", rawTitle, err);
-    return Common.DerenderResult.InvalidUrl;
+    return SlidesDerenderResult.InvalidUrl;
   }
   
   if (Array.isArray(derenderData)) { 
@@ -1492,7 +1505,7 @@ function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoL
 
   Common.debugLog("image description is: " + origURL);
 
-  if (!origURL) return Common.DerenderResult.NullUrl;
+  if (!origURL) return SlidesDerenderResult.NullUrl;
 
   Common.debugLog("Original URL from image", origURL);
   // REASON: same escape()-era %uXXXX guard as Docs — decodeURIComponent rejects those
@@ -1502,15 +1515,15 @@ function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoL
     result = Common.derenderEquation(origURL, IntegratedApp);
   } catch (err) {
     console.error("derenderImage: failed to decode equation URL; skipping image.", String(err), " url=", String(origURL).substring(0, 500));
-    return Common.DerenderResult.InvalidUrl;
+    return SlidesDerenderResult.InvalidUrl;
   }
-  if (!result) return Common.DerenderResult.InvalidUrl;
+  if (!result) return SlidesDerenderResult.InvalidUrl;
   const { delim: newDelim, origEq } = result;
   const delim = newDelim || defaultDelim;
 
   if (origEq.length <= 0) {
     console.log("Empty equation derender.");
-    return Common.DerenderResult.EmptyEquation;
+    return SlidesDerenderResult.EmptyEquation;
   }
 
   const equationText = delim[0] + origEq + delim[1];
@@ -1521,7 +1534,7 @@ function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoL
   if (derenderData.spaceCount && derenderData.pageElementId) {
     if (restoreEquationIntoSpaceGap(slide, derenderData, equationText, colors, size)) {
       image.remove();
-      return Common.DerenderResult.Success;
+      return SlidesDerenderResult.Success;
     }
     // gap not found (box deleted or spaces edited) — fall through to the legacy new-box path
   }
@@ -1543,7 +1556,7 @@ function derenderImage(image: GoogleAppsScript.Slides.Image, defaultDelim: AutoL
 
   Common.debugLog("textRange: " + textRange + "type: " + typeof textRange);
 
-  return Common.DerenderResult.Success;
+  return SlidesDerenderResult.Success;
 }
 
 // Find where to reinsert an equation over its placeholder spaces. The `count` placeholder spaces
@@ -1636,22 +1649,22 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
       .filter(el => el.getPageElementType() === SlidesApp.PageElementType.IMAGE)
       .map(el => el.asImage());
     if (images.length === 0) {
-      return { result: Common.DerenderResult.NonExistentElement, successCount: 0 };
+      return { result: SlidesDerenderResult.NonExistentElement, successCount: 0 };
     }
     let successCount = 0;
-    let lastFailureResult = Common.DerenderResult.InvalidUrl;
+    let lastFailureResult = SlidesDerenderResult.InvalidUrl;
     for (const image of images) {
       const result = derenderImage(image, defaultDelim, currentPage);
-      if (result === Common.DerenderResult.Success) {
+      if (result === SlidesDerenderResult.Success) {
         successCount++;
       } else {
         lastFailureResult = result;
       }
     }
     return successCount > 0
-      ? { result: Common.DerenderResult.Success, successCount }
+      ? { result: SlidesDerenderResult.Success, successCount }
       : { result: lastFailureResult, successCount: 0 };
   } else {
-    return { result: Common.DerenderResult.CursorNotFound, successCount: 0 };
+    return { result: SlidesDerenderResult.CursorNotFound, successCount: 0 };
   }
 }
