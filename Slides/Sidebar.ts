@@ -466,6 +466,14 @@ function insertText(){
 }
     
     
+function showDerenderFailure(error: any) {
+  // REASON: server exceptions are not selection errors. Preserve their details
+  // as escaped text so permissions/service failures can actually be diagnosed.
+  const detail = typeof error === "string" ? error : error?.message || "Unknown server error.";
+  console.error("Slides de-render failed.", error);
+  showError("Could not de-render equations. " + $("<div>").text(detail).html(), "Status: Error, de-render failed.");
+}
+
 function editText(){
   this.disabled = true;
   $('#error').remove();
@@ -508,7 +516,7 @@ function editText(){
       function(msg, element) {
         $("#loading").html('');
         clearInterval(runDots);
-        showError("Please select equation image to be derendered.", "Status: Error, please select equation to be derendered.");
+        showDerenderFailure(msg);
         element.disabled = false;
     })
     .withUserObject(this)
@@ -547,7 +555,7 @@ function undoAll(){
     function(msg, element) {
       $("#loading").html('');
       clearInterval(runDots);
-      showError("Please select image.", "Status: Error, please select image.");
+      showDerenderFailure(msg);
       element.disabled = false;
     })
   .withUserObject(this)
@@ -602,10 +610,10 @@ $(document).keydown(function(e){
           $("#loading").html("Status: " + returnSuccess + " equations de-rendered.");
       })
     .withFailureHandler(
-      function() {
+      function(msg) {
         $("#loading").html('');
         clearInterval(runDots);
-        showError("Please select image.", "Status: Error, please select image.");
+        showDerenderFailure(msg);
       })
     .removeAll(delimiter);
   }
