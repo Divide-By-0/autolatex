@@ -37,7 +37,6 @@ interface DocsClientRenderOptions extends AutoLatexCommon.ClientRenderOptions {
 }
 
 interface DocsRenderOptions extends AutoLatexCommon.RenderOptions {
-  useCustomAltText: boolean;
 }
 
 interface DocsEquationRenderResult {
@@ -53,7 +52,6 @@ interface AccessibleAltTextSuffix {
   endOffsetInclusive: number;
 }
 
-const CUSTOM_ALT_TEXT_PREF_KEY = "customAltText";
 // REASON: The image description itself cannot tell us whether it came from an explicit
 // `_{...}` suffix or the automatic raw-LaTeX fallback. Keep a tiny flag in the existing
 // equation link so de-rendering restores only explicit suffixes. It is appended to the
@@ -134,14 +132,7 @@ function showSidebar() {
  * @public
  */
 function getPrefs() {
-  return {
-    ...Common.getPrefs(),
-    customAltText: getCustomAltTextPreference()
-  };
-}
-
-function getCustomAltTextPreference() {
-  return PropertiesService.getUserProperties().getProperty(CUSTOM_ALT_TEXT_PREF_KEY) === "true";
+  return Common.getPrefs();
 }
 
 /**
@@ -217,13 +208,10 @@ function renderEquationWithCompatibility(equationOriginal: string, renderOptions
  * Constantly keep replacing latex till all are finished
  * @public
  */
-function replaceEquations(sizeRaw: string, delimiter: string, renderer: string = "auto", customAltText?: boolean) {
+function replaceEquations(sizeRaw: string, delimiter: string, renderer: string = "auto") {
   const quality = 900;
-  // REASON: A sidebar already open during a deployment still calls the legacy three-argument
-  // signature. Keep that user's saved choice instead of silently switching the feature off.
-  const customAltTextEnabled = customAltText === undefined
-    ? getCustomAltTextPreference()
-    : customAltText;
+  // REASON: Custom descriptions are always enabled, including requests from older
+  // sidebars that still send a fourth argument or have an obsolete saved preference.
   const clientRender = renderer === "mathjax";
   // REASON: In auto mode, start with MathJax on the client (never Codecogs first —
   // both because a Codecogs outage can hang UrlFetchApp long enough for
@@ -244,9 +232,6 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
   Common.reportDeltaTime(140);
   const delimiterSet = Common.getDelimiterSet(delimiter);
   Common.savePrefs(sizeRaw, delimiter, renderer);
-  if (customAltText !== undefined) {
-    PropertiesService.getUserProperties().setProperty(CUSTOM_ALT_TEXT_PREF_KEY, String(customAltText));
-  }
   let c = 0; //counter
   Common.reportDeltaTime(146);
   let body: GoogleAppsScript.Document.Document;
@@ -278,7 +263,6 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
     
     clientRender,
     autoFallbackToClient,
-    useCustomAltText: customAltTextEnabled,
 
     // TODO: color support for Docs
     r: 0,
@@ -745,27 +729,25 @@ function findPos(index: number, renderOptions: DocsRenderOptions, prevFailedStar
   let replacementRangeElement = equationRangeElement;
   let nextStartElement = endElement;
   let customAltText: string | undefined;
-  if (renderOptions.useCustomAltText) {
-    const suffix = getAccessibleAltTextSuffix(endElement);
-    if (suffix) {
-      const doc = getDocsApp().getActive();
-      replacementRangeElement = doc.newRange()
-        .addElement(
-          equationRangeElement.getElement().asText(),
-          equationRangeElement.getStartOffset(),
-          suffix.endOffsetInclusive
-        )
-        .build()
-        .getRangeElements()[0];
-      // REASON: while MathJax images render asynchronously, the suffix remains in the
-      // document. Resume after it so `$` or delimiter-like prose inside the description
-      // cannot be mistaken for another equation during the same scan.
-      nextStartElement = doc.newRange()
-        .addElement(equationRangeElement.getElement().asText(), suffix.endOffsetInclusive, suffix.endOffsetInclusive)
-        .build()
-        .getRangeElements()[0];
-      customAltText = suffix.description;
-    }
+  const suffix = getAccessibleAltTextSuffix(endElement);
+  if (suffix) {
+    const doc = getDocsApp().getActive();
+    replacementRangeElement = doc.newRange()
+      .addElement(
+        equationRangeElement.getElement().asText(),
+        equationRangeElement.getStartOffset(),
+        suffix.endOffsetInclusive
+      )
+      .build()
+      .getRangeElements()[0];
+    // REASON: while MathJax images render asynchronously, the suffix remains in the
+    // document. Resume after it so `$` or delimiter-like prose inside the description
+    // cannot be mistaken for another equation during the same scan.
+    nextStartElement = doc.newRange()
+      .addElement(equationRangeElement.getElement().asText(), suffix.endOffsetInclusive, suffix.endOffsetInclusive)
+      .build()
+      .getRangeElements()[0];
+    customAltText = suffix.description;
   }
 
   // REASON: pass endElement (or the end of an explicit alt-text suffix) so the deferred MathJax path

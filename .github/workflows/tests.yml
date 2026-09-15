@@ -19,5 +19,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
+      - run: npm run build-sidebar-js --workspace docs
       - run: npm run build-sidebar-js --workspace slides
       - run: npm test

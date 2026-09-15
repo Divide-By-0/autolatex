@@ -183,7 +183,7 @@ const delimiters = {
   parentheses: ["\\(", "\\)", "\\\\\\(", "\\\\\\)", 2, 1, 3],
 };
 
-function collectClientRenderOptions(paragraphTexts, delimiter = delimiters.singleDollar, useCustomAltText = false) {
+function collectClientRenderOptions(paragraphTexts, delimiter = delimiters.singleDollar) {
   const { context } = loadDocsCode(paragraphTexts, delimiter);
   const renderOptions = {
     size: 11,
@@ -192,7 +192,6 @@ function collectClientRenderOptions(paragraphTexts, delimiter = delimiters.singl
     delim: delimiter,
     clientRender: true,
     autoFallbackToClient: false,
-    useCustomAltText,
     r: 0,
     g: 0,
     b: 0,
@@ -255,7 +254,6 @@ test("custom alt-text suffixes are attached to their equation and skipped by the
   const options = collectClientRenderOptions(
     ["$$x$$_{read $$five$$ aloud} then $$y$$_{why}"],
     delimiters.doubleDollar,
-    true,
   );
   assert.deepEqual(
     options.map(option => ({ equation: option.equation, customAltText: option.customAltText })),
@@ -266,15 +264,14 @@ test("custom alt-text suffixes are attached to their equation and skipped by the
   );
 });
 
-test("custom alt-text suffix syntax remains ordinary text when the option is disabled", () => {
+test("custom alt-text suffix syntax is recognized without an option", () => {
   const options = collectClientRenderOptions(
     ["$$x$$_{x squared}"],
     delimiters.doubleDollar,
-    false,
   );
   assert.equal(options.length, 1);
   assert.equal(options[0].equation, "x");
-  assert.equal(options[0].customAltText, undefined);
+  assert.equal(options[0].customAltText, "x squared");
 });
 
 test("the cursor fix preserves bracket-delimited equation pairing", () => {

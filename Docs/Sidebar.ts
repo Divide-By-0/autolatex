@@ -182,12 +182,12 @@ function requestNextMathJaxBatch(element: HTMLButtonElement, actionId: number) {
   if (isStaleSidebarAction(actionId)) {
     return;
   }
-  const { sizeRaw, delimiter, renderer, customAltText } = getCurrentSettings();
+  const { sizeRaw, delimiter, renderer } = getCurrentSettings();
   google.script.run
     .withSuccessHandler((result, userObject) => successHandler(result, userObject, actionId))
     .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
     .withUserObject(element)
-    .replaceEquations(sizeRaw, delimiter, renderer, customAltText);
+    .replaceEquations(sizeRaw, delimiter, renderer);
 }
 
 window.addEventListener("error", event => {
@@ -278,8 +278,7 @@ function getCurrentSettings() {
   }
   const delimiter = $('#delimit :selected').val() as string;
   const renderer = $('#renderer :selected').val() as string;
-  const customAltText = $('#custom-alt-text').prop('checked') === true;
-  return {sizeRaw, delimiter, renderer, customAltText};
+  return {sizeRaw, delimiter, renderer};
 }
 
 //$('donate_button').on("click",function(e){e.preventDefault;}); // for paypal to disable sidebar disappearing
@@ -304,7 +303,7 @@ $("#advanced").click(function(event){//.live({click:
   });
 });
 
-function loadPreferences(choicePrefs: {size: string, delim: string, renderer: string, customAltText?: boolean}) {
+function loadPreferences(choicePrefs: {size: string, delim: string, renderer: string}) {
   $('#insert-text').prop("disabled", true);
   $('#edit-text').prop("disabled", true);
   $('#undo-all').prop("disabled", true);
@@ -322,7 +321,6 @@ function loadPreferences(choicePrefs: {size: string, delim: string, renderer: st
   const rendererPreference = choicePrefs.renderer === "codecogs" ? "auto" : choicePrefs.renderer;
   const savedRenderer = ["auto", "mathjax", "texrendr", "sciweavers"].includes(rendererPreference) ? rendererPreference : "auto";
   $('#renderer').val(savedRenderer);
-  $('#custom-alt-text').prop('checked', choicePrefs.customAltText === true);
   enableSidebarButtons();
   setRenderButtonState(false);
 }
@@ -644,7 +642,7 @@ function insertText(){
   }
   const actionId = beginSidebarAction();
   autoFixRerenderAttempted = false;
-  const {sizeRaw, delimiter, renderer, customAltText} = getCurrentSettings();
+  const {sizeRaw, delimiter, renderer} = getCurrentSettings();
   if (renderer === "mathjax") {
     isMathJaxRenderChaining = true;
     mathJaxRenderedCount = 0;
@@ -658,7 +656,7 @@ function insertText(){
     .withSuccessHandler((result, userObject) => successHandler(result, userObject, actionId))
     .withFailureHandler((msg, userObject) => errorHandler(msg, userObject, actionId))
     .withUserObject(this)
-    .replaceEquations(sizeRaw, delimiter, renderer, customAltText);
+    .replaceEquations(sizeRaw, delimiter, renderer);
 }
     
     

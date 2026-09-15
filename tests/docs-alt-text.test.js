@@ -80,7 +80,7 @@ test("custom alt-text suffix parsing supports balanced prose and rejects unsafe 
   assert.equal(
     context.getAccessibleAltTextSuffix(makeEndElement("$$x$$ _{not adjacent}", 4)),
     null,
-    "the opt-in syntax must be immediately adjacent",
+    "the custom description syntax must be immediately adjacent",
   );
 });
 
@@ -304,17 +304,14 @@ test("De-render All also restores explicit custom suffixes", () => {
   assert.equal(custom.state.removed, true);
 });
 
-test("the advanced Docs option is opt-in and is sent on every render batch", () => {
+test("Docs alt text requires no sidebar option or preference", () => {
   const html = fs.readFileSync(sidebarHtmlPath, "utf8");
   const source = fs.readFileSync(sidebarTsPath, "utf8");
-
-  assert.match(html, /id="divDelimiters"[\s\S]*id="custom-alt-text"/);
-  assert.match(html, /\$\$x\^2\$\$_\{x squared\}/);
-  assert.match(html, /raw LaTeX is used as alt text/);
-  assert.match(source, /choicePrefs\.customAltText === true/);
-  assert.equal(
-    [...source.matchAll(/\.replaceEquations\(sizeRaw, delimiter, renderer, customAltText\)/g)].length,
-    2,
-    "both the initial request and chained MathJax batches must keep the option",
-  );
+  assert.doesNotMatch(html, /custom-alt-text|Use custom screen-reader text/);
+  assert.doesNotMatch(source, /customAltText/);
+  const context = loadDocsCode({ PropertiesService: {
+    getUserProperties: () => ({ getProperty: () => "false" }),
+  } });
+  context.Common.getPrefs = () => ({ size: "auto", delim: "$$", renderer: "auto" });
+  assert.deepEqual(context.getPrefs(), context.Common.getPrefs());
 });
