@@ -17,3 +17,5 @@ Workspace/Sheets.js
 .env.*
 !.env.example
 SidebarMathJaxShared.js
+
+test-results/

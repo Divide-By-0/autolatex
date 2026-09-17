@@ -16,7 +16,10 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "test:docs": "node --test tests/docs-*.test.js",
-    "test:slides": "node --test tests/slides-*.test.js"
+    "test:slides": "node --test tests/slides-*.test.js",
+    "test:matrix": "node --test tests/render-settings-matrix.test.js",
+    "test:render-browser": "node tests/browser/render-matrix.js",
+    "test:render-services": "node tests/browser/server-renderers.js"
   },
   "devDependencies": {
     "@grimsteel/clasp-types": "^1.7.3",
@@ -28,6 +31,7 @@
     "eslint": "^7.32.0",
     "eslint-config-google": "^0.14.0",
     "mathjax": "4.1.2",
+    "playwright": "1.63.0",
     "typescript": "^5.1.6"
   },
   "workspaces": [
