@@ -63,7 +63,10 @@ async function main() {
     }));
     const gallery = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     const escapeHtml = s => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-    const rows = ['codecogs', 'texrendr', 'sciweavers'].flatMap(renderer => samples.map(sample => {
+    // Derived from the shipped selector via serverCases, so retiring a renderer removes its row
+    // instead of leaving a hard-coded name that crashes on a missing result.
+    const galleryRenderers = [...new Set(serverCases.map(c => c.renderer))];
+    const rows = galleryRenderers.flatMap(renderer => samples.map(sample => {
       const cells = ['smart', 'inline'].map(mode => {
         const result = [...results.values()].find(r => r.renderer === renderer && r.mode === mode && r.sample === sample);
         if (!result.filename) return `<td class="failed">${escapeHtml(result.error)}</td>`;

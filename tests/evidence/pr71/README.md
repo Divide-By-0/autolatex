@@ -33,5 +33,8 @@ samples. Repeated URLs share responses, yielding 12 distinct service requests.
 Codecogs and Texrendr returned the complete equations shown above. Sciweavers
 returned **HTTP 404** in both modes for both samples; the probe exits nonzero.
 No claim is made that Sciweavers works or that these live results are permanent.
+(Follow-up: that 404 turned out to be permanent — sciweavers.org retired
+`tex2img.php` while keeping the rest of the site up. The renderer has since been
+removed from the sidebars; see [sciweavers-retired](../sciweavers-retired/README.md).)
 This checks the preferred service endpoint; fallback after an outage and Google
 image insertion are outside this smoke test.

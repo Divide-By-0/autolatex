@@ -92,9 +92,10 @@ because it returns three SVG fragments instead of one. The fixed source passes.
 npm run test:render-services
 ```
 
-This optional live smoke suite covers the **60 external-renderer combinations**
-with the two generic equations. Identical URLs across apps/delimiters reuse the
-same response: 12 distinct requests instead of 192 duplicate image requests.
+This optional live smoke suite covers **every external-renderer combination the
+sidebars still offer** (40 since Sciweavers was retired) with the two generic
+equations. Identical URLs across apps/delimiters reuse the same response: 8
+distinct requests instead of 160 duplicate image requests.
 Requests have deadlines and three workers. It saves returned images, an
 Auto/Inline screenshot, and explicit per-combination results under
 `test-results/render-services/`. It exits nonzero for unavailable services and
@@ -107,3 +108,10 @@ On 2026-09-17, Codecogs and Texrendr returned complete sample equations in both
 size modes; Sciweavers returned **HTTP 404** for all four distinct sample requests.
 This external-service failure is independent of the MathJax Inline fix.
 See [review screenshots](evidence/pr71/README.md).
+
+That 404 was not transient. sciweavers.org is still up, but it retired
+`tex2img.php` — the GET image endpoint every Sciweavers renderer entry was built
+on — so the renderer was removed from the sidebars and from the render order,
+while staying available for de-rendering old equations. The probe has run clean
+since: on 2026-09-18, 8 distinct requests, 0 unavailable. See
+[what was verified](evidence/sciweavers-retired/README.md).
