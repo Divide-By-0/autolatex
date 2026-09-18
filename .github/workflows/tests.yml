@@ -22,3 +22,22 @@ jobs:
       - run: npm run build-sidebar-js --workspace docs
       - run: npm run build-sidebar-js --workspace slides
       - run: npm test
+
+  browser-rendering:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:render-browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: render-matrix-${{ github.sha }}
+          path: test-results/render-matrix/
+          if-no-files-found: error

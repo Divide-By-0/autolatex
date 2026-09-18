@@ -239,7 +239,11 @@ async function renderEquationPngWithMathJax(
   reportError?: (context: string, error: unknown, extra?: Record<string, unknown>) => void
 ): Promise<Blob> {
   const equationBody = prepareEquationForMathJax(renderOptions.equation);
-  const equation = `\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}` + equationBody;
+  // REASON: MathJax 4 splits ungrouped inline expressions at operators into
+  // sibling SVGs. Exporting the first SVG turned 1+1=2 into just 1. Group the
+  // complete colored expression so Docs and Slides export every term together.
+  // The final newline prevents a trailing TeX comment from consuming our brace.
+  const equation = `{\\color[RGB]{${renderOptions.r},${renderOptions.g},${renderOptions.b}}${equationBody}\n}`;
   const equationTimeoutMs = getMathJaxEquationTimeoutMs(renderOptions.equation.length);
 
   const mathJaxGlobal = await waitForMathJaxStartup();
@@ -252,10 +256,16 @@ async function renderEquationPngWithMathJax(
     equationTimeoutMs,
     "typesetting an equation"
   );
-  const svg = result.querySelector("svg") as SVGSVGElement | null;
-  if (!svg) {
+  const svgFragments = Array.from(result.querySelectorAll("svg")) as SVGSVGElement[];
+  if (svgFragments.length === 0) {
     throw new Error("MathJax did not return an SVG element.");
   }
+  // REASON: If a future MathJax change defeats grouping, fail visibly before
+  // rasterization instead of silently replacing an equation with its first term.
+  if (svgFragments.length !== 1) {
+    throw new Error(`MathJax returned ${svgFragments.length} SVG fragments for one equation.`);
+  }
+  const svg = svgFragments[0];
 
   // REASON: tex2svgPromise RESOLVES on TeX syntax errors, embedding the message as a
   // red merror node — report them (with the equation) so they're debuggable.
