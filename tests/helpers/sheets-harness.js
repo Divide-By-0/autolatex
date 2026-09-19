@@ -13,8 +13,11 @@ const sheetsCodePath = process.env.AUTOLATEX_SHEETS_CODE_PATH
 function createOverGridImage(sheet, blob, col, row) {
   let altDescription = "";
   let altTitle = "";
-  let height = 40;
-  let width = 120;
+  // REASON: a real server render comes back at \dpi{900}, so the OverGridImage's
+  // natural size is huge (hundreds of px tall). Model that, otherwise a test cannot
+  // tell whether the code scales the image down for the cell or leaves it native.
+  let height = 520;
+  let width = 1400;
   const image = {
     blob,
     anchorCol: col,

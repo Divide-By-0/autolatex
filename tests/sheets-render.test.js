@@ -89,3 +89,19 @@ test('every equation cell in a multi-row sheet renders once', () => {
   const anchoredRows = sheet.getImages().map(i => i.getAnchorCell().getRow()).sort();
   assert.deepEqual(anchoredRows, [1, 2, 4], 'each image anchors to its own source row');
 });
+
+test('Automatic size scales the rendered image down to the cell, not native 900dpi', () => {
+  // A server render arrives at \dpi{900}; inserted unscaled it spans ~14 rows and
+  // overlaps neighbouring equations. Automatic must size it like the cell's text.
+  const { context, sheet } = setup([['$$1+1=2$$']]);
+  context.replaceEquations('smart', '$$', 'codecogs');
+
+  const image = sheet.getImages()[0];
+  // One default Sheets row is ~21px; anything taller overlaps the next equation.
+  assert.ok(image.getHeight() <= 30,
+    `Automatic must fit about one row, got ${image.getHeight()}px tall`);
+  // Aspect ratio must be preserved — setHeight alone stretches an OverGridImage.
+  const ratio = image.getWidth() / image.getHeight();
+  assert.ok(Math.abs(ratio - (1400 / 520)) < 0.1,
+    `aspect ratio must be preserved, got ${ratio.toFixed(2)}`);
+});
