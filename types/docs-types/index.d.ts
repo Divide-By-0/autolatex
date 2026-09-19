@@ -26,7 +26,7 @@ declare namespace google {
 
             removeAll(defaultDelimRaw: string): void //intrinsic;
 
-            replaceEquations(sizeRaw: string, delimiter: string, renderer: string): void //union;
+            replaceEquations(sizeRaw: string, delimiter: string, renderer: string, customAltText?: boolean): void //union;
 
         }
 
