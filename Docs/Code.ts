@@ -217,8 +217,9 @@ function replaceEquations(sizeRaw: string, delimiter: string, renderer: string =
   // both because a Codecogs outage can hang UrlFetchApp long enough for
   // google.script.run to surface the generic "reload" error, and because it avoids
   // sending equation contents to external renderer APIs unless MathJax hard-fails;
-  // PR #61 wanted no server fallback at all, but keeping Texrendr/Sciweavers as the
-  // sidebar-invoked fallback preserves rendering when MathJax can't load).
+  // PR #61 wanted no server fallback at all, but keeping Texrendr as the
+  // sidebar-invoked fallback preserves rendering when MathJax can't load. Sciweavers used to
+  // back Texrendr up here; it was dropped when its image endpoint went away).
   const autoFallbackToClient = renderer === "auto";
   if (clientRender || autoFallbackToClient) {
     console.log("MathJax render requested.", JSON.stringify({ sizeRaw, delimiter }));
@@ -1028,7 +1029,7 @@ function buildClientRenderResponse(
 
 /**
  * Called by the client when MathJax rendering fails in auto mode.
- * Tries remaining server-side renderers (Texrendr, Sciweavers) for the failed equations.
+ * Tries remaining server-side renderers (Texrendr) for the failed equations.
  * @public
  */
 function clientRenderFailed(equations: { options: DocsClientRenderOptions }[]) {
@@ -1067,7 +1068,10 @@ function clientRenderFailed(equations: { options: DocsClientRenderOptions }[]) {
         r: equation.options.r,
         g: equation.options.g,
         b: equation.options.b,
-        allowedServerFamilies: ["Texrendr", "Sciweavers", "Sciweavers_old", "Roger's renderer", "Number empire"]
+        // NOTE: Sciweavers/Sciweavers_old were dropped from this list when sciweavers.org
+        // retired its image endpoint (Common.retiredRendererFamilies). getRendererOrder already
+        // filters them out, so listing them here only suggested a fallback that cannot happen.
+        allowedServerFamilies: ["Texrendr", "Roger's renderer", "Number empire"]
       });
 
       if (fallbackResult.worked > Common.capableRenderers || !fallbackResult.resp || !fallbackResult.renderer) {

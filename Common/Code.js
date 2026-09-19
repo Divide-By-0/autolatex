@@ -29,6 +29,33 @@ var capableRenderers = 8;
  */
 var capableDerenderers = 13;
 /**
+ * REASON: sciweavers.org retired tex2img.php, the GET image endpoint every Sciweavers
+ * renderer entry below is built on. Verified 2026-09-18: the site itself is up and its
+ * editor at /free-online-latex-equation-editor still renders, but tex2img.php returns the
+ * site's own 404 page for every shape of request - http and https, www and apex, both
+ * parameter orders, and every user agent tried (curl, Chrome, Googlebot). Even the embed
+ * URL sciweavers' own editor hands out after a successful render is a tex2img.php link
+ * that 404s. Its working path is now a POST to /process_form_tex2img that returns a
+ * one-off /upload/Tex2Img_<id>/render.png; the id changes on every submit and does not
+ * carry the LaTeX, so it cannot satisfy our contract that an equation's image URL is
+ * stable and de-renderable back into source.
+ *
+ * These families are therefore skipped when RENDERING (see getRendererOrder), which drops
+ * three guaranteed-failing renderer attempts - two fetches each - from every equation that
+ * gets past Codecogs and Texrendr. They are deliberately still reachable through
+ * getRenderer/capableDerenderers so equations rendered before the shutdown keep
+ * de-rendering. What breaks if this list is emptied: Auto gets slower on every fallback
+ * and any explicit Sciweavers choice fails 100% of the time.
+ * @public
+ */
+var retiredRendererFamilies = ["Sciweavers", "Sciweavers_old"];
+/**
+ * @public
+ */
+function isRetiredRendererFamily(family) {
+    return retiredRendererFamilies.indexOf(family) > -1;
+}
+/**
  * Renderer ID constants for retreiving info about specific renderers
  * @public
 */
@@ -49,6 +76,9 @@ var invalidEquationHashTexrendrFirst50 = "GIF89a%uFFFD%008%00%uFFFD%00%00%uFFFD%
 var invalidEquationHashTexrendrFirst50_2 = "GIF89a%01%00%01%00%uFFFD%00%00%uFFFD%uFFFD%uFFFD%0";
 var invalidEquationHashTexrendrFirst50_3 = "GIF89ai%0A%uFFFD%01%uFFFD%00%00%uFFFD%uFFFD%uFFFD%"; // this is the No Expression Supplied error. Ignored for now.
 var invalidEquationHashTexrendrFirst50_4 = "%7FELF%01%01%01%00%00%00%00%00%00%00%00%00%02%00%0";
+// NOTE: this prefix is an HTML document where an image was expected. It originally caught
+// Sciweavers answering an amsmath equation with its editor page, and it also matches the
+// 404 page tex2img.php now serves unconditionally (see retiredRendererFamilies).
 var invalidEquationHashSciweaversFirst50 = "%0D%0A%09%3C%21DOCTYPE%20html%20PUBLIC%20%22-//W3C";
 var defaultRendererPreference = "auto";
 var activeRendererPreference = null;
@@ -61,7 +91,11 @@ function normalizeRendererPreference(renderer) {
         case "texrendr":
             return "texrendr";
         case "sciweavers":
-            return "sciweavers";
+            // REASON: users who picked Sciweavers before it shut down still have it in their saved
+            // properties, and the option is gone from the sidebars. Migrate the stored value to
+            // Automatic here so those users render instead of failing on every equation; savePrefs
+            // writes the normalized value back, so the dead preference does not survive a render.
+            return defaultRendererPreference;
         default:
             return defaultRendererPreference;
     }
@@ -72,9 +106,9 @@ function getPreferredRendererFamily(rendererPreference) {
             return "Codecogs";
         case "texrendr":
             return "Texrendr";
-        case "sciweavers":
-            return "Sciweavers";
         default:
+            // NOTE: no "sciweavers" case - normalizeRendererPreference maps it to Automatic, so a
+            // retired family can never become the preferred family that getRendererOrder promotes.
             return "";
     }
 }
@@ -120,6 +154,10 @@ function getRendererOrder() {
     var prioritizedOrder = [];
     var fallbackOrder = [];
     for (var worked = 1; worked <= capableRenderers; ++worked) {
+        // REASON: retired services are still listed in getRenderer so old equations de-render,
+        // but attempting them here only costs two doomed fetches and a sleep per equation.
+        if (isRetiredRendererFamily(getRenderer(worked)[5]))
+            continue;
         defaultOrder.push(worked);
     }
     if (!preferredFamily) {

@@ -38,7 +38,8 @@ function commonHarness() {
   });
   vm.runInContext(commonSource, common, { filename: 'Common.matrix.js' });
   // Apps Script libraries expose top-level values; VM lexical consts need an adapter.
-  for (const name of ['capableRenderers', 'rendererIds', 'invalidEquationHashCodecogsFirst50']) {
+  for (const name of ['capableRenderers', 'capableDerenderers', 'retiredRendererFamilies',
+    'rendererIds', 'invalidEquationHashCodecogsFirst50']) {
     common[name] = vm.runInContext(name, common);
   }
   const render = common.renderEquation;
@@ -149,4 +150,4 @@ function runCase({ app, renderer, delimiter, mode }, equation = '1+1=2') {
   }
   return { ...harness, payloads, source };
 }
-module.exports = { cases, runCase, options, modes, renderers, delimiters };
+module.exports = { cases, runCase, options, modes, renderers, delimiters, commonHarness };

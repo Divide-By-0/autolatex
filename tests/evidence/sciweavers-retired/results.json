@@ -1,0 +1,1145 @@
+{
+  "checkedAt": "2026-09-18T22:33:37.587Z",
+  "matrixCases": 40,
+  "uniqueRequests": 8,
+  "results": [
+    {
+      "urls": [
+        "https://www.codecogs.com/eqnedit.php?latex=%5Cdpi%7B900%7D%5Cinline%20%7B%5Ccolor%5BRGB%5D%7B0%2C0%2C0%7D1%2B1%3D2%7D",
+        "https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7D%5Cinline%20%7B%5Ccolor%5BRGB%5D%7B0%2C0%2C0%7D1%2B1%3D2%7D"
+      ],
+      "renderer": "codecogs",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "warmup": 200,
+      "status": "image-decoded",
+      "width": 535,
+      "height": 102,
+      "filename": "codecogs-inline-0.png"
+    },
+    {
+      "urls": [
+        "https://www.codecogs.com/eqnedit.php?latex=%5Cdpi%7B900%7D%7B%5Ccolor%5BRGB%5D%7B0%2C0%2C0%7D1%2B1%3D2%7D",
+        "https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7D%7B%5Ccolor%5BRGB%5D%7B0%2C0%2C0%7D1%2B1%3D2%7D"
+      ],
+      "renderer": "codecogs",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "warmup": 200,
+      "status": "image-decoded",
+      "width": 576,
+      "height": 111,
+      "filename": "codecogs-smart-0.png"
+    },
+    {
+      "urls": [
+        "https://www.codecogs.com/eqnedit.php?latex=%5Cdpi%7B900%7D%7B%5Ccolor%5BRGB%5D%7B0%2C0%2C0%7D%5Cfrac%7B1%2B1%7D%7B2%7D%3D1%7D",
+        "https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7D%7B%5Ccolor%5BRGB%5D%7B0%2C0%2C0%7D%5Cfrac%7B1%2B1%7D%7B2%7D%3D1%7D"
+      ],
+      "renderer": "codecogs",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "warmup": 200,
+      "status": "image-decoded",
+      "width": 600,
+      "height": 303,
+      "filename": "codecogs-smart-1.png"
+    },
+    {
+      "urls": [
+        "https://www.codecogs.com/eqnedit.php?latex=%5Cdpi%7B900%7D%5Cinline%20%7B%5Ccolor%5BRGB%5D%7B0%2C0%2C0%7D%5Cfrac%7B1%2B1%7D%7B2%7D%3D1%7D",
+        "https://latex.codecogs.com/png.latex?%5Cdpi%7B900%7D%5Cinline%20%7B%5Ccolor%5BRGB%5D%7B0%2C0%2C0%7D%5Cfrac%7B1%2B1%7D%7B2%7D%3D1%7D"
+      ],
+      "renderer": "codecogs",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "warmup": 200,
+      "status": "image-decoded",
+      "width": 443,
+      "height": 167,
+      "filename": "codecogs-inline-1.png"
+    },
+    {
+      "urls": [
+        "http://www.texrendr.com/?eqn=%7B%5Cfrac%7B1%2B1%7D%7B2%7D%3D1%7D",
+        "http://texrendr.com/cgi-bin/mimetex?%5CHuge%20%7B%5Cfrac%7B1%2B1%7D%7B2%7D%3D1%7D"
+      ],
+      "renderer": "texrendr",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "warmup": 200,
+      "status": "image-decoded",
+      "width": 160,
+      "height": 69,
+      "filename": "texrendr-smart-1.gif"
+    },
+    {
+      "urls": [
+        "http://www.texrendr.com/?eqn=%7B1%2B1%3D2%7D",
+        "http://texrendr.com/cgi-bin/mimetex?%5CHuge%20%7B1%2B1%3D2%7D"
+      ],
+      "renderer": "texrendr",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "warmup": 200,
+      "status": "image-decoded",
+      "width": 192,
+      "height": 46,
+      "filename": "texrendr-smart-0.gif"
+    },
+    {
+      "urls": [
+        "http://www.texrendr.com/?eqn=%5Ctextstyle%20%7B1%2B1%3D2%7D",
+        "http://texrendr.com/cgi-bin/mimetex?%5CHuge%20%5Ctextstyle%20%7B1%2B1%3D2%7D"
+      ],
+      "renderer": "texrendr",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "warmup": 200,
+      "status": "image-decoded",
+      "width": 192,
+      "height": 46,
+      "filename": "texrendr-inline-0.gif"
+    },
+    {
+      "urls": [
+        "http://www.texrendr.com/?eqn=%5Ctextstyle%20%7B%5Cfrac%7B1%2B1%7D%7B2%7D%3D1%7D",
+        "http://texrendr.com/cgi-bin/mimetex?%5CHuge%20%5Ctextstyle%20%7B%5Cfrac%7B1%2B1%7D%7B2%7D%3D1%7D"
+      ],
+      "renderer": "texrendr",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "warmup": 200,
+      "status": "image-decoded",
+      "width": 160,
+      "height": 69,
+      "filename": "texrendr-inline-1.gif"
+    }
+  ],
+  "checks": [
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "$$",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "$$",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "$$",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "$$",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "\\[",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "\\[",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "\\[",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "\\[",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "(",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "(",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "(",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "(",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "$",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "$",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "$",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "codecogs",
+      "delimiter": "$",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "$$",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "$$",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "$$",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "$$",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "\\[",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "\\[",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "\\[",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "\\[",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "(",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "(",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "(",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "(",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "$",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "$",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "$",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Docs",
+      "renderer": "texrendr",
+      "delimiter": "$",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "$$",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "$$",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "$$",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "$$",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "\\[",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "\\[",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "\\[",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "\\[",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "(",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "(",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "(",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "(",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "$",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "$",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "$",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "codecogs",
+      "delimiter": "$",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "$$",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "$$",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "$$",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "$$",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "all",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "\\[",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "\\[",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "\\[",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "\\[",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "(",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "(",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "(",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "(",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "$",
+      "mode": "smart",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "$",
+      "mode": "smart",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "$",
+      "mode": "inline",
+      "sample": "1+1=2",
+      "status": "image-decoded"
+    },
+    {
+      "app": "Slides",
+      "renderer": "texrendr",
+      "delimiter": "$",
+      "mode": "inline",
+      "sample": "\\frac{1+1}{2}=1",
+      "status": "image-decoded"
+    }
+  ]
+}
