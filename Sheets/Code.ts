@@ -15,6 +15,9 @@
 // existing rendered sheets in user spreadsheets rely on this exact prefix to identify
 // Auto-LaTeX images during removeAll / editEquations.
 const ALE_ALT_TEXT_PREFIX = "ALE-Latex:";
+// REASON: point size Automatic/Inline renders are scaled to. Matches the defaultSize
+// used when scanning cells, so a rendered equation reads like the text it replaced.
+const SHEETS_DEFAULT_EQUATION_SIZE = 11;
 
 // REASON: Mirror of Docs's DocsApp / Slides's IntegratedApp pattern. The Common library
 // expects an IntegratedApp shape for helpers that walk back from a fully-rendered image
@@ -509,17 +512,24 @@ function insertRenderedImage(
   image.setAltTextDescription(ALE_ALT_TEXT_PREFIX + Utilities.base64Encode(originalCellValue));
   image.setAltTextTitle("Auto-LaTeX equation");
 
-  // REASON: If the user requested an explicit pixel size via the sidebar's "Custom"
-  // option, apply it here. Scale the width by the same factor — setHeight alone
+  // REASON: Always scale. Server renderers return the equation at \dpi{900}, so an
+  // OverGridImage inserted at its natural size is several hundred pixels tall — one
+  // equation covered ~14 rows and overlapped the next one (seen live 2026-09-19).
+  // Automatic/Inline arrive here as size 0, which used to skip this block entirely and
+  // leave the giant native image in place; fall back to the cell-text default so the
+  // image sits on its row. Scale the width by the same factor — setHeight alone
   // stretches the image because OverGridImage does not preserve aspect ratio.
-  if (preferredSize > 0) {
-    const currentHeight = image.getHeight();
-    const currentWidth = image.getWidth();
-    const targetHeight = preferredSize * 4;
-    image.setHeight(targetHeight);
-    if (currentHeight > 0 && currentWidth > 0) {
-      image.setWidth(Math.max(1, Math.round(currentWidth * targetHeight / currentHeight)));
-    }
+  const currentHeight = image.getHeight();
+  const currentWidth = image.getWidth();
+  // An explicit size keeps its historical 4x multiplier. Automatic/Inline (size 0) aim
+  // at a single default row (~21px) instead, so consecutive equations in a column do
+  // not overlap each other the way a 2-row-tall image does.
+  const targetHeight = preferredSize > 0
+    ? preferredSize * 4
+    : SHEETS_DEFAULT_EQUATION_SIZE * 2;
+  image.setHeight(targetHeight);
+  if (currentHeight > 0 && currentWidth > 0) {
+    image.setWidth(Math.max(1, Math.round(currentWidth * targetHeight / currentHeight)));
   }
 
   // REASON: Clear the cell value AFTER inserting the image. If we cleared first and
