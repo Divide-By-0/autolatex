@@ -256,12 +256,19 @@ async function renderEquationPngWithMathJax(
     equationTimeoutMs,
     "typesetting an equation"
   );
-  const svgFragments = Array.from(result.querySelectorAll("svg")) as SVGSVGElement[];
+  // MathJax can embed small SVGs inside the root SVG for stretchy delimiters. A
+  // multi-row cases environment, for example, has one complete equation SVG plus
+  // two nested brace segments. Only direct SVG children are separate render
+  // results; treating every descendant as a fragment rejects otherwise valid TeX.
+  const svgFragments = Array.from(result.children).filter(
+    (child): child is SVGSVGElement => child.tagName.toLowerCase() === "svg"
+  );
   if (svgFragments.length === 0) {
     throw new Error("MathJax did not return an SVG element.");
   }
-  // REASON: If a future MathJax change defeats grouping, fail visibly before
-  // rasterization instead of silently replacing an equation with its first term.
+  // REASON: If a future MathJax change creates multiple top-level render results,
+  // fail visibly before rasterization instead of silently replacing an equation
+  // with its first term. Nested SVGs are delimiter internals, not fragments.
   if (svgFragments.length !== 1) {
     throw new Error(`MathJax returned ${svgFragments.length} SVG fragments for one equation.`);
   }
