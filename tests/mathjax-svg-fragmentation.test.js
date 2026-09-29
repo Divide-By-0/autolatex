@@ -23,7 +23,7 @@ test.before(async () => {
 // Exercise the production renderer with real MathJax typesetting. Only adapt
 // liteDOM's SVG lookup to the browser API and stop at the layout/canvas boundary;
 // these tests do not pretend to verify Apps Script insertion or PNG pixels.
-async function captureSelectedSvg(equation, inline = true, extraFragment = false) {
+async function captureSelectedSvg(equation, inline = true, extraTopLevelFragment = false) {
   const adaptor = mathJax.startup.adaptor;
   const reachedLayout = new Error("reached layout boundary");
   let selectedXml;
@@ -36,17 +36,22 @@ async function captureSelectedSvg(equation, inline = true, extraFragment = false
         tex2svgPromise: async (input, options) => {
           const result = await mathJax.tex2svgPromise(input, options);
           const fragments = adaptor.tags(result, "svg");
-          if (extraFragment) fragments.push(fragments[0]);
+          const topLevelFragments = extraTopLevelFragment ? [fragments[0], fragments[0]] : [fragments[0]];
           fragmentCount = fragments.length;
           const wrap = svg => ({
             xml: adaptor.serializeXML(svg),
             querySelector: () => null,
             classList: { add() {} },
             style: {},
+            tagName: "svg",
           });
           return {
             querySelector: () => fragments.length ? wrap(fragments[0]) : null,
             querySelectorAll: () => fragments.map(wrap),
+            // `fragments` deliberately contains every nested SVG just as
+            // querySelectorAll("svg") does in a browser. `children` models the
+            // root MathJax container, whose only direct SVG is the full equation.
+            children: topLevelFragments.map(wrap),
           };
         },
       },
@@ -94,6 +99,15 @@ test("display equations, fractions and explicit multiline environments stay inta
     assert.equal(fragmentCount, 1, equation);
     assert.doesNotMatch(selectedXml, /data-mjx-error=/, equation);
   }
+});
+
+test("multi-row cases ignores nested stretchy-brace SVGs", async () => {
+  const { selectedXml, fragmentCount } = await captureSelectedSvg(
+    "\\begin{cases}K &: a < x \\le b\\\\ K &: a < x \\le b\\\\ 0 &: \\text{otherwise}\\end{cases}",
+    false
+  );
+  assert.equal(fragmentCount, 3, "real MathJax emits two nested brace SVGs");
+  assert.match(selectedXml, /data-c=\"1D43E\"/, "the outer SVG contains the full cases expression");
 });
 
 test("unexpected fragmented output fails visibly before rasterization", async () => {
