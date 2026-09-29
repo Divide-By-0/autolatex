@@ -23,7 +23,7 @@ const css = fs.readFileSync(path.join(root, 'Docs/ALEStylesheet.html'), 'utf8').
 const samples = ['1+1=2', String.raw`\text{Work} = F \times d`, String.raw`\frac{1+1}{2}=1`, String.raw`\sum_{i=1}^{n} i = \frac{n(n+1)}{2}`];
 const glyphs = [['2B', '3D', '32'], ['3D', 'D7', '1D451'], ['2B', '3D', '31'], ['2211', '3D', '32']];
 const clientCases = cases.filter(c => c.renderer === 'auto' || c.renderer === 'mathjax');
-const records = [], visuals = [];
+const records = [], visuals = [], resolutionChecks = [];
 
 async function main() {
   fs.mkdirSync(out, { recursive: true });
@@ -70,7 +70,7 @@ async function main() {
       MathJax.tex2svgPromise = async (...args) => {
         const result = await realTypeset(...args);
         window.lastTypeset = {
-          fragmentCount: result.querySelectorAll('svg').length,
+          fragmentCount: [...result.children].filter(child => child.tagName.toLowerCase() === 'svg').length,
           glyphs: [...result.querySelectorAll('[data-c]')].map(n => n.getAttribute('data-c')),
           errors: [...result.querySelectorAll('[data-mjx-error]')].map(n => n.getAttribute('data-mjx-error')),
         };
@@ -89,9 +89,23 @@ async function main() {
         }
         const bytes = new Uint8Array(await blob.arrayBuffer());
         const b64 = btoa(Array.from(bytes, b => String.fromCharCode(b)).join(''));
-        return { ...window.lastTypeset, width: bitmap.width, height: bitmap.height, ink, left, right, b64, mime: blob.type };
+        return { rasterScale: options.rasterScale || 5, ...window.lastTypeset, width: bitmap.width, height: bitmap.height, ink, left, right, b64, mime: blob.type };
       };
     });
+    // Real PNG A/B: equal layout, more pixels, including the reported angle
+    // and multi-row cases. The legacy request models a server without scale support.
+    for (const equation of [String.raw`m\angle 2 = 75^\circ`,
+      String.raw`\begin{cases}K &: a<x\le b\\K &: a<x\le b\\0 &: \text{otherwise}\end{cases}`]) {
+      const options = { equation, inline: false, size: 11, r: 0, g: 0, b: 0 };
+      const before = await page.evaluate(p => window.renderPng(p), options);
+      const after = await page.evaluate(p => window.renderPng(p), { ...options, supportsRasterScale: true });
+      assert.equal(after.rasterScale, 12, 'new client must report higher resolution');
+      assert.ok(after.width >= before.width * 2.3 && after.height >= before.height * 2.3);
+      assert.ok(Math.abs(after.width / after.rasterScale - before.width / 5) < 1);
+      assert.ok(Math.abs(after.height / after.rasterScale - before.height / 5) < 1);
+      assert.deepEqual(after.errors, []);
+      resolutionChecks.push({ equation, before: [before.width, before.height], after: [after.width, after.height] });
+    }
     const pngBySettings = new Map();
     for (const c of clientCases) {
       for (let sample = 0; sample < samples.length; sample++) {
@@ -102,6 +116,7 @@ async function main() {
           assert.deepEqual(result.errors, []);
           for (const glyph of glyphs[sample]) assert.ok(result.glyphs.includes(glyph), `${samples[sample]} missing ${glyph}; got ${result.glyphs}`);
           assert.equal(result.mime, 'image/png');
+          assert.equal(result.rasterScale, 12, 'both apps and renderer preferences negotiate high resolution');
           assert.ok(result.ink > 100 && result.width > 0 && result.height > 0, 'PNG contains visible ink');
           assert.ok(result.right - result.left > result.width / 2, 'ink reaches across the image');
           const hash = crypto.createHash('sha256').update(Buffer.from(result.b64, 'base64')).digest('hex');
@@ -110,7 +125,7 @@ async function main() {
           const key = `${c.app}/${c.mode}/${sample}`;
           if (pngBySettings.has(key)) assert.equal(hash, pngBySettings.get(key), 'delimiters/preference must not change pixels');
           else pngBySettings.set(key, hash);
-          records.push({ ...c, sample: samples[sample], delimiterId: p.delim[6], width: result.width, height: result.height, pngSha256: hash });
+          records.push({ ...c, sample: samples[sample], delimiterId: p.delim[6], width: result.width, height: result.height, rasterScale: result.rasterScale, pngSha256: hash });
           if (c.renderer === 'mathjax' && c.delimiter === '$$') visuals.push({ app: c.app, mode: c.mode, sample, ...result });
         }
       }
@@ -129,12 +144,12 @@ async function main() {
       const escapeHtml = s => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
       await gallery.setContent(`<!doctype html><html><head><meta charset="utf-8"><style>
         body{font:18px system-ui;margin:40px;color:#162536;background:#f5f7fa}h1{font-size:30px;margin-bottom:10px}p{line-height:1.5;color:#475569}table{border-collapse:collapse;background:white;width:100%;table-layout:fixed}th,td{border:1px solid #cbd5e1;padding:24px;text-align:left}th{background:#e8eef5}code{font-size:14px;overflow-wrap:anywhere}img{display:block;max-width:100%}.note{font-size:14px}
-        </style></head><body><h1>${app} equation rendering · Auto vs Inline size</h1><p>Actual PNG output from the production renderer in Chromium.<br>Automatic and MathJax renderer choices produced identical pixels across every delimiter.</p><table><thead><tr><th>Source equation</th><th>Automatic size</th><th>Inline size</th></tr></thead><tbody>${samples.map((eq, sample) => `<tr><td><code>${escapeHtml(eq)}</code></td>${['smart', 'inline'].map(mode => { const v = cells.find(v => v.sample === sample && v.mode === mode); return `<td><img alt="${escapeHtml(eq)}" src="data:image/png;base64,${v.b64}" width="${v.width / 5 * 2}"></td>`; }).join('')}</tr>`).join('')}</tbody></table><p class="note">2× viewing scale · Source font: ${app === 'Docs' ? 11 : 18}px · Delimiters tested: $$, $ (Beta), \\[ \\], \\( \\), All.<br>Local rendering evidence; not a screenshot of the deployed Google ${app} add-on. External renderer availability and Google insertion are separate checks.<br>Renderer SHA-256: ${rendererSha256.slice(0, 20)} · Base revision: ${revision.slice(0, 7)}</p></body></html>`);
+        </style></head><body><h1>${app} equation rendering · Auto vs Inline size</h1><p>Actual PNG output from the production renderer in Chromium.<br>Automatic and MathJax renderer choices produced identical pixels across every delimiter.</p><table><thead><tr><th>Source equation</th><th>Automatic size</th><th>Inline size</th></tr></thead><tbody>${samples.map((eq, sample) => `<tr><td><code>${escapeHtml(eq)}</code></td>${['smart', 'inline'].map(mode => { const v = cells.find(v => v.sample === sample && v.mode === mode); return `<td><img alt="${escapeHtml(eq)}" src="data:image/png;base64,${v.b64}" width="${v.width / v.rasterScale * 2}"></td>`; }).join('')}</tr>`).join('')}</tbody></table><p class="note">2× viewing scale · Source font: ${app === 'Docs' ? 11 : 18}px · Delimiters tested: $$, $ (Beta), \\[ \\], \\( \\), All.<br>Local rendering evidence; not a screenshot of the deployed Google ${app} add-on. External renderer availability and Google insertion are separate checks.<br>Renderer SHA-256: ${rendererSha256.slice(0, 20)} · Base revision: ${revision.slice(0, 7)}</p></body></html>`);
       await gallery.locator('img').evaluateAll(imgs => Promise.all(imgs.map(img => img.decode())));
       await gallery.screenshot({ path: path.join(out, `${app.toLowerCase()}-auto-inline.png`), fullPage: true });
       await gallery.close();
     }
-    fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ revision, rendererSha256, browser: browser.version(), matrixCases: cases.length, browserCases: clientCases.length, pngRenders: records.length, records }, null, 2));
+    fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ revision, rendererSha256, browser: browser.version(), matrixCases: cases.length, browserCases: clientCases.length, pngRenders: records.length, resolutionChecks, records }, null, 2));
     console.log(`PASS: ${clientCases.length} browser settings, ${records.length} real PNG renders. Screenshots: ${out}`);
   } finally {
     if (browser) await browser.close();

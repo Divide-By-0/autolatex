@@ -42,6 +42,8 @@ function reportMathJaxClientError(context: string, error: unknown, extra: Record
 }
 
 interface SlidesClientRenderOptions {
+  supportsRasterScale?: boolean;
+  rasterScale?: number;
   size: number;
   inline: boolean;
   r: number;

@@ -873,7 +873,7 @@ function clientRenderComplete(equations: { options: DocsClientRenderOptions, ren
       }
 
       const equationBlob = Utilities.newBlob(Utilities.base64Decode(equation.renderedEquationB64), "image/png");
-      const result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equationLinkEncoded, equation.options.size, equation.options.delim, equation.options.customAltText);
+      const result = placeImage(rangeElements[0], equationBlob, mathjaxRenderer, equation.options.equationLinkEncoded, equation.options.size, equation.options.delim, equation.options.customAltText, equation.options.rasterScale);
 
       if (result.status === DocsEquationRenderStatus.Success) {
         c++;
@@ -1014,6 +1014,7 @@ function buildClientRenderResponse(
   const clientRenderOptions: DocsClientRenderOptions = {
     ...coloredRenderOptions,
     size,
+    supportsRasterScale: true,
     rangeId: namedRange.getId(),
     equation: clientEquation,
     equationLinkEncoded: encodeURIComponent(clientEquation),
@@ -1140,7 +1141,8 @@ function placeImage(
   equation: string,
   size: number,
   delim: AutoLatexCommon.Delimiter,
-  customAltText?: string
+  customAltText?: string,
+  rasterScale?: number
 ) {
   // GET VARIABLES
   let textElement = startElement.getElement().asText();
@@ -1217,7 +1219,7 @@ function placeImage(
   try {
     // Configure and size the image while the source equation is still present. Only
     // commit the text replacement after all image-side operations have succeeded.
-    result = repairImage(paragraph, childIndex, size, renderer, delim, renderedEquation, equation, customAltText);
+    result = repairImage(paragraph, childIndex, size, renderer, delim, renderedEquation, equation, customAltText, rasterScale);
   } catch (err) {
     // REASON: If image configuration fails, remove the uncommitted image and leave the
     // original equation untouched. Cleanup itself is best-effort during a Docs outage.
@@ -1244,7 +1246,8 @@ function repairImage(
   delim: AutoLatexCommon.Delimiter,
   resp: GoogleAppsScript.Base.Blob,
   equationOriginal: string,
-  customAltText?: string
+  customAltText?: string,
+  rasterScale?: number
 ): DocsEquationRenderResult {
   let attemptsToSetImageUrl = 3;
   Common.reportDeltaTime(552); // 3 seconds!! inserting an inline image takes time
@@ -1317,9 +1320,10 @@ function repairImage(
     //C [75.4, 79.6] on width and height ratio
     multiple = size / 76.0;
   else if (renderer[5] === "MathJax")
-    // The MathJax renderer returns scaled equations. We scale down by 5 (resolution), and 1.26 is just for consistency with other renderers.
+    // The MathJax renderer reports its actual raster scale. Missing metadata
+    // means an old 5x sidebar; 1.26 preserves consistency with other renderers.
     // TODO: When MathJax supports changing font, switch to a font that's more similar to CodeCogs
-    multiple = 1.26 / 5;
+    multiple = getMathJaxDisplayScale(rasterScale);
 
   Common.reportDeltaTime(595);
   Common.sizeImage(getDocsApp(), paragraph, childIndex + 1, Math.round(height * multiple), Math.round(width * multiple));
@@ -1575,4 +1579,11 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
     result: cursorResult,
     successCount: cursorResult === Common.DerenderResult.Success ? 1 : 0
   };
+}
+
+// REASON: local to each server bundle so a Common-library version mismatch
+// cannot break image sizing. Old sidebars omit the metadata and rendered at 5x.
+function getMathJaxDisplayScale(rasterScale?: number) {
+  const scale = typeof rasterScale === "number" && Number.isFinite(rasterScale) && rasterScale > 0 && rasterScale <= 12 ? rasterScale : 5;
+  return 1.26 / scale;
 }

@@ -15,6 +15,9 @@ interface SharedMathJaxApi {
 }
 
 interface SharedMathJaxRenderOptions {
+  // Server capability and successful-client response metadata, respectively.
+  supportsRasterScale?: boolean;
+  rasterScale?: number;
   equation: string;
   inline: boolean;
   size: number;
@@ -283,21 +286,34 @@ async function renderEquationPngWithMathJax(
     });
   }
 
-  // measure at the requested font size, then rasterize at 5x for quality
+  // Measure at the requested font size, then oversample without changing layout.
+  // REASON: 5x looked softer than CodeCogs. 12x gives 2.4x more pixels per
+  // dimension. Only opt in when the server can undo the actual scale; old
+  // servers and already-open old sidebars must retain their original sizing.
   svg.classList.add("mathjax-equation-hidden-render");
   svg.style.fontSize = `${renderOptions.size}px`;
   document.body.appendChild(svg);
-  const width = svg.clientWidth * 5;
-  const height = svg.clientHeight * 5;
+  const layoutWidth = svg.clientWidth;
+  const layoutHeight = svg.clientHeight;
   svg.remove();
   // REASON: a whitespace-only / empty equation (e.g. a lone "\r") typesets to a 0x0 SVG. A
   // zero-size OffscreenCanvas then throws an opaque IndexSizeError in convertToBlob ("The size
   // of OffscreenCanvas is zero"), which surfaced in prod as "MathJax failed to render 1
   // equation(s)". Docs skips these upstream in findPos, but Slides/Sheets share this renderer,
   // so fail fast here with a clear, self-explaining message instead of the canvas crash.
-  if (width <= 0 || height <= 0) {
+  if (!Number.isFinite(layoutWidth) || !Number.isFinite(layoutHeight) || layoutWidth <= 0 || layoutHeight <= 0) {
     throw new Error("Empty equation (zero-size render); nothing to rasterize.");
   }
+  // REASON: bound each RGBA canvas to ~32 MB, including very wide/tall
+  // equations. Four concurrent jobs otherwise multiply the 12x memory cost.
+  const desiredScale = renderOptions.supportsRasterScale === true ? 12 : 5;
+  const rasterScale = Math.min(desiredScale, 4096 / layoutWidth, 4096 / layoutHeight,
+    Math.sqrt(8000000 / (layoutWidth * layoutHeight)));
+  if (!renderOptions.supportsRasterScale && rasterScale < 5) {
+    throw new Error("Equation is too large to render safely. Split it into smaller equations.");
+  }
+  const width = Math.max(1, Math.floor(layoutWidth * rasterScale));
+  const height = Math.max(1, Math.floor(layoutHeight * rasterScale));
   svg.setAttribute("width", `${width}px`);
   svg.setAttribute("height", `${height}px`);
 
@@ -345,7 +361,11 @@ async function renderEquationPngWithMathJax(
             }
           }, "image/png");
         });
-    return await withMathJaxTimeout(pngExport, equationTimeoutMs, "creating the equation image");
+    const png = await withMathJaxTimeout(pngExport, equationTimeoutMs, "creating the equation image");
+    // The caller sends the same options object back with the PNG. Set this only
+    // after successful export; an old sidebar never supplies it (server uses 5).
+    renderOptions.rasterScale = rasterScale;
+    return png;
   } finally {
     URL.revokeObjectURL(svgUrl);
   }
