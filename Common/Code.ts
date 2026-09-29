@@ -73,6 +73,8 @@ interface RenderEquationResult {
 * @public
 */
 interface ClientRenderOptions extends CommonRenderOptions {
+  supportsRasterScale?: boolean;
+  rasterScale?: number;
   rangeId: string;
   equation: string;
   equationLinkEncoded: string;

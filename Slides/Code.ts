@@ -42,6 +42,8 @@ interface DerenderData {
 }
 
 interface SlidesClientRenderOptions {
+  supportsRasterScale?: boolean;
+  rasterScale?: number;
   size: number;
   inline: boolean;
   r: number;
@@ -443,6 +445,7 @@ function findAllClientRenderEquationsInTextElement(
       delim: renderOptions.delim,
       equation: clientEquation,
       equationLinkEncoded: encodeURIComponent(clientEquation),
+      supportsRasterScale: true,
       slideId: slide.getObjectId(),
       pageElementId: getTargetObjectId(textElement),
       tableRow: isTableCell(textElement) ? textElement.getRowIndex() : undefined,
@@ -865,6 +868,7 @@ function findClientRenderEquationInTextElement(
       delim: renderOptions.delim,
       equation: clientEquation,
       equationLinkEncoded: encodeURIComponent(clientEquation),
+      supportsRasterScale: true,
       slideId: slide.getObjectId(),
       pageElementId: getTargetObjectId(textElement),
       tableRow: isTableCell(textElement) ? textElement.getRowIndex() : undefined,
@@ -1277,7 +1281,7 @@ function placeImageAndFillSpaces(
   const mathJaxRenderer = Common.getRenderer(Common.rendererIds.MATHJAX);
 
   const image = target.slide.insertImage(renderedEquation);
-  resize(image, 1.26 / 5, textHorizontalAlignment, textVerticalAlignment, bounds, pos);
+  resize(image, getMathJaxDisplayScale(options.rasterScale), textHorizontalAlignment, textVerticalAlignment, bounds, pos);
   const imageWidth = image.getWidth();
 
   // Replace the equation source with spaces sized to the rendered image (real font's space width).
@@ -1669,4 +1673,11 @@ function editEquations(sizeRaw: string, delimiter: string, renderer: string = "a
   } else {
     return { result: SlidesDerenderResult.CursorNotFound, successCount: 0 };
   }
+}
+
+// REASON: local to each server bundle so a Common-library version mismatch
+// cannot break image sizing. Old sidebars omit the metadata and rendered at 5x.
+function getMathJaxDisplayScale(rasterScale?: number) {
+  const scale = typeof rasterScale === "number" && Number.isFinite(rasterScale) && rasterScale > 0 && rasterScale <= 12 ? rasterScale : 5;
+  return 1.26 / scale;
 }

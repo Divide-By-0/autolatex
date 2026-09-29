@@ -79,6 +79,8 @@ declare namespace AutoLatexCommon {
      * Options/state for rendering on the client - these are settings for a specific equation
      */
     export interface ClientRenderOptions {
+        supportsRasterScale?: boolean;
+        rasterScale?: number;
 
         b: number;
 
