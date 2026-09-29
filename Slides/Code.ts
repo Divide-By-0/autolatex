@@ -1120,7 +1120,7 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
     return [renderOptions.defaultSize, 1];
   }
 
-  const { renderer, rendererType, worked, authorizationError } = Common.renderEquation(equationOriginal, renderOptions);
+  const { resp, renderer, rendererType, worked, authorizationError } = Common.renderEquation(equationOriginal, renderOptions);
   // REASON: -100001 marks an auth-permission failure so callers (clientRenderFailed) can
   // surface a "reinstall and grant external_request" message instead of treating it as a
   // generic renderer-down error. -100000 stays the generic-failure sentinel.
@@ -1165,7 +1165,9 @@ function placeImage(slideNum: number, textElement: PageElement, text: GoogleApps
 
   scale *= size;
 
-  var image = body.insertImage(renderer[1]);
+  // REASON: Insert the validated bytes; a second URL fetch can return different
+  // artwork and bypass Common's CodeCogs response validation.
+  var image = body.insertImage(resp.getBlob());
 
   resize(image, scale, textHorizontalAlignment, textVerticalAlignment, bounds);
   

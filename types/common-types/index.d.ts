@@ -191,7 +191,7 @@ declare namespace AutoLatexCommon {
 
         rendererType: string;
 
-        resp: GoogleAppsScript.URL_Fetch.HTTPResponse | null;
+        resp: Pick<GoogleAppsScript.URL_Fetch.HTTPResponse, "getBlob"> | null;
 
         worked: number;
 
