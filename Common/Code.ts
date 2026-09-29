@@ -59,7 +59,7 @@ interface LegacyRenderArgs {
 }
 
 interface RenderEquationResult {
-  resp: GoogleAppsScript.URL_Fetch.HTTPResponse | null;
+  resp: Pick<GoogleAppsScript.URL_Fetch.HTTPResponse, "getBlob"> | null;
   renderer: Renderer | null;
   rendererType: string;
   worked: number;
@@ -299,7 +299,11 @@ function getRendererOrder() {
   for (let worked = 1; worked <= capableRenderers; ++worked) {
     // REASON: retired services are still listed in getRenderer so old equations de-render,
     // but attempting them here only costs two doomed fetches and a sleep per equation.
-    if (isRetiredRendererFamily(getRenderer(worked)[5])) continue;
+    const renderer = getRenderer(worked);
+    if (isRetiredRendererFamily(renderer[5])) continue;
+    // REASON: GIF ignores high DPI and staging is retired. Keeping these entries
+    // for de-rendering must not let a fallback silently shrink a 900-DPI equation.
+    if (renderer[5] === "Codecogs" && !renderer[1].includes("/png.latex?")) continue;
     defaultOrder.push(worked);
   }
 
@@ -590,7 +594,7 @@ function renderEquation(
   );
   let equation = "";
   let renderer: Renderer | null = null;
-  let resp: GoogleAppsScript.URL_Fetch.HTTPResponse | null = null;
+  let resp: Pick<GoogleAppsScript.URL_Fetch.HTTPResponse, "getBlob"> | null = null;
   let failure = 1;
   let rendererType = "";
   let deltaTime: number;
@@ -598,7 +602,7 @@ function renderEquation(
 
   let failedCodecogs = 0;
   let failedTexrendr = 0;
-  let failedResp: GoogleAppsScript.URL_Fetch.HTTPResponse | null = null;
+  let failedResp: Pick<GoogleAppsScript.URL_Fetch.HTTPResponse, "getBlob"> | null = null;
   let authorizationError = false;
   // if only failed codecogs, probably weird evening bug from 10/15/19
   // if failed codecogs and texrendr, probably shitty equation and the codecogs error is more descriptive so show it
@@ -654,15 +658,16 @@ function renderEquation(
         throw new Error("Equation URL too long for " + rendererType + " (" + renderer[1].length + " chars > 8000)");
       }
 
-      const _createFileInCache = UrlFetchApp.fetch(renderer[2] + renderer[6] + equation);
-      // simulates putting text into text renderer => creates link for cached image which is accessed later
-      // needed for codecogs to generate equation properly, need to figure out which other renderers need this. to test, use align* equations.
-
-      reportDeltaTime(458, " fetching w eqn len " + equation.length + " with renderer " + rendererType);
-      if (rendererType == "Codecogs" || rendererType == "Sciweavers") {
-        Utilities.sleep(50); // sleep 50ms to let codecogs put the equation in its cache
+      if (rendererType === "Codecogs") {
+        resp = fetchValidatedCodecogsImage(renderer[1]);
+      } else {
+        const _createFileInCache = UrlFetchApp.fetch(renderer[2] + renderer[6] + equation);
+        // NOTE: Retain the legacy cache warmup for other services. CodeCogs JSON
+        // returns the rendered PNG itself, so it needs neither editor fetch nor sleep.
+        reportDeltaTime(458, " fetching w eqn len " + equation.length + " with renderer " + rendererType);
+        if (rendererType === "Sciweavers") Utilities.sleep(50);
+        resp = UrlFetchApp.fetch(renderer[1]);
       }
-      resp = UrlFetchApp.fetch(renderer[1]);
       // REASON: removed `debugLog(resp, resp.getBlob(), ...)` here — dumping the HTTPResponse and Blob objects
       // printed ~25 lines of `{ method: [Function], ... }` per equation and was the single largest Cloud Logging
       // cost. The meaningful part (the hash prefix) is already logged below; re-add only if truly needed.
@@ -748,6 +753,28 @@ function renderEquation(
     equation,
     authorizationError
   }
+}
+
+// REASON: CodeCogs can return HTTP 200 PNGs containing literal unknown commands
+// (including our dpi directive). Byte-prefix error-image signatures cannot detect
+// those. Validate the structured response and insert exactly its decoded PNG.
+function fetchValidatedCodecogsImage(imageUrl: string): Pick<GoogleAppsScript.URL_Fetch.HTTPResponse, "getBlob"> {
+  const response = UrlFetchApp.fetch(imageUrl.replace("/png.latex?", "/png.json?"));
+  const latex = JSON.parse(response.getContentText()).latex;
+  if (!latex || latex.valid !== true || latex.type !== "png" ||
+      !Array.isArray(latex.errors) || latex.errors.length !== 0 ||
+      typeof latex.equation !== "string" || /\\dpi(?:\b|[0-9])/i.test(latex.equation) ||
+      typeof latex.base64 !== "string" || !latex.base64) {
+    throw new Error("CodeCogs returned an invalid or unvalidated equation");
+  }
+  const bytes = Utilities.base64Decode(latex.base64);
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+  // Apps Script Byte[] values can be signed.
+  if (bytes.length <= signature.length || signature.some((value, i) => (bytes[i] & 255) !== value)) {
+    throw new Error("CodeCogs returned invalid PNG data");
+  }
+  const blob = Utilities.newBlob(bytes, "image/png", "equation.png");
+  return { getBlob: () => blob };
 }
 
 function isUrlFetchAuthorizationError(err: unknown) {

@@ -28,12 +28,17 @@ function commonHarness() {
     PropertiesService: { getUserProperties: () => ({
       setProperty: (k, v) => { prefs[k] = v; }, getProperty: k => prefs[k] || null,
     }) },
-    Utilities: { sleep() {} },
+    Utilities: { sleep() {},
+      base64Decode: value => Array.from(Buffer.from(value, 'base64')),
+      newBlob: (bytes, type) => ({ getDataAsString: () => Buffer.from(bytes).toString('latin1'),
+        getBytes: () => bytes, getContentType: () => type }),
+    },
     // Only the network boundary is doubled. Renderer choice, encoding, styling,
     // URL construction, response validation and fallback are production Common.
     UrlFetchApp: { fetch(url) {
       urls.push(url);
-      return { getBlob: () => ({ getDataAsString: () => 'valid image fixture' }) };
+      return { getContentText: () => JSON.stringify(require('../fixtures/codecogs/valid.json')),
+        getBlob: () => ({ getDataAsString: () => 'valid image fixture' }) };
     } },
   });
   vm.runInContext(commonSource, common, { filename: 'Common.matrix.js' });

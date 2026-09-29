@@ -31,7 +31,7 @@ test('retired renderer families are excluded from the render order', () => {
   }
   // NOTE: Array.from, because these arrays are built inside the vm realm and deepStrictEqual
   // compares prototypes - a bare deepEqual against a host-realm literal fails on identical data.
-  assert.deepEqual(Array.from(order), [1, 2, 3, 4, 6], 'Codecogs and Texrendr entries only');
+  assert.deepEqual(Array.from(order), [1, 4, 6], 'Codecogs and Texrendr entries only');
   assert.deepEqual(Array.from(common.retiredRendererFamilies), ['Sciweavers', 'Sciweavers_old']);
 });
 
