@@ -391,6 +391,11 @@ function getCustomEncode(equation: string, direction: number, time: number, app:
     if (direction === 0) equation = equation.split(toFind[time][i]).join(toReplace[time][i]);
     else if (direction === 1 && time === 0) {
       // the single, double quotes, and hyphens should stay minus signs.
+      // REASON: two encoded backslashes followed by a space are a literal TeX
+      // row break. Restoring them as an app newline makes MathJax treat cases
+      // rows as cosmetic whitespace after a CodeCogs de-render/re-render.
+      // Only the four-backslash marker represents an encoded app newline.
+      if (i === 3) continue;
       equation = equation.split(toReplace[time][i]).join(toFind[time][i]);
     }
   }
